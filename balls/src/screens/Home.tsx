@@ -9,7 +9,7 @@ import { FACILITIES, FACILITY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/faci
 import { FEED } from '../data/discover';
 import { sportName } from '../data/sports';
 import type { SportId } from '../data/types';
-import { cx, money, plural } from '../lib/format';
+import { cx, money, plural, scrollEl } from '../lib/format';
 import { fmtCountdown, fmtDay, fmtTime, greeting, startOfDay, timeAgo } from '../lib/time';
 import { useResource } from '../services/api';
 import { daySlots } from '../services/availability';
@@ -155,11 +155,11 @@ export function HomeScreen({ retap }: ScreenComponentProps) {
   const bookedSports = s.bookings.map((b) => b.sport);
   const topSport = (bookedSports.sort((a, b) => bookedSports.filter((x) => x === b).length - bookedSports.filter((x) => x === a).length)[0] ?? order[0]) as SportId | undefined;
   const unread = unreadCount(s);
-  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const [scrollBox, setScrollBox] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (retap) scrollEl?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [retap, scrollEl]);
+    if (retap) scrollEl(scrollBox, { top: 0 }, true);
+  }, [retap, scrollBox]);
 
   return (
     <div className="screen-inner hdr-home">
@@ -178,7 +178,7 @@ export function HomeScreen({ retap }: ScreenComponentProps) {
           </IconButton>
         </div>
       </header>
-      <div className="scroll" ref={setScrollEl}>
+      <div className="scroll" ref={setScrollBox}>
         <div className="greet">
           <h1 className="greet__title">
             {greeting()}, <span>{name}</span>

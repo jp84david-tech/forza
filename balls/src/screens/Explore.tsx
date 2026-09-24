@@ -11,7 +11,7 @@ import { Button, Chip, EmptyState, ErrorState, Pill, RatingDisplay, Screen, Skel
 import { FACILITIES, FACILITY_BY_ID, spacesFor } from '../data/facilities';
 import { SPORT_BY_ID, sportName } from '../data/sports';
 import type { Facility, SportId } from '../data/types';
-import { cx, miles, money } from '../lib/format';
+import { cx, miles, money, scrollEl } from '../lib/format';
 import { fmtDay, fmtTime } from '../lib/time';
 import { analytics } from '../services/analytics';
 import { useResource } from '../services/api';
@@ -148,7 +148,7 @@ export function ExploreScreen({ params, retap }: ScreenComponentProps) {
   }, [params._t]);
 
   useEffect(() => {
-    if (retap) listRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (retap) scrollEl(listRef.current, { top: 0 }, true);
   }, [retap]);
 
   const sport = filters.sports.length === 1 ? filters.sports[0] : undefined;

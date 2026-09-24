@@ -9,7 +9,7 @@ import { Avatar, Button, Chip, CtaBar, EmptyState, Field, IconButton, Pill, Row,
 import { FACILITIES, FACILITY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/facilities';
 import { defaultPlayers, levelIndex, levelLabel, SKILL_LEVELS, SPORT_BY_ID, sportName } from '../data/sports';
 import type { Game, SkillLevel, SportId } from '../data/types';
-import { cx, miles, money, moneyExact, plural } from '../lib/format';
+import { cx, miles, money, moneyExact, plural, scrollEl } from '../lib/format';
 import { addDays, at, dateKey, fmtDay, fmtRange, fmtShortDate, fmtTime, fmtWhen, hourLabel, isSameDay, startOfDay, weekdayShort } from '../lib/time';
 import { analytics } from '../services/analytics';
 import { unavailableReason } from '../services/availability';
@@ -1119,7 +1119,7 @@ export function ChatScreen({ params }: ScreenComponentProps) {
   const muted = g ? s.mutedChats.includes(g.id) : false;
 
   useEffect(() => {
-    list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' });
+    scrollEl(list.current, { top: list.current?.scrollHeight ?? 0 }, true);
   }, [messages.length]);
 
   if (!g) return <Screen title="Chat">{null}</Screen>;

@@ -44,3 +44,18 @@ export function bookingRef(): string {
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 export const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
+
+/** Scroll an element, falling back for browsers without Element.scrollTo. */
+export function scrollEl(el: HTMLElement | null | undefined, pos: { top?: number; left?: number }, smooth = false) {
+  if (!el) return;
+  if (typeof el.scrollTo === 'function') {
+    try {
+      el.scrollTo({ ...pos, behavior: smooth ? 'smooth' : 'auto' });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  if (pos.top != null) el.scrollTop = pos.top;
+  if (pos.left != null) el.scrollLeft = pos.left;
+}

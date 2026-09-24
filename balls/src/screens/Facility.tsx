@@ -10,7 +10,7 @@ import { Avatar, Button, Chip, CtaBar, EmptyState, ErrorState, IconButton, Pill,
 import { ATTRIBUTE_LABELS, sportName } from '../data/sports';
 import { FACILITY_BY_ID, FEATURE_LABELS, KIND_LABELS, POLICY_BY_ID, spacesFor } from '../data/facilities';
 import type { ArtSpec, Facility, RatingBreakdown, Review, SportId } from '../data/types';
-import { cx, miles, money, plural } from '../lib/format';
+import { cx, miles, money, plural, scrollEl } from '../lib/format';
 import { fmtShortDate, fmtTime, hourLabel, now, timeAgo, weekday } from '../lib/time';
 import { analytics } from '../services/analytics';
 import { useResource } from '../services/api';
@@ -31,7 +31,7 @@ function GalleryViewer({ images, start, name, close }: { images: ArtSpec[]; star
   const ref = useRef<HTMLDivElement>(null);
   const [i, setI] = useState(start);
   useEffect(() => {
-    ref.current?.scrollTo({ left: start * (ref.current?.clientWidth ?? 0) });
+    scrollEl(ref.current, { left: start * (ref.current?.clientWidth ?? 0) });
   }, [start]);
   return (
     <div className="gviewer">
@@ -58,7 +58,7 @@ function GalleryViewer({ images, start, name, close }: { images: ArtSpec[]; star
             type="button"
             className={cx('gviewer__thumb', k === i && 'is-on')}
             aria-label={`Photo ${k + 1}: ${img.caption}`}
-            onClick={() => ref.current?.scrollTo({ left: k * ref.current.clientWidth, behavior: 'smooth' })}
+            onClick={() => scrollEl(ref.current, { left: k * (ref.current?.clientWidth ?? 0) }, true)}
           >
             <Artwork art={img} />
           </button>

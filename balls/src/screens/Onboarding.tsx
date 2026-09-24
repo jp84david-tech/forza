@@ -261,8 +261,6 @@ export function Onboarding() {
   const s = useApp();
   const idx = FLOW.indexOf(step);
   const back = () => setStep(idx <= 0 ? 'welcome' : FLOW[idx - 1]);
-  const scroller = useRef<HTMLDivElement>(null);
-  useEffect(() => scroller.current?.scrollTo(0, 0), [step]);
 
   const venuesWithin = useMemo(() => {
     const o = s.location ?? { lat: 51.5567, lng: -0.138 };
@@ -401,8 +399,11 @@ export function Onboarding() {
       break;
   }
   return (
-    <div className="onboarding" ref={scroller}>
-      {content}
+    <div className="onboarding">
+      {/* Keyed by step so every step starts fresh at the top. */}
+      <div className="onboarding__step" key={step}>
+        {content}
+      </div>
     </div>
   );
 }

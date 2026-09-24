@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, CircleAlert, Minus, Plus, RefreshCw, Star, StarHalf, WifiOff } from 'lucide-react';
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
-import { cx, money } from '../lib/format';
+import { cx, money, scrollEl } from '../lib/format';
 import { nav } from '../state/nav';
 
 /** Core UI primitives shared by every screen. */
@@ -368,7 +368,7 @@ export function Screen({ title, header = 'standard', back = true, onBack, action
   const scrolled = useScrolled(ref, header === 'overlay' ? overlayThreshold : header === 'large' ? 36 : 4);
 
   useEffect(() => {
-    if (retap) ref.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (retap) scrollEl(ref.current, { top: 0 }, true);
   }, [retap, ref]);
 
   return (
@@ -401,7 +401,7 @@ export function Screen({ title, header = 'standard', back = true, onBack, action
 /** A labelled sticky summary + primary action for flow screens. */
 export function CtaBar({ label, sub, children }: { label?: ReactNode; sub?: ReactNode; children: ReactNode }) {
   return (
-    <div className="cta">
+    <div className={cx('cta', !label && !sub && 'cta--solo')}>
       {(label || sub) && (
         <div className="cta__text">
           {label && <div className="cta__label">{label}</div>}

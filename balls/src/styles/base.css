@@ -244,7 +244,6 @@ hr.divider {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  container: app / inline-size;
   background: var(--bg);
   color: var(--ink);
   isolation: isolate;
@@ -294,7 +293,7 @@ hr.divider {
   visibility: hidden;
 }
 
-.stack:has(> .screen.is-modal:last-child) > .screen.is-covered {
+.screen.is-covered.under-modal {
   transform: scale(0.97);
 }
 
@@ -349,8 +348,8 @@ hr.divider {
 }
 
 /* Wide screens: keep reading width comfortable, centred. */
-@container app (min-width: 700px) {
-  .scroll {
+@media (min-width: 700px) {
+  .app:not(.app--framed) .scroll {
     padding-inline: max(0px, calc((100% - 760px) / 2));
   }
 }
@@ -473,6 +472,7 @@ hr.divider {
   color: var(--ink);
   box-shadow: none;
   backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Footers (sticky call-to-action bars) */
@@ -486,8 +486,8 @@ hr.divider {
   padding: 10px var(--gutter) calc(10px + var(--safe-bottom));
 }
 
-@container app (min-width: 700px) {
-  .footer-bar {
+@media (min-width: 700px) {
+  .app:not(.app--framed) .footer-bar {
     padding-inline: max(var(--gutter), calc((100% - 760px) / 2));
   }
 }

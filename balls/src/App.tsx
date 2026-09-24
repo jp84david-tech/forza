@@ -77,6 +77,7 @@ function Stack({ tab, routes, active }: { tab: Tab; routes: Route[]; active: boo
   }, [routes]);
 
   const topIndex = routes.length - 1;
+  const topIsModal = !!ROUTES[routes[topIndex]?.name]?.modal;
   return (
     <section className="stack" hidden={!active} aria-hidden={!active}>
       {rendered.map((r, i) => {
@@ -87,7 +88,7 @@ function Stack({ tab, routes, active }: { tab: Tab; routes: Route[]; active: boo
         return (
           <div
             key={r.key}
-            className={cx('screen', i > 0 && 'is-pushed', r.leaving && 'is-leaving', !r.leaving && i < topIndex && 'is-covered', def.modal && 'is-modal', !def.hideTabBar && 'with-tabbar')}
+            className={cx('screen', i > 0 && 'is-pushed', r.leaving && 'is-leaving', !r.leaving && i < topIndex && 'is-covered', !r.leaving && i < topIndex && topIsModal && 'under-modal', def.modal && 'is-modal', !def.hideTabBar && 'with-tabbar')}
             aria-hidden={!isTop}
             inert={!isTop ? true : undefined}
           >
