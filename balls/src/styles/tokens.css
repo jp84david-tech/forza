@@ -1,0 +1,267 @@
+/*
+ * BALLS design tokens.
+ *
+ * Palette: ultramarine ("Court Blue") as the single brand accent on cool,
+ * blue-biased neutrals. Semantic colours (available / warning / danger) are
+ * separate from the brand so "selected" and "available" never look alike.
+ * Dark mode is a deep navy night-pitch palette, not an inversion.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f3f4f8;
+  --bg-elev: #f8f9fc;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --surface-3: #e3e6ef;
+  --line: #e2e5ee;
+  --line-strong: #cbd0df;
+
+  --ink: #0c0f1e;
+  --ink-2: #4b5270;
+  --ink-3: #7e849d;
+  --ink-inverse: #ffffff;
+
+  --brand: #2f3cf4;
+  --brand-strong: #2230d6;
+  --brand-soft: #e7e9ff;
+  --brand-text: #2733e0;
+  --brand-ink: #ffffff;
+
+  --night: #0c0f1e;
+  --night-2: #171b33;
+  --night-ink: #f2f3fa;
+
+  --success: #0c8a4f;
+  --success-soft: #e1f5ea;
+  --success-line: #9fdcbc;
+  --warning: #a86200;
+  --warning-soft: #fff1d9;
+  --danger: #cf2f2f;
+  --danger-soft: #fde6e6;
+  --gold: #c58a00;
+
+  --map-land: #eceef3;
+  --map-park: #cfe7cf;
+  --map-wood: #c2dfc1;
+  --map-cemetery: #dbe6d6;
+  --map-water: #b9d6f0;
+  --map-road: #ffffff;
+  --map-road-casing: #d3d7e2;
+  --map-minor: #f8f9fb;
+  --map-rail: #b9bfcf;
+  --map-label: #5b627c;
+  --map-park-label: #3e7a4e;
+
+  --shadow-1: 0 1px 2px rgb(12 15 30 / 6%), 0 1px 1px rgb(12 15 30 / 4%);
+  --shadow-2: 0 10px 28px -12px rgb(12 15 30 / 28%), 0 2px 6px rgb(12 15 30 / 6%);
+  --shadow-3: 0 -12px 40px rgb(12 15 30 / 18%);
+  --scrim: rgb(8 10 22 / 48%);
+  --glass: rgb(255 255 255 / 82%);
+
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+
+  --font: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --display-stretch: 118%;
+
+  --gutter: 16px;
+  --tabbar-h: 60px;
+  --topbar-h: 52px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #080a14;
+    --bg-elev: #0d1020;
+    --surface: #111427;
+    --surface-2: #191d34;
+    --surface-3: #232843;
+    --line: #20253d;
+    --line-strong: #323956;
+    --ink: #f1f2f9;
+    --ink-2: #a6abc6;
+    --ink-3: #737a99;
+    --ink-inverse: #0c0f1e;
+    --brand: #4f5bff;
+    --brand-strong: #3f4af0;
+    --brand-soft: #1c2150;
+    --brand-text: #9ba3ff;
+    --brand-ink: #ffffff;
+    --night: #151934;
+    --night-2: #1d2244;
+    --success: #3ccf86;
+    --success-soft: #0f2a1f;
+    --success-line: #1f5a3f;
+    --warning: #f0b14a;
+    --warning-soft: #2e2311;
+    --danger: #ff6b6b;
+    --danger-soft: #331618;
+    --gold: #f0c04a;
+    --map-land: #0f1220;
+    --map-park: #13261c;
+    --map-wood: #112219;
+    --map-cemetery: #151f1b;
+    --map-water: #0e2236;
+    --map-road: #252a41;
+    --map-road-casing: #0a0c16;
+    --map-minor: #181c2e;
+    --map-rail: #2c3250;
+    --map-label: #7d84a4;
+    --map-park-label: #5e9a70;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+    --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
+    --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
+    --scrim: rgb(2 3 10 / 66%);
+    --glass: rgb(17 20 39 / 84%);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #080a14;
+  --bg-elev: #0d1020;
+  --surface: #111427;
+  --surface-2: #191d34;
+  --surface-3: #232843;
+  --line: #20253d;
+  --line-strong: #323956;
+  --ink: #f1f2f9;
+  --ink-2: #a6abc6;
+  --ink-3: #737a99;
+  --ink-inverse: #0c0f1e;
+  --brand: #4f5bff;
+  --brand-strong: #3f4af0;
+  --brand-soft: #1c2150;
+  --brand-text: #9ba3ff;
+  --brand-ink: #ffffff;
+  --night: #151934;
+  --night-2: #1d2244;
+  --success: #3ccf86;
+  --success-soft: #0f2a1f;
+  --success-line: #1f5a3f;
+  --warning: #f0b14a;
+  --warning-soft: #2e2311;
+  --danger: #ff6b6b;
+  --danger-soft: #331618;
+  --gold: #f0c04a;
+  --map-land: #0f1220;
+  --map-park: #13261c;
+  --map-wood: #112219;
+  --map-cemetery: #151f1b;
+  --map-water: #0e2236;
+  --map-road: #252a41;
+  --map-road-casing: #0a0c16;
+  --map-minor: #181c2e;
+  --map-rail: #2c3250;
+  --map-label: #7d84a4;
+  --map-park-label: #5e9a70;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
+  --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
+  --scrim: rgb(2 3 10 / 66%);
+  --glass: rgb(17 20 39 / 84%);
+}
+
+/* The in-app appearance setting wins over the system/host theme. */
+.app[data-scheme='light'],
+.desk[data-scheme='light'] {
+  color-scheme: light;
+  --bg: #f3f4f8;
+  --bg-elev: #f8f9fc;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --surface-3: #e3e6ef;
+  --line: #e2e5ee;
+  --line-strong: #cbd0df;
+  --ink: #0c0f1e;
+  --ink-2: #4b5270;
+  --ink-3: #7e849d;
+  --ink-inverse: #ffffff;
+  --brand: #2f3cf4;
+  --brand-strong: #2230d6;
+  --brand-soft: #e7e9ff;
+  --brand-text: #2733e0;
+  --night: #0c0f1e;
+  --night-2: #171b33;
+  --success: #0c8a4f;
+  --success-soft: #e1f5ea;
+  --success-line: #9fdcbc;
+  --warning: #a86200;
+  --warning-soft: #fff1d9;
+  --danger: #cf2f2f;
+  --danger-soft: #fde6e6;
+  --gold: #c58a00;
+  --map-land: #eceef3;
+  --map-park: #cfe7cf;
+  --map-wood: #c2dfc1;
+  --map-cemetery: #dbe6d6;
+  --map-water: #b9d6f0;
+  --map-road: #ffffff;
+  --map-road-casing: #d3d7e2;
+  --map-minor: #f8f9fb;
+  --map-rail: #b9bfcf;
+  --map-label: #5b627c;
+  --map-park-label: #3e7a4e;
+  --shadow-1: 0 1px 2px rgb(12 15 30 / 6%), 0 1px 1px rgb(12 15 30 / 4%);
+  --shadow-2: 0 10px 28px -12px rgb(12 15 30 / 28%), 0 2px 6px rgb(12 15 30 / 6%);
+  --shadow-3: 0 -12px 40px rgb(12 15 30 / 18%);
+  --scrim: rgb(8 10 22 / 48%);
+  --glass: rgb(255 255 255 / 82%);
+}
+
+.app[data-scheme='dark'],
+.desk[data-scheme='dark'] {
+  color-scheme: dark;
+  --bg: #080a14;
+  --bg-elev: #0d1020;
+  --surface: #111427;
+  --surface-2: #191d34;
+  --surface-3: #232843;
+  --line: #20253d;
+  --line-strong: #323956;
+  --ink: #f1f2f9;
+  --ink-2: #a6abc6;
+  --ink-3: #737a99;
+  --ink-inverse: #0c0f1e;
+  --brand: #4f5bff;
+  --brand-strong: #3f4af0;
+  --brand-soft: #1c2150;
+  --brand-text: #9ba3ff;
+  --night: #151934;
+  --night-2: #1d2244;
+  --success: #3ccf86;
+  --success-soft: #0f2a1f;
+  --success-line: #1f5a3f;
+  --warning: #f0b14a;
+  --warning-soft: #2e2311;
+  --danger: #ff6b6b;
+  --danger-soft: #331618;
+  --gold: #f0c04a;
+  --map-land: #0f1220;
+  --map-park: #13261c;
+  --map-wood: #112219;
+  --map-cemetery: #151f1b;
+  --map-water: #0e2236;
+  --map-road: #252a41;
+  --map-road-casing: #0a0c16;
+  --map-minor: #181c2e;
+  --map-rail: #2c3250;
+  --map-label: #7d84a4;
+  --map-park-label: #5e9a70;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
+  --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
+  --scrim: rgb(2 3 10 / 66%);
+  --glass: rgb(17 20 39 / 84%);
+}
