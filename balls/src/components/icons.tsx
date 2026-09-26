@@ -137,19 +137,32 @@ export function SportIcon({ sport, ...p }: P & { sport: SportId }) {
 }
 
 /** The BALLS mark: a ball with a single seam that also reads as a map pin swoosh. */
+const LIME = '#9ef01a';
+
+/** The "b" mark on its lime tile. Used anywhere the logo appears small or alone. */
 export function LogoMark({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="15" fill="var(--brand)" />
-      <path d="M9.6 3.9c4.6 5.6 4.6 18.6 0 24.2M22.4 3.9c-4.6 5.6-4.6 18.6 0 24.2" fill="none" stroke="var(--brand-ink)" strokeWidth="2.4" strokeLinecap="round" />
+    <svg className="logomark" width={size} height={size} viewBox="9 0.5 161 161" aria-hidden="true">
+      <rect x="9" y="0.5" width="161" height="161" rx="36" fill={LIME} />
+      <g fill="#000">
+        <rect x="59.8" y="45.4" width="17.9" height="70.8" rx="3" />
+        <circle cx="88.4" cy="62.1" r="16.6" />
+        <circle cx="90" cy="97.6" r="18.1" />
+      </g>
+      <path fill={LIME} d="M75.4 85.2C76.8 93.8 86 101.6 94.2 100.9C99.8 100.4 104.6 97.6 109.5 94.6L109.5 88.6C104.7 92.3 99.4 95.4 93.6 95.4C86.2 95.4 80.2 90.6 77.4 85.6Z" />
+      <circle cx="76.3" cy="86.4" r="1.6" fill={LIME} />
     </svg>
   );
 }
 
-export function Wordmark({ size = 22 }: { size?: number }) {
+/** Full logo: mark + "balls". `size` is the height of the mark. */
+export function Logo({ size = 28, className }: { size?: number; className?: string }) {
   return (
-    <span className="wordmark" style={{ fontSize: size }} aria-label="BALLS">
-      BALLS
+    <span className={className ? `logo ${className}` : 'logo'} style={{ ['--logo' as string]: `${size}px` }} role="img" aria-label="balls">
+      <LogoMark size={size} />
+      <span className="logo__word" aria-hidden="true">
+        balls
+      </span>
     </span>
   );
 }

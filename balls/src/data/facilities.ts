@@ -56,7 +56,7 @@ export const FACILITIES: Facility[] = [
     rules: courtRules,
     partner: true,
     listedAt: '2025-02-10',
-    highlights: ['Free bibs & balls', 'Floodlit till 11 PM'],
+    highlights: ['Free bibs & balls', 'Floodlit till 23:00'],
   },
   {
     id: 'tufnell-pitch',
@@ -137,7 +137,7 @@ export const FACILITIES: Facility[] = [
     rules: courtRules,
     partner: true,
     listedAt: '2025-01-20',
-    highlights: ['Covered — rain or shine'],
+    highlights: ['Covered courts'],
   },
   {
     id: 'hornsey-rise-5s',
@@ -148,7 +148,7 @@ export const FACILITIES: Facility[] = [
     postcode: 'N19 3SA',
     lat: 51.5703,
     lng: -0.1239,
-    description: 'Four floodlit 5-a-side pitches with a small clubhouse. Popular for weekday evening leagues, so book early for 7–9 PM.',
+    description: 'Four floodlit 5-a-side pitches with a small clubhouse. Popular for weekday evening leagues, so book early for 19:00–21:00.',
     images: [
       { kind: 'football', caption: 'Pitch 4', time: 'dusk', seed: 41 },
       { kind: 'football', caption: 'League night', time: 'night', seed: 42 },
@@ -173,7 +173,7 @@ export const FACILITIES: Facility[] = [
     lat: 51.5579,
     lng: -0.1286,
     description:
-      'Two public outdoor courts in Whittington Park with new glass backboards and floodlights until 9 PM. Free to use. No booking needed, so just turn up. Pick-up runs most evenings from 6 PM.',
+      'Two public outdoor courts in Whittington Park with new glass backboards and floodlights until 21:00. Free to use. No booking needed, so just turn up. Pick-up runs most evenings from 18:00.',
     images: [
       { kind: 'basketball', caption: 'Court A', variant: 'outdoor', time: 'day', seed: 51 },
       { kind: 'basketball', caption: 'Evening run', variant: 'outdoor', time: 'dusk', seed: 52 },

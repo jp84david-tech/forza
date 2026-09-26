@@ -662,7 +662,7 @@ export function BookingDetailScreen({ params }: ScreenComponentProps) {
             </div>
             <ul className="shares">
               {b.split.map((sh) => {
-                const u = sh.userId ? (sh.userId === 'me' ? { name: 'You', color: s.account?.color ?? '#3346F5', photo: s.account?.photo } : { name: sh.name, color: '#4E5670' }) : null;
+                const u = sh.userId ? (sh.userId === 'me' ? { name: 'You', color: s.account?.color ?? '#3d5a4a', photo: s.account?.photo } : { name: sh.name, color: '#4E5670' }) : null;
                 return (
                   <li key={sh.id} className="share">
                     {u ? <Avatar name={u.name} color={u.color} photo={'photo' in u ? u.photo : undefined} size={36} /> : <span className="share__open" aria-hidden="true"><UserPlus size={16} /></span>}

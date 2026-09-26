@@ -299,16 +299,16 @@ export function NotificationSettings() {
 export function AppearanceSettings() {
   const s = useApp();
   const opts = [
-    { v: 'system' as const, label: 'Match device', icon: <Monitor size={20} /> },
-    { v: 'light' as const, label: 'Light', icon: <Sun size={20} /> },
     { v: 'dark' as const, label: 'Dark', icon: <Moon size={20} /> },
+    { v: 'light' as const, label: 'Light', icon: <Sun size={20} /> },
+    { v: 'system' as const, label: 'Match device', icon: <Monitor size={20} /> },
   ];
   return (
     <Screen title="Appearance">
       <div className="pad">
         <div className="theme-pick" role="radiogroup" aria-label="Theme">
           {opts.map((o) => (
-            <button key={o.v} type="button" role="radio" aria-checked={s.settings.theme === o.v} className={cx('theme-opt', `theme-opt--${o.v}`, s.settings.theme === o.v && 'is-on')} onClick={() => setSettings({ theme: o.v })}>
+            <button key={o.v} type="button" role="radio" aria-checked={s.settings.theme === o.v} className={cx('theme-opt', `theme-opt--${o.v}`, s.settings.theme === o.v && 'is-on')} onClick={() => setSettings({ theme: o.v, themeChosen: true })}>
               <span className="theme-opt__preview" aria-hidden="true">
                 <i />
                 <i />

@@ -5,7 +5,7 @@ import type { SkillLevel, SportId, User } from './types';
  * an approximate area only — never contact details or addresses.
  */
 
-export const AVATAR_COLORS = ['#3346F5', '#E4572E', '#138A4B', '#B7791F', '#7C4DDB', '#0B7EA8', '#C2417A', '#0F8C80', '#D9661F', '#4E5670'];
+export const AVATAR_COLORS = ['#3d5a4a', '#6b5a45', '#3f4a66', '#5a4660', '#4a5f3a', '#6a4a42', '#355a5f', '#5f5a3a', '#4b4f57'];
 
 type Seed = [id: string, name: string, username: string, area: string, sports: Array<[SportId, SkillLevel]>, games: number, att: [number, number, number], extra?: Partial<User>];
 

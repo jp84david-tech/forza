@@ -47,7 +47,7 @@ const HANDWRITTEN: Array<Omit<Review, 'id' | 'at'> & { daysAgo: number }> = [
   {
     facilityId: 'gospel-oak-lido', userId: 'u26', sport: 'swimming', daysAgo: 1,
     rating: { overall: 5, surface: 5, cleanliness: 4, facilities: 4, value: 5 },
-    text: 'The 7 AM slot is the best way to start a day in London. Cold, clear and quiet. Booking a slot in advance means no queue at the gate.',
+    text: 'The 7am slot is the best way to start a day in London. Cold, clear and quiet. Booking a slot in advance means no queue at the gate.',
     photos: [{ kind: 'swimming', caption: 'Morning swim', variant: 'lido', time: 'dusk', seed: 903 }],
   },
   {

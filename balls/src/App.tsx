@@ -2,7 +2,7 @@ import { CalendarDays, Compass, House, Trophy, UserRound } from 'lucide-react';
 import { type ComponentType, useEffect, useRef, useState } from 'react';
 import { joinLayer, useJoinLayer } from './components/Join';
 import { SheetHost, ToastHost } from './components/Sheet';
-import { LogoMark } from './components/icons';
+import { Logo } from './components/icons';
 import { cx } from './lib/format';
 import { analytics } from './services/analytics';
 import { type Route, type Tab, nav, useNav } from './state/nav';
@@ -156,7 +156,7 @@ function StatusBar() {
   }, []);
   return (
     <div className="statusbar" aria-hidden="true">
-      <span>{fmtTime(t).replace(/ (AM|PM)/, '')}</span>
+      <span>{fmtTime(t)}</span>
       <span className="statusbar__icons">
         <svg width="18" height="11" viewBox="0 0 18 11">
           <rect x="0" y="7" width="3" height="4" rx="1" fill="currentColor" />
@@ -178,7 +178,7 @@ export function App() {
   const s = useApp();
   const j = useJoinLayer();
   const framed = useFrameMode();
-  const scheme = s.settings.theme === 'system' ? undefined : s.settings.theme;
+  const scheme = s.settings.theme;
   const unread = unreadCount(s);
 
   useEffect(() => {
@@ -204,24 +204,15 @@ export function App() {
   return (
     <div className="desk" data-scheme={scheme}>
       <aside className="desk__brand">
-        <div className="desk__logo">
-          <LogoMark size={44} />
-          <span className="wordmark">BALLS</span>
-        </div>
-        <h1 className="desk__title">Your local sports world.</h1>
-        <p className="desk__lede">Find somewhere to play, book it, split the cost, fill your game and track your season. All in one app.</p>
+        <Logo size={44} className="desk__logo" />
+        <h1 className="desk__title">Games and pitches near you</h1>
+        <p className="desk__lede">See which games need players, book a pitch or court, and split the cost with your group.</p>
         <ul className="desk__points">
-          <li>
-            <b>Explore</b> every pitch, court and pool near you on one map
-          </li>
-          <li>
-            <b>Play Now</b> finds a game that needs players, in seconds
-          </li>
-          <li>
-            <b>Split costs</b> automatically and see who has paid
-          </li>
+          <li>Every pitch, court and pool nearby on one map</li>
+          <li>Join a game tonight in a couple of taps</li>
+          <li>Costs split automatically, with who’s paid</li>
         </ul>
-        <p className="desk__note">Interactive prototype · mobile-first · try it on your phone for the full feel</p>
+        <p className="desk__note">Prototype. Best on a phone.</p>
       </aside>
       <div className="device">{app}</div>
     </div>

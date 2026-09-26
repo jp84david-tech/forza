@@ -1,7 +1,7 @@
 import { Ban, Building2, CalendarDays, Check, ChevronRight, CircleHelp, FileText, Flag, FlaskConical, Heart, Info, Lock, LogOut, MapPin, MessageCircle, MoreHorizontal, Palette, Pencil, Settings, Share2, Shapes, ShieldCheck, Star, Sunrise, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { FacilityCard, PlayerCard, ReliabilityBadge, SportBadge, SportCard } from '../components/cards';
-import { LogoMark, SportIcon } from '../components/icons';
+import { Logo, SportIcon } from '../components/icons';
 import { InstallRow } from '../components/Install';
 import { joinLayer, needsAccount } from '../components/Join';
 import { confirmDialog, SheetBody, SheetHeader } from '../components/Sheet';
@@ -213,7 +213,7 @@ function GuestProfile({ retap }: { retap: number }) {
     <Screen title="Profile" header="large" back={false} retap={retap}>
       <div className="pad stack-24">
         <div className="guestcard">
-          <LogoMark size={48} />
+          <Logo size={34} />
           <h2 className="guestcard__title">You’re looking around as a guest</h2>
           <p className="guestcard__body">Create a free account to book, join games and keep track of your season. It takes about 30 seconds.</p>
           <ul className="guestcard__perks">

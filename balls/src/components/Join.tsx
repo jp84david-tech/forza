@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { analytics } from '../services/analytics';
 import { getState } from '../state/store';
 import { ui } from '../state/ui';
-import { LogoMark } from './icons';
+import { Logo } from './icons';
 import { SheetBody, SheetFooter } from './Sheet';
 import { Button } from './ui';
 
@@ -77,7 +77,7 @@ function JoinPrompt({ reason, close }: { reason: JoinReason; close: () => void }
   return (
     <>
       <SheetBody className="joinprompt">
-        <LogoMark size={44} />
+        <Logo size={34} />
         <h2 className="joinprompt__title">{c.title}</h2>
         <p className="joinprompt__body">{c.body}</p>
         <ul className="joinprompt__perks">

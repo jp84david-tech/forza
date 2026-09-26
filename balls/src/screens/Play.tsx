@@ -17,8 +17,8 @@ import { unavailableReason } from '../services/availability';
 import { findGames, type When, WHEN_LABELS } from '../services/discovery';
 import { cancelGame, createGame, inviteToGame, joinGame, leaveGame, sendMessage, toggleMute } from '../state/actions';
 import { nav } from '../state/nav';
-import { availCtx, clashes, distanceTo, firstName, gameById, isMinor, joinedPlayers, levelFor, messagesOf, myRow, playersOf, sportOrder, userById } from '../state/selectors';
-import { useApp } from '../state/store';
+import { availCtx, clashes, distanceTo, firstName, gameById, gameTitle, isMinor, joinedPlayers, levelFor, messagesOf, myRow, playersOf, sportOrder, userById } from '../state/selectors';
+import { getState, useApp } from '../state/store';
 import { ui } from '../state/ui';
 import type { ScreenComponentProps } from './routes';
 
@@ -120,7 +120,7 @@ export function PlayNowScreen() {
                   <b>
                     {sportName(fav.sport)} · {levelLabel(fav.level)} · {WHEN_LABELS[quickWhen]}
                   </b>
-                  <small>Your usual. One tap.</small>
+                  <small>Your usual</small>
                 </span>
                 <ArrowRight size={18} />
               </button>
@@ -352,6 +352,30 @@ export function GamesScreen({ params }: ScreenComponentProps) {
 
 // ---------------------------------------------------------------- game page
 
+/** Invite friends (or share a link) for a game. */
+export function openGameInvite(g: Game) {
+  if (needsAccount('invite')) return;
+  const s = getState();
+  const f = FACILITY_BY_ID[g.facilityId];
+  const left = g.maxPlayers - joinedPlayers(s, g.id).length;
+  const title = gameTitle(g);
+  const shareText = g.creatorId === 'me' ? `Join my game on BALLS: ${title}, ${fmtWhen(g.start)} at ${f.name}. ${left} ${left === 1 ? 'spot' : 'spots'} left.` : `${title} on BALLS: ${fmtWhen(g.start)} at ${f.name}.`;
+  openInvite({
+    title: 'Invite friends',
+    subtitle: `${title} · ${fmtWhen(g.start)}`,
+    sport: g.sport,
+    exclude: playersOf(s, g.id).filter((r) => r.status !== 'left').map((r) => r.userId),
+    onSend: (ids) => inviteToGame(g.id, ids),
+    share: { text: shareText, path: `g/${g.id}` },
+  });
+}
+
+/** Join a game: asks guests to sign up first, then shows the join and pay sheet. */
+export function openJoinGame(g: Game) {
+  if (needsAccount('join')) return;
+  ui.open('Join game', (close) => <JoinSheet g={g} close={close} />);
+}
+
 function JoinSheet({ g, close }: { g: Game; close: () => void }) {
   const s = useApp();
   const f = FACILITY_BY_ID[g.facilityId];
@@ -533,20 +557,13 @@ export function GameScreen({ params }: ScreenComponentProps) {
   const left = g.maxPlayers - joined.length;
   const organiser = g.creatorId === 'me';
   const creator = userById(s, g.creatorId);
-  const title = `${g.format ?? ''} ${sportName(g.sport)}`.trim();
+  const title = gameTitle(g);
   const past = new Date(g.end).getTime() < Date.now();
   const clash = !inGame && clashes(s, g.start, g.end, g.id);
-  const shareText = organiser ? `Join my ${sportName(g.sport).toLowerCase()} game on BALLS: ${fmtWhen(g.start)} at ${f.name}. ${left} ${left === 1 ? 'spot' : 'spots'} left.` : `${title} on BALLS: ${fmtWhen(g.start)} at ${f.name}.`;
+  const shareText = organiser ? `Join my game on BALLS: ${title}, ${fmtWhen(g.start)} at ${f.name}. ${left} ${left === 1 ? 'spot' : 'spots'} left.` : `${title} on BALLS: ${fmtWhen(g.start)} at ${f.name}.`;
 
   function invite() {
-    if (needsAccount('invite')) return;
-    openInvite({
-      title: 'Invite friends',
-      subtitle: `${title} · ${fmtWhen(g!.start)}`,
-      sport: g!.sport,
-      exclude: playersOf(s, g!.id).filter((r) => r.status !== 'left').map((r) => r.userId),
-      onSend: (ids) => inviteToGame(g!.id, ids),
-      share: { text: shareText, path: `g/${g!.id}` } });
+    openGameInvite(g!);
   }
 
   const more = () =>
@@ -618,7 +635,7 @@ export function GameScreen({ params }: ScreenComponentProps) {
   else
     footer = (
       <CtaBar label={<span className="cta-price">{g.pricePerPlayer ? money(g.pricePerPlayer) : 'Free'}<small>{g.pricePerPlayer ? ' per person' : ''}</small></span>} sub={left <= 2 ? `Only ${plural(left, 'spot')} left` : `${plural(left, 'spot')} left`}>
-        <Button size="lg" onClick={() => !needsAccount('join') && ui.open('Join game', (close) => <JoinSheet g={g} close={close} />)}>
+        <Button size="lg" onClick={() => openJoinGame(g)}>
           Join game
         </Button>
       </CtaBar>
@@ -648,7 +665,7 @@ export function GameScreen({ params }: ScreenComponentProps) {
             {Array.from({ length: 16 }, (_, i) => (
               <i key={i} style={{ ['--a' as string]: `${i * 22.5}deg`, ['--d' as string]: `${(i % 4) * 40}ms` }} />
             ))}
-            <span>You’re in!</span>
+            <span>You’re in</span>
           </div>
         )}
       </div>
@@ -656,7 +673,7 @@ export function GameScreen({ params }: ScreenComponentProps) {
         <div className="gamehead__sport">
           <SportBadge sport={g.sport} size={30} /> {sportName(g.sport)}
         </div>
-        <h1 className="gamehead__title">{title.toUpperCase()}</h1>
+        <h1 className="gamehead__title">{title}</h1>
         <div className="gamehead__when">
           {fmtDay(g.start)} · {fmtRange(g.start, g.end)}
         </div>

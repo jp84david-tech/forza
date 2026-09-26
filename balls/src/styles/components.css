@@ -1,17 +1,18 @@
-/* ------------------------------------------------------------------ sport hues */
+/* ------------------------------------------------------------------ sport hues
+ * One accent for every sport: the design is deliberately monochrome + lime. */
 
-.sport-football { --sport: #16995a; }
-.sport-basketball { --sport: #e0661f; }
-.sport-tennis { --sport: #7f9400; }
-.sport-padel { --sport: #0a8db0; }
-.sport-badminton { --sport: #7646d6; }
-.sport-volleyball { --sport: #c98f00; }
-.sport-cricket { --sport: #bf3a33; }
-.sport-rugby { --sport: #6a4a9c; }
-.sport-running { --sport: #e0502a; }
-.sport-gym { --sport: #4e5670; }
-.sport-swimming { --sport: #1c7ad0; }
-.sport-other { --sport: #c2417a; }
+.sport-football { --sport: var(--brand-text); }
+.sport-basketball { --sport: var(--brand-text); }
+.sport-tennis { --sport: var(--brand-text); }
+.sport-padel { --sport: var(--brand-text); }
+.sport-badminton { --sport: var(--brand-text); }
+.sport-volleyball { --sport: var(--brand-text); }
+.sport-cricket { --sport: var(--brand-text); }
+.sport-rugby { --sport: var(--brand-text); }
+.sport-running { --sport: var(--brand-text); }
+.sport-gym { --sport: var(--brand-text); }
+.sport-swimming { --sport: var(--brand-text); }
+.sport-other { --sport: var(--brand-text); }
 
 /* ------------------------------------------------------------------ buttons */
 
@@ -23,22 +24,21 @@
   gap: 8px;
   min-height: var(--h);
   padding: 0 18px;
-  border-radius: 14px;
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.005em;
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  font-size: 15.5px;
   white-space: nowrap;
-  transition: transform 120ms var(--ease), background 160ms, box-shadow 160ms, opacity 160ms;
+  transition: transform 120ms var(--ease), background 160ms, border-color 160ms, opacity 160ms;
   user-select: none;
   position: relative;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .btn.is-loading {
@@ -46,18 +46,16 @@
 }
 
 .btn--sm {
-  --h: 36px;
-  padding: 0 13px;
-  font-size: 13.5px;
-  border-radius: 11px;
+  --h: 34px;
+  padding: 0 14px;
+  font-size: 14px;
   gap: 6px;
 }
 
 .btn--lg {
-  --h: 52px;
+  --h: 50px;
   padding: 0 22px;
-  font-size: 16px;
-  border-radius: 16px;
+  font-size: 16.5px;
 }
 
 .btn--block {
@@ -72,26 +70,34 @@
 .btn--primary {
   background: var(--brand);
   color: var(--brand-ink);
-  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--brand) 80%, transparent);
 }
 
 .btn--primary:hover:not(:disabled) {
   background: var(--brand-strong);
 }
 
-.btn--secondary {
-  background: var(--surface-2);
-  color: var(--ink);
-}
-
-.btn--secondary:hover:not(:disabled) {
-  background: var(--surface-3);
-}
-
+/* Outlined, neutral. */
+.btn--secondary,
 .btn--outline {
-  background: var(--surface);
+  background: transparent;
   color: var(--ink);
-  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.btn--secondary:hover:not(:disabled),
+.btn--outline:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+/* Outlined in the accent, e.g. "Join" in a list. */
+.btn--accent {
+  background: transparent;
+  color: var(--brand-text);
+  box-shadow: inset 0 0 0 1px var(--brand-text);
+}
+
+.btn--accent:hover:not(:disabled) {
+  background: var(--brand-soft);
 }
 
 .btn--ghost {
@@ -110,17 +116,17 @@
 
 .btn--danger-outline {
   color: var(--danger);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--danger) 45%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent);
 }
 
 .btn--night {
-  background: rgb(255 255 255 / 12%);
+  background: transparent;
   color: #fff;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%);
 }
 
 .btn--night:hover:not(:disabled) {
-  background: rgb(255 255 255 / 18%);
+  background: rgb(255 255 255 / 8%);
 }
 
 .spinner {
@@ -198,10 +204,10 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 800;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 11px;
+  font-weight: 700;
   display: grid;
   place-items: center;
   box-shadow: 0 0 0 2px var(--bg);
@@ -215,7 +221,7 @@
   gap: 6px;
   min-height: 36px;
   padding: 0 14px;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   font-size: 14px;
@@ -249,9 +255,9 @@
 .chip__count {
   min-width: 18px;
   height: 18px;
-  border-radius: 9px;
+  border-radius: 6px;
   background: var(--brand);
-  color: #fff;
+  color: var(--brand-ink);
   font-size: 11px;
   display: grid;
   place-items: center;
@@ -282,7 +288,7 @@
   grid-template-columns: repeat(var(--n), 1fr);
   padding: 4px;
   background: var(--surface-2);
-  border-radius: 14px;
+  border-radius: 8px;
   isolation: isolate;
 }
 
@@ -295,7 +301,7 @@
   width: calc((100% - 8px) / var(--n));
   transform: translateX(calc(100% * var(--i)));
   background: var(--surface);
-  border-radius: 10px;
+  border-radius: 6px;
   box-shadow: var(--shadow-1);
   transition: transform 260ms var(--ease);
 }
@@ -303,7 +309,7 @@
 .seg__opt {
   min-height: 36px;
   padding: 0 8px;
-  border-radius: 10px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
   color: var(--ink-2);
@@ -322,9 +328,9 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: 6px;
   background: var(--brand);
-  color: #fff;
+  color: var(--brand-ink);
   font-size: 11px;
   font-weight: 750;
   display: grid;
@@ -344,7 +350,7 @@
   gap: 4px;
   height: 24px;
   padding: 0 9px;
-  border-radius: 999px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
@@ -515,11 +521,9 @@
 }
 
 .section__title {
-  font-size: 19px;
+  font-size: 18px;
   line-height: 1.2;
-  font-weight: 800;
-  font-stretch: 108%;
-  letter-spacing: -0.01em;
+  font-weight: 700;
 }
 
 .pad-x .section__head {
@@ -585,7 +589,7 @@
 .row__icon {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: 6px;
   display: grid;
   place-items: center;
   background: var(--surface-2);
@@ -725,7 +729,7 @@
   width: 100%;
   min-height: 48px;
   padding: 11px 14px;
-  border-radius: 13px;
+  border-radius: 6px;
   border: 0;
   background: var(--surface);
   box-shadow: inset 0 0 0 1.5px var(--line-strong);
@@ -775,7 +779,7 @@ select.input {
   display: grid;
   place-items: center;
   color: var(--ink-3);
-  border-radius: 10px;
+  border-radius: 6px;
 }
 
 .input-wrap--prefix .input {
@@ -808,7 +812,7 @@ select.input {
   position: relative;
   width: 50px;
   height: 30px;
-  border-radius: 15px;
+  border-radius: 8px;
   background: var(--surface-3);
   flex: none;
   transition: background 200ms;
@@ -839,7 +843,7 @@ select.input {
   align-items: center;
   gap: 4px;
   background: var(--surface-2);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 4px;
   flex: none;
 }
@@ -847,7 +851,7 @@ select.input {
 .stepper__btn {
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: 6px;
   display: grid;
   place-items: center;
   background: var(--surface);
@@ -886,7 +890,7 @@ select.input {
   align-items: center;
   gap: 12px;
   padding: 13px 14px;
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: inset 0 0 0 1.5px var(--line);
   cursor: pointer;
@@ -935,7 +939,7 @@ input[type='range'] {
   gap: 8px;
   align-items: flex-start;
   padding: 11px 13px;
-  border-radius: 13px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--ink-2);
   font-size: 13.5px;
@@ -966,7 +970,7 @@ input[type='range'] {
   display: flex;
   gap: 10px;
   padding: 14px;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .alert--danger {
@@ -1053,7 +1057,7 @@ input[type='range'] {
 .empty__icon {
   width: 56px;
   height: 56px;
-  border-radius: 18px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   background: var(--brand-soft);
@@ -1064,7 +1068,7 @@ input[type='range'] {
 .empty--compact .empty__icon {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 8px;
   margin-bottom: 4px;
 }
 
@@ -1158,7 +1162,7 @@ input[type='range'] {
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-radius: 26px 26px 0 0;
+  border-radius: 10px 10px 0 0;
   box-shadow: var(--shadow-3);
   animation: sheet-in 360ms var(--ease) both;
   transition: transform 260ms var(--ease);
@@ -1196,7 +1200,6 @@ input[type='range'] {
 .sheet__title {
   font-size: 19px;
   font-weight: 800;
-  font-stretch: 106%;
   line-height: 1.2;
 }
 
@@ -1232,7 +1235,7 @@ input[type='range'] {
   width: 100%;
   max-width: 360px;
   background: var(--bg);
-  border-radius: 24px;
+  border-radius: 10px;
   box-shadow: var(--shadow-2);
   animation: dialog-in 260ms var(--ease) both;
   outline: none;
@@ -1251,7 +1254,6 @@ input[type='range'] {
 .dialog__title {
   font-size: 19px;
   font-weight: 800;
-  font-stretch: 106%;
 }
 
 .dialog__body {
@@ -1337,7 +1339,7 @@ input[type='range'] {
   align-items: center;
   gap: 12px;
   padding: 12px 12px 12px 16px;
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--night);
   color: #fff;
   box-shadow: 0 12px 30px -10px rgb(0 0 0 / 45%);
@@ -1364,7 +1366,7 @@ input[type='range'] {
 .toast__action {
   flex: none;
   padding: 7px 12px;
-  border-radius: 10px;
+  border-radius: 6px;
   background: rgb(255 255 255 / 14%);
   color: #fff;
   font-weight: 700;
@@ -1387,7 +1389,7 @@ input[type='range'] {
   gap: 10px;
   min-height: 46px;
   padding: 0 14px;
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line), var(--shadow-1);
   color: var(--ink-3);
@@ -1447,7 +1449,7 @@ input[type='range'] {
 .sportcard__icon {
   width: 64px;
   height: 64px;
-  border-radius: 20px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   background: var(--surface-2);
@@ -1480,7 +1482,7 @@ input[type='range'] {
 .sportcard--lg {
   width: 100%;
   padding: 14px 6px 12px;
-  border-radius: 20px;
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line);
 }
@@ -1492,7 +1494,7 @@ input[type='range'] {
 .sportcard--lg .sportcard__icon {
   width: 56px;
   height: 56px;
-  border-radius: 18px;
+  border-radius: 10px;
 }
 
 .sportcard--edit .sportcard__icon {
@@ -1518,7 +1520,7 @@ input[type='range'] {
   gap: 5px;
   height: 28px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--surface-2);
   font-size: 12.5px;
   font-weight: 620;
@@ -1617,7 +1619,7 @@ input[type='range'] {
 
 .avail--overlay.avail--walk-up,
 .avail--overlay.avail--closed {
-  color: #2733e0;
+  color: #3f6b00;
 }
 
 .rel {
@@ -1850,7 +1852,7 @@ input[type='range'] {
 .fcard__sport {
   width: 22px;
   height: 22px;
-  border-radius: 7px;
+  border-radius: 6px;
   display: grid;
   place-items: center;
   background: var(--surface-2);
@@ -2040,7 +2042,7 @@ input[type='range'] {
   display: grid;
   justify-items: center;
   padding: 7px 0;
-  border-radius: 13px;
+  border-radius: 6px;
   background: var(--brand-soft);
   color: var(--brand-text);
   line-height: 1;
@@ -2141,7 +2143,7 @@ input[type='range'] {
   gap: 5px;
   height: 26px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: 4px;
   background: rgb(10 12 24 / 62%);
   color: #fff;
   font-size: 12px;
@@ -2357,7 +2359,7 @@ input[type='range'] {
 .bcard__media {
   width: 84px;
   height: 84px;
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
   flex: none;
 }
@@ -2706,13 +2708,13 @@ input[type='range'] {
 
 .marker.is-selected .marker__pin {
   background: var(--brand);
-  color: #fff;
+  color: var(--brand-ink);
   transform: scale(1.18);
   box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--brand) 70%, transparent), 0 0 0 2.5px var(--bg);
 }
 
 .marker.is-selected .marker__icon {
-  background: #fff;
+  background: var(--brand-ink);
   color: var(--brand);
 }
 
@@ -2727,7 +2729,7 @@ input[type='range'] {
 
 .map__zoom {
   display: none;
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--surface);
   box-shadow: var(--shadow-2);
@@ -2754,7 +2756,7 @@ input[type='range'] {
 .map__locate {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: var(--surface);

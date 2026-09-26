@@ -56,6 +56,8 @@ export interface Profile {
 
 export interface Settings {
   theme: 'system' | 'light' | 'dark';
+  /** Set once the person picks a theme themselves (older saves defaulted to 'system'). */
+  themeChosen?: boolean;
   simulateErrors: boolean;
 }
 
@@ -150,7 +152,7 @@ export function emptyState(settings?: Settings): AppState {
     priceOverrides: {},
     alerts: [],
     mutedChats: [],
-    settings: settings ?? { theme: 'system', simulateErrors: false },
+    settings: settings ?? { theme: 'dark', simulateErrors: false },
   };
 }
 
@@ -165,7 +167,10 @@ function load(): AppState {
     const parsed = JSON.parse(raw) as AppState;
     if (parsed?.v !== 1) return emptyState();
     // Fill any fields added since the state was saved.
-    return { ...emptyState(), ...parsed };
+    const s = { ...emptyState(), ...parsed };
+    // The redesign is dark first: move old "match device" defaults to dark.
+    if (s.settings && !s.settings.themeChosen && s.settings.theme === 'system') s.settings = { ...s.settings, theme: 'dark' };
+    return s;
   } catch {
     return emptyState();
   }

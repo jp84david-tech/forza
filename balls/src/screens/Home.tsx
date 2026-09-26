@@ -1,25 +1,22 @@
-import { Bell, CalendarPlus, ChevronDown, Compass, GraduationCap, MapPin, MessageCircle, PartyPopper, Plus, Search, Ticket, Users, Zap } from 'lucide-react';
+import { Bell, Check, MessageCircle, Navigation, Search, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Artwork } from '../components/Artwork';
-import { FacilityCard, GameCard, SportCard } from '../components/cards';
-import { SportIcon } from '../components/icons';
+import { Logo } from '../components/icons';
 import { InstallBanner } from '../components/Install';
-import { DirectionsButton, openLocation } from '../components/sheets';
-import { Button, EmptyState, ErrorState, IconButton, Section, SkeletonCard } from '../components/ui';
+import { openDirections } from '../components/sheets';
+import { Avatar, Button, EmptyState, ErrorState, IconButton, Row, Section, Skeleton } from '../components/ui';
 import { FACILITIES, FACILITY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/facilities';
-import { FEED } from '../data/discover';
 import { sportName } from '../data/sports';
-import type { SportId } from '../data/types';
-import { cx, money, plural, scrollEl } from '../lib/format';
-import { fmtCountdown, fmtDay, fmtTime, greeting, startOfDay, timeAgo } from '../lib/time';
+import type { Booking, Game, SportId } from '../data/types';
+import { cx, money, moneyExact, plural, scrollEl } from '../lib/format';
+import { fmtDay, fmtShortDate, fmtTime, startOfDay, timeAgo, weekdayShort } from '../lib/time';
 import { useResource } from '../services/api';
 import { daySlots } from '../services/availability';
 import { findGames, rankFacilities } from '../services/discovery';
 import { nav } from '../state/nav';
-import { availCtx, type Activity, sportOrder, unreadCount, upcoming } from '../state/selectors';
+import { availCtx, type Activity, gameById, gameTitle, joinedPlayers, myRow, playersOf, sportOrder, unreadCount, upcoming, userById } from '../state/selectors';
 import { type AppState, useApp } from '../state/store';
+import { openGameInvite, openJoinGame } from './Play';
 import type { ScreenComponentProps } from './routes';
-import { analytics } from '../services/analytics';
 
 function useTick(ms: number) {
   const [, set] = useState(0);
@@ -29,132 +26,236 @@ function useTick(ms: number) {
   }, [ms]);
 }
 
-function NextUp({ item }: { item: Activity }) {
+/** "Thu 1 Oct", or Today / Tomorrow. */
+function shortDay(d: string | Date) {
+  const x = new Date(d);
+  const rel = fmtDay(x, { tonight: false });
+  return rel === 'Today' || rel === 'Tomorrow' ? rel : `${weekdayShort(x)} ${fmtShortDate(x)}`;
+}
+
+/** Big countdown: ["5d", "2h"], ["3h", "20m"], ["45m"]. */
+function countdown(start: string): string[] {
+  const mins = Math.max(0, Math.floor((new Date(start).getTime() - Date.now()) / 60_000));
+  if (mins < 60) return [`${mins}m`];
+  const h = Math.floor(mins / 60);
+  if (h < 24) return [`${h}h`, `${mins % 60}m`];
+  return [`${Math.floor(h / 24)}d`, `${h % 24}h`];
+}
+
+// ---------------------------------------------------------------- your next game
+
+function NextGame({ item }: { item: Activity }) {
   useTick(30_000);
-  const isBooking = item.kind === 'booking';
-  const f = FACILITY_BY_ID[isBooking ? item.booking.facilityId : item.game.facilityId];
-  const sport = isBooking ? item.booking.sport : item.game.sport;
-  const gameId = isBooking ? item.booking.gameId : item.game.id;
-  const space = isBooking ? SPACE_BY_ID[item.booking.spaceId] : undefined;
+  const s = useApp();
+  const booking: Booking | undefined = item.kind === 'booking' ? item.booking : undefined;
+  const game: Game | undefined = item.kind === 'game' ? item.game : booking?.gameId ? gameById(s, booking.gameId) : undefined;
+  const f = FACILITY_BY_ID[booking?.facilityId ?? game!.facilityId];
+  const space = SPACE_BY_ID[booking?.spaceId ?? game?.spaceId ?? ''];
   const started = new Date(item.start).getTime() <= Date.now();
-  const open = () => (isBooking ? nav.go('bookings', 'booking', { id: item.id }) : nav.push('game', { id: item.id }));
+  const open = () => (booking ? nav.go('bookings', 'booking', { id: booking.id }) : nav.push('game', { id: game!.id }));
+
+  const name = game ? (game.format ?? sportName(game.sport)) : space ? space.name : sportName(booking!.sport);
+  const meta = [shortDay(item.start), fmtTime(item.start), space?.name].filter(Boolean).join(' · ');
+
+  // Who's in and who's paid.
+  const joined = game ? joinedPlayers(s, game.id) : [];
+  const rows = game ? playersOf(s, game.id).filter((r) => r.status === 'joined') : [];
+  const mine = game ? myRow(s, game.id) : undefined;
+  const total = game ? game.maxPlayers : booking?.split?.length ?? 0;
+  const filled = game ? joined.length : booking?.split?.filter((x) => x.status === 'paid').length ?? 0;
+  const organiser = game ? userById(s, game.creatorId) : undefined;
+  const latest = rows.filter((r) => r.userId !== 'me' && r.role !== 'organiser').sort((a, b) => b.at.localeCompare(a.at))[0];
+  const latestUser = latest ? userById(s, latest.userId) : undefined;
+  const people = rows.map((r) => userById(s, r.userId)).filter((u): u is NonNullable<typeof u> => !!u).slice(0, 3);
+  const extra = Math.max(0, rows.length - people.length);
+  const spots = game ? game.maxPlayers - joined.length : 0;
+
+  let paid: string;
+  if (booking) {
+    const myShare = booking.split?.find((x) => x.userId === 'me' || x.organiser);
+    paid = booking.split ? `You’ve paid ${moneyExact(myShare?.amount ?? booking.total)}` : `Paid ${moneyExact(booking.total)}`;
+  } else if (game?.creatorId === 'me') paid = 'You’re organising';
+  else if (!game?.pricePerPlayer) paid = 'Free to play';
+  else paid = mine?.payment === 'paid' ? `You’ve paid ${moneyExact(game.pricePerPlayer)}` : `${moneyExact(game.pricePerPlayer)} to pay`;
+
+  const cd = countdown(item.start);
   return (
-    <section className="nextup" aria-label="Your next game">
-      <button type="button" className="nextup__hit" onClick={open} aria-label="Open your next game" />
-      <div className="nextup__art" aria-hidden="true">
-        <Artwork art={{ ...f.images[0], time: new Date(item.start).getHours() >= 18 ? 'night' : f.images[0].time }} />
+    <section className="nextgame" aria-label={game ? 'Your next game' : 'Your next booking'}>
+      <div className="nextgame__head">
+        <button type="button" className="nextgame__title" onClick={open}>
+          <span className="eyebrow">{game ? 'Your next game' : 'Your next booking'}</span>
+          <h2>
+            {name} at {f.name}
+          </h2>
+          <span className="nextgame__meta">{meta}</span>
+        </button>
+        <div className="nextgame__count" aria-label={started ? 'On now' : `Starts in ${cd.join(' ')}`}>
+          {started ? <b>Now</b> : cd.map((x) => <b key={x}>{x}</b>)}
+          <span>{started ? 'in progress' : game ? 'to kick-off' : 'to go'}</span>
+        </div>
       </div>
-      <div className="nextup__body">
-        <div className="nextup__top">
-          <span className="eyebrow eyebrow--light">Your next game</span>
-          <span className="nextup__count">{started ? 'On now' : `Starts in ${fmtCountdown(item.start)}`}</span>
-        </div>
-        <h2 className="nextup__when">
-          {fmtDay(item.start)} · {fmtTime(item.start)}
-        </h2>
-        <div className="nextup__where">
-          <SportIcon sport={sport} size={15} />
-          <span>
-            {f.name}
-            {space ? ` · ${space.name}` : ''}
-          </span>
-        </div>
-        <div className="nextup__actions">
-          <DirectionsButton f={f} variant="primary" size="sm" />
-          {gameId && (
-            <Button size="sm" variant="night" icon={<MessageCircle size={16} />} onClick={() => nav.push('chat', { id: gameId })}>
-              Chat
-            </Button>
-          )}
-        </div>
+
+      <div className="nextgame__status">
+        <p>
+          <Check size={17} className="nextgame__tick" /> {paid}
+        </p>
+        {total > 0 && (
+          <>
+            <p>
+              <Users size={17} /> {game ? `${filled} of ${total} players confirmed` : `${filled} of ${total} paid their share`}
+            </p>
+            <div className="segbar" role="img" aria-label={`${filled} of ${total}`}>
+              {Array.from({ length: Math.min(total, 22) }, (_, i) => (
+                <span key={i} className={cx(i < filled && 'is-on')} />
+              ))}
+            </div>
+          </>
+        )}
+        {game && people.length > 0 && (
+          <div className="nextgame__people">
+            <span className="nextgame__faces">
+              {people.map((u) => (
+                <Avatar key={u.id} name={u.name} color={u.color} photo={u.photo} size={30} />
+              ))}
+              {extra > 0 && <span className="nextgame__more">+{extra}</span>}
+            </span>
+            <span className="nextgame__who">
+              <span>{organiser?.id === 'me' ? 'Organised by you' : `Organised by ${organiser?.name.split(' ')[0] ?? 'the venue'}`}</span>
+              {latestUser && (
+                <span>
+                  {latestUser.name.split(' ')[0]} joined {timeAgo(latest!.at).toLowerCase()}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="nextgame__actions">
+        {game && spots > 0 && !started ? (
+          <Button block onClick={() => openGameInvite(game)}>
+            Invite {spots} more {spots === 1 ? 'player' : 'players'}
+          </Button>
+        ) : (
+          <Button block icon={<Navigation size={17} />} onClick={() => openDirections(f)}>
+            Directions
+          </Button>
+        )}
+        {game && (
+          <IconButton label="Group chat" className="nextgame__chat" onClick={() => nav.push('chat', { id: game.id })}>
+            <MessageCircle size={20} />
+          </IconButton>
+        )}
       </div>
     </section>
   );
 }
 
-/** "Tennis free tonight": slots at nearby venues for the sport this user plays most. */
-function FreeTonight({ s, sport }: { s: AppState; sport: SportId }) {
-  const ctx = availCtx(s);
-  const now = new Date();
-  const day = now.getHours() >= 21 ? new Date(startOfDay().getTime() + 86_400_000) : startOfDay();
-  const rows = useMemo(
-    () =>
-      rankFacilities(
-        s,
-        FACILITIES.filter((f) => spacesFor(f.id).some((x) => x.sport === sport && !x.walkUp)),
-        sport,
-      )
-        .slice(0, 6)
-        .map(({ f, distance }) => {
-          const slots = spacesFor(f.id)
-            .filter((x) => x.sport === sport && !x.walkUp)
-            .flatMap((sp) => daySlots(sp, day, 60, ctx).filter((x) => x.state === 'available' && x.start.getHours() >= 17).map((x) => ({ ...x, space: sp })));
-          const unique = new Map<number, (typeof slots)[number]>();
-          slots.forEach((x) => {
-            const k = x.start.getTime();
-            if (!unique.has(k) || unique.get(k)!.price > x.price) unique.set(k, x);
-          });
-          return { f, distance, slots: [...unique.values()].sort((a, b) => a.start.getTime() - b.start.getTime()).slice(0, 4) };
-        })
-        .filter((r) => r.slots.length)
-        .slice(0, 3),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s, sport],
-  );
-  if (!rows.length) return null;
-  const tonight = day.getTime() === startOfDay().getTime();
+function NothingBooked() {
   return (
-    <Section title={`${sportName(sport)} free ${tonight ? 'tonight' : 'tomorrow evening'}`} action="See all" onAction={() => nav.go('explore', undefined, { sport, view: 'list' })}>
-      <div className="freetonight">
-        {rows.map(({ f, distance, slots }) => (
-          <div key={f.id} className="ft-row">
-            <button type="button" className="ft-row__head" onClick={() => nav.push('facility', { id: f.id, sport })}>
-              <b>{f.name}</b>
-              <span>
-                {distance.toFixed(1)} mi · from {money(Math.min(...slots.map((x) => x.price)))}
-              </span>
-            </button>
-            <div className="ft-row__slots">
-              {slots.map((x) => (
-                <button
-                  key={x.start.toISOString()}
-                  type="button"
-                  className="slot-chip"
-                  onClick={() => nav.push('book', { facilityId: f.id, spaceId: x.space.id, start: x.start.toISOString(), duration: '60' })}
-                  aria-label={`Book ${x.space.name} at ${fmtTime(x.start)} for ${money(x.price)}`}
-                >
-                  {fmtTime(x.start).replace(':00', '')}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+    <section className="nextgame nextgame--empty" aria-label="Nothing booked">
+      <span className="eyebrow">Nothing booked yet</span>
+      <h2>Find a game or book a pitch</h2>
+      <p className="nextgame__meta">Join a game that needs players, or book a free slot at a venue nearby.</p>
+      <div className="nextgame__actions nextgame__actions--two">
+        <Button block onClick={() => nav.push('playNow')}>
+          Find a game
+        </Button>
+        <Button block variant="secondary" onClick={() => nav.go('explore', undefined, { view: 'list' })}>
+          Book a pitch
+        </Button>
       </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- lists
+
+function OpenGames({ s }: { s: AppState }) {
+  const games = useMemo(() => findGames(s, { when: 'week' }).filter((x) => x.distance <= Math.max(s.prefs.distance, 3) * 1.6).slice(0, 5), [s]);
+  return (
+    <Section title="Open games near you" action={games.length ? 'See all' : undefined} onAction={() => nav.push('games')}>
+      {games.length ? (
+        <ul className="olist">
+          {games.map(({ g, distance }) => {
+            const f = FACILITY_BY_ID[g.facilityId];
+            const left = g.maxPlayers - joinedPlayers(s, g.id).length;
+            return (
+              <li key={g.id} className="orow">
+                <button type="button" className="orow__main" onClick={() => nav.push('game', { id: g.id })}>
+                  <span className="orow__when">
+                    {shortDay(g.start)} · {fmtTime(g.start)}
+                  </span>
+                  <b className="orow__title">{gameTitle(g)}</b>
+                  <span className="orow__meta">
+                    {f.name} · {distance.toFixed(1)} mi · {g.pricePerPlayer ? money(g.pricePerPlayer) : 'Free'} · <span className={cx(left <= 1 && 'orow__hot')}>{plural(left, 'spot')} left</span>
+                  </span>
+                </button>
+                <Button size="sm" variant="accent" onClick={() => openJoinGame(g)} aria-label={`Join ${gameTitle(g)}, ${shortDay(g.start)} ${fmtTime(g.start)}`}>
+                  Join
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <EmptyState compact icon={<Users size={22} />} title="No open games nearby this week" body="Start one and players nearby will see it." action={{ label: 'Create a game', onClick: () => nav.push('createGame') }} />
+      )}
     </Section>
   );
 }
 
-const QUICK = [
-  { id: 'find', label: 'Find a game', icon: Users, go: () => nav.push('games') },
-  { id: 'book', label: 'Book a venue', icon: CalendarPlus, go: () => nav.go('explore', undefined, { view: 'list' }) },
-  { id: 'create', label: 'Create a game', icon: Plus, go: () => nav.push('createGame') },
-  { id: 'explore', label: 'Explore nearby', icon: Compass, go: () => nav.go('explore', undefined, { view: 'map' }) },
-  { id: 'training', label: 'Find training', icon: GraduationCap, go: () => nav.push('training') },
-  { id: 'events', label: 'Events', icon: Ticket, go: () => nav.push('events') },
-];
+/** The first free evening hour at nearby venues, for the sports this person plays. */
+function FreeToBook({ s }: { s: AppState }) {
+  const late = new Date().getHours() >= 21;
+  const dayKey = (late ? new Date(startOfDay().getTime() + 86_400_000) : startOfDay()).getTime();
+  const rows = useMemo(() => {
+    const sports = sportOrder(s).slice(0, 3) as SportId[];
+    const day = new Date(dayKey);
+    const ctx = availCtx(s);
+    return rankFacilities(s, FACILITIES.filter((f) => spacesFor(f.id).some((x) => sports.includes(x.sport) && !x.walkUp)))
+      .slice(0, 10)
+      .map(({ f, distance }) => {
+        const slot = spacesFor(f.id)
+          .filter((x) => sports.includes(x.sport) && !x.walkUp)
+          .flatMap((sp) => daySlots(sp, day, 60, ctx).filter((x) => x.state === 'available' && x.start.getHours() >= 17).map((x) => ({ ...x, space: sp })))
+          .sort((a, b) => a.start.getTime() - b.start.getTime() || a.price - b.price)[0];
+        return slot ? { f, distance, slot } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .slice(0, 4);
+  }, [s, dayKey]);
+  if (!rows.length) return null;
+  return (
+    <Section title={late ? 'Free to book tomorrow evening' : 'Free to book tonight'} action="See all" onAction={() => nav.go('explore', undefined, { view: 'list' })}>
+      <ul className="olist">
+        {rows.map(({ f, distance, slot }) => (
+          <li key={f.id} className="orow">
+            <button type="button" className="orow__main" onClick={() => nav.push('facility', { id: f.id, sport: slot.space.sport })}>
+              <span className="orow__when">
+                {shortDay(slot.start)} · {fmtTime(slot.start)}
+              </span>
+              <b className="orow__title">{f.name}</b>
+              <span className="orow__meta">
+                {slot.space.name} · {distance.toFixed(1)} mi · {money(slot.price)}
+              </span>
+            </button>
+            <Button size="sm" variant="accent" onClick={() => nav.push('book', { facilityId: f.id, spaceId: slot.space.id, start: slot.start.toISOString(), duration: '60' })} aria-label={`Book ${f.name} at ${fmtTime(slot.start)}`}>
+              Book
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------- screen
 
 export function HomeScreen({ retap }: ScreenComponentProps) {
   const s = useApp();
   const { status, retry } = useResource('home');
-  const name = s.account?.firstName ?? '';
   const next = upcoming(s)[0];
-  const soon = next && new Date(next.start).getTime() - Date.now() < 7 * 86_400_000;
-  const order = sportOrder(s);
-  const games = useMemo(() => findGames(s, { when: 'week' }).filter((x) => x.distance <= Math.max(s.prefs.distance, 3) * 1.6).slice(0, 8), [s]);
-  const tonightCount = useMemo(() => findGames(s, { when: new Date().getHours() >= 21 ? 'tomorrow' : 'tonight' }).length, [s]);
-  const popular = useMemo(() => rankFacilities(s).slice(0, 8), [s]);
-  const bookedSports = s.bookings.map((b) => b.sport);
-  const topSport = (bookedSports.sort((a, b) => bookedSports.filter((x) => x === b).length - bookedSports.filter((x) => x === a).length)[0] ?? order[0]) as SportId | undefined;
   const unread = unreadCount(s);
   const [scrollBox, setScrollBox] = useState<HTMLDivElement | null>(null);
 
@@ -165,169 +266,54 @@ export function HomeScreen({ retap }: ScreenComponentProps) {
   return (
     <div className="screen-inner hdr-home">
       <header className="homebar">
-        <button type="button" className="locbtn" onClick={openLocation} aria-label={`Location: ${s.location?.label ?? 'not set'}. Change location`}>
-          <MapPin size={16} strokeWidth={2.4} />
-          <span>{s.location?.label ?? 'Set location'}</span>
-          <ChevronDown size={16} />
-        </button>
+        <Logo size={30} />
         <div className="homebar__actions">
-          <IconButton label="Search" onClick={() => nav.push('search')}>
-            <Search size={22} />
+          <IconButton label="Search" className="iconbtn--ring" onClick={() => nav.push('search')}>
+            <Search size={20} />
           </IconButton>
-          <IconButton label="Notifications" onClick={() => nav.push('notifications')} badge={unread}>
-            <Bell size={22} />
+          <IconButton label="Notifications" className="iconbtn--ring" onClick={() => nav.push('notifications')} badge={unread}>
+            <Bell size={20} />
           </IconButton>
         </div>
       </header>
-      <div className="scroll" ref={setScrollBox}>
-        <div className="greet">
-          <h1 className="greet__title">
-            {greeting()}
-            {name && (
-              <>
-                , <span>{name}</span>
-              </>
-            )}
-          </h1>
-          <p className="greet__sub">What are you playing today?</p>
-        </div>
-
-        {soon && next && <NextUp item={next} />}
-
-        <div className="hscroll hscroll--sports" role="list" aria-label="Sports">
-          {order.map((sp) => (
-            <div role="listitem" key={sp}>
-              <SportCard
-                sport={sp}
-                onClick={() => {
-                  analytics.track('sport_selected', { sport: sp, from: 'home' });
-                  nav.push('sport', { id: sp });
-                }}
-              />
-            </div>
-          ))}
-          <div role="listitem">
-            <button type="button" className="sportcard sportcard--edit" onClick={() => nav.push('editSports')}>
-              <span className="sportcard__icon">
-                <Plus size={22} />
-              </span>
-              <span className="sportcard__label">Edit</span>
-            </button>
-          </div>
-        </div>
-
-        <button type="button" className="playnow" onClick={() => nav.push('playNow')}>
-          <span className="playnow__radar" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-            <Zap size={26} fill="currentColor" />
-          </span>
-          <span className="playnow__text">
-            <span className="playnow__title">Play Now</span>
-            <span className="playnow__sub">{tonightCount ? `${plural(tonightCount, 'game')} ${new Date().getHours() >= 21 ? 'tomorrow' : 'tonight'} ${tonightCount === 1 ? 'needs' : 'need'} players near you` : 'Find a game that needs players in seconds'}</span>
-          </span>
-          <span className="playnow__go" aria-hidden="true">
-            Go
-          </span>
-        </button>
-
-        <div className="quick" role="list" aria-label="Quick actions">
-          {QUICK.map((q) => (
-            <button key={q.id} type="button" role="listitem" className="quick__item" onClick={q.go}>
-              <span className="quick__icon">
-                <q.icon size={20} strokeWidth={2} />
-              </span>
-              <span className="quick__label">{q.label}</span>
-            </button>
-          ))}
-        </div>
+      <div className="scroll home" ref={setScrollBox}>
+        {next ? <NextGame item={next} /> : <NothingBooked />}
 
         <InstallBanner />
 
         {status === 'error' ? (
           <ErrorState onRetry={retry} />
         ) : status === 'loading' ? (
-          <>
-            <Section title="Nearby today">
-              <div className="hscroll">
-                <SkeletonCard variant="tile" />
-                <SkeletonCard variant="tile" />
-              </div>
-            </Section>
-            <Section title="Popular near you">
-              <div className="hscroll">
-                <SkeletonCard variant="wide" />
-                <SkeletonCard variant="wide" />
-              </div>
-            </Section>
-          </>
+          <Section title="Open games near you">
+            <div className="olist">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="orow">
+                  <div className="orow__main">
+                    <Skeleton w={110} h={12} />
+                    <Skeleton w={160} h={18} />
+                    <Skeleton w={220} h={12} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Section>
         ) : (
           <>
-            <Section title={games.some((x) => new Date(x.g.start).toDateString() === new Date().toDateString()) ? 'Nearby today' : 'Coming up nearby'} action={games.length ? 'See all' : undefined} onAction={() => nav.push('games')}>
-              {games.length ? (
-                <div className="hscroll hscroll--cards">
-                  {games.map((x) => (
-                    <GameCard key={x.g.id} game={x.g} variant="wide" reasons={x.reasons} />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  compact
-                  icon={<Users size={24} />}
-                  title="No games nearby yet."
-                  body="Try expanding your distance."
-                  action={{ label: 'Start your own game', onClick: () => nav.push('createGame') }}
-                  secondary={{ label: 'Change distance', onClick: () => nav.push('settingsPlay') }}
-                />
-              )}
-            </Section>
-
-            {topSport && <FreeTonight s={s} sport={topSport} />}
-
-            <Section title="Popular near you" action="Map" onAction={() => nav.go('explore', undefined, { view: 'map' })}>
-              <div className="hscroll hscroll--cards">
-                {popular.map((x) => (
-                  <FacilityCard key={x.f.id} facility={x.f} variant="wide" reason={x.reasons[0]} />
-                ))}
+            <OpenGames s={s} />
+            <FreeToBook s={s} />
+            <Section title="More">
+              <div className="list-card">
+                <Row title="Play now" subtitle="Pick a sport and level, see what’s starting soon" onClick={() => nav.push('playNow')} />
+                <Row title="Create a game" subtitle="Post a game and let players nearby join" onClick={() => nav.push('createGame')} />
+                <Row title="Leagues and tournaments" onClick={() => nav.switchTab('compete')} />
+                <Row title="Training and coaches" onClick={() => nav.push('training')} />
+                <Row title="Events" onClick={() => nav.push('events')} />
+                <Row title="What’s new nearby" onClick={() => nav.push('feed')} />
               </div>
             </Section>
-
-            {!soon && (
-              <Section title="Upcoming">
-                {next ? (
-                  <NextUp item={next} />
-                ) : (
-                  <EmptyState compact icon={<CalendarPlus size={24} />} title="Nothing planned yet." body="Find something to play." action={{ label: 'Play Now', onClick: () => nav.push('playNow') }} secondary={{ label: 'Book a venue', onClick: () => nav.go('explore', undefined, { view: 'list' }) }} />
-                )}
-              </Section>
-            )}
-
-            <Section title="Around you" action="See all" onAction={() => nav.push('feed')}>
-              <div className="feed">
-                {FEED.slice(0, 3).map((item) => (
-                  <button key={item.id} type="button" className="feeditem" onClick={() => nav.push(item.link.route, item.link.params)}>
-                    {item.art && (
-                      <span className="feeditem__art">
-                        <Artwork art={item.art} />
-                      </span>
-                    )}
-                    <span className="feeditem__body">
-                      <span className="feeditem__kind">{item.kind === 'new-venue' ? 'New venue' : item.kind === 'popular-game' ? 'Popular game' : item.kind[0].toUpperCase() + item.kind.slice(1)} · {timeAgo(item.at)}</span>
-                      <b>{item.title}</b>
-                      <span>{item.body}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </Section>
-            <p className={cx('home-foot')}>
-              <PartyPopper size={15} aria-hidden="true" /> That’s everything near {s.location?.label ?? 'you'} for now.
-            </p>
           </>
         )}
       </div>
     </div>
   );
 }
-

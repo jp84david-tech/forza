@@ -191,7 +191,7 @@ function afterSignIn(wasGuest: boolean, message: string) {
 export function signInDemo() {
   const { settings, guest } = getState();
   setState(() => demoState(settings));
-  afterSignIn(guest, 'Logged in. Carry on where you left off.');
+  afterSignIn(guest, 'Logged in. You’re back where you left off.');
   analytics.track('signed_in', { method: 'email', fromGuest: guest });
 }
 
@@ -246,7 +246,7 @@ export function signUp(input: SignUpInput, method: 'email' | 'apple' | 'google' 
       },
     ],
   }));
-  afterSignIn(guest, `Welcome to BALLS, ${input.firstName}. You’re all set.`);
+  afterSignIn(guest, 'Account created. You’re back where you left off.');
   analytics.track('signed_up', { method, sports: input.sports.length, minor, fromGuest: guest });
 }
 
@@ -328,7 +328,7 @@ export function toggleAlert(facilityId: string) {
   later(30_000, () => {
     if (!getState().alerts.includes(facilityId)) return;
     notify(
-      { type: 'venue-alert', title: `Evening slot free at ${f.name}`, body: 'A 7 PM slot tomorrow has just opened up.', link: { route: 'facility', params: { id: facilityId } } },
+      { type: 'venue-alert', title: `Evening slot free at ${f.name}`, body: 'A 19:00 slot tomorrow has just opened up.', link: { route: 'facility', params: { id: facilityId } } },
       { toast: true },
     );
   });
@@ -680,7 +680,7 @@ export function inviteToGame(gameId: string, userIds: string[]) {
   });
 }
 
-const REPLIES = ['See you there 👍', 'Nice one, I’m in.', 'Running 5 mins late but I’ll be there.', 'Anyone got a spare pump?', 'Bibs sorted?', 'Can’t wait. Been a long week.'];
+const REPLIES = ['See you there', 'Nice one, I’m in.', 'Running 5 mins late but I’ll be there.', 'Anyone got a spare pump?', 'Bibs sorted?', 'Can’t wait. Been a long week.'];
 
 export function sendMessage(gameId: string, raw: string): { ok: boolean; error?: string } {
   const s = getState();
@@ -715,7 +715,7 @@ export function submitReview(input: { facilityId: string; rating: RatingBreakdow
     bookings: s.bookings.map((b) => (b.facilityId === input.facilityId && new Date(b.end).getTime() < Date.now() ? { ...b, reviewed: true } : b)),
   }));
   analytics.track('review_submitted', { facility: input.facilityId, rating: input.rating.overall });
-  ui.toast('Thanks! Your review is live.', { tone: 'success' });
+  ui.toast('Review posted', { tone: 'success' });
 }
 
 // ---------------------------------------------------------------- competitions & events

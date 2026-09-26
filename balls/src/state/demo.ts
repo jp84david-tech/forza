@@ -153,7 +153,7 @@ export function demoState(settings?: Settings): AppState {
     { id: 'n3', type: 'invitation', title: 'Leila invited you to padel', body: 'Doubles at Archway Padel Club. One spot left.', at: minsAgo(60 * 4), read: false, link: { route: 'game', params: { id: 'g6' } } },
     { id: 'n10', type: 'payment', title: 'Sam paid their share', body: '£5.00 for 5-a-side at Highgate Sports Centre.', at: minsAgo(60 * 5), read: true, link: { route: 'booking', params: { id: 'b1' } } },
     { id: 'n4', type: 'tournament', title: 'Highgate 5s Cup: 4 places left', body: 'Registration closes on Friday.', at: minsAgo(60 * 26), read: true, link: { route: 'tournament', params: { id: 't1' } } },
-    { id: 'n8', type: 'venue-alert', title: 'Evening courts free at Dartmouth Park', body: 'Courts 3 and 4 have opened up tomorrow from 6 PM.', at: minsAgo(60 * 50), read: true, link: { route: 'facility', params: { id: 'dartmouth-tennis' } } },
+    { id: 'n8', type: 'venue-alert', title: 'Evening courts free at Dartmouth Park', body: 'Courts 3 and 4 have opened up tomorrow from 18:00.', at: minsAgo(60 * 50), read: true, link: { route: 'facility', params: { id: 'dartmouth-tennis' } } },
     { id: 'n6', type: 'cancellation', title: 'Booking cancelled', body: 'Cage 2 at Camden Cages was cancelled.', at: ago(10, 9), read: true, link: { route: 'booking', params: { id: 'b6' } } },
     { id: 'n5', type: 'refund', title: 'Refund sent', body: `${'£'}${(b6src.booking.total / 100).toFixed(2)} is on its way to your Visa •••• 4242.`, at: ago(10, 9), read: true, link: { route: 'booking', params: { id: 'b6' } } },
     { id: 'n7', type: 'achievement', title: 'Achievement unlocked: 10 Games', body: 'Double figures. Nice.', at: ago(30, 21), read: true, link: { route: 'achievements' } },
@@ -161,7 +161,7 @@ export function demoState(settings?: Settings): AppState {
 
   return {
     ...base,
-    account: { id: 'me', email: 'david@example.com', firstName: 'David', lastName: 'Mensah', username: 'davidplays', color: '#3346F5', ageGroup: 'adult', joined: '2025-11-03', demo: true },
+    account: { id: 'me', email: 'david@example.com', firstName: 'David', lastName: 'Mensah', username: 'davidplays', color: '#3d5a4a', ageGroup: 'adult', joined: '2025-11-03', demo: true },
     onboarded: true,
     profile: {
       sports: [

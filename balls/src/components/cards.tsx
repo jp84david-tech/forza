@@ -11,7 +11,7 @@ import { reliability } from '../services/trust';
 import { toggleSaved } from '../state/actions';
 import { needsAccount } from './Join';
 import { nav } from '../state/nav';
-import { availCtx, bookingStatus, distanceTo, facilityDistance, facilityRating, facilitySports, isSaved, joinedPlayers, userById } from '../state/selectors';
+import { availCtx, bookingStatus, distanceTo, facilityDistance, facilityRating, facilitySports, gameTitle, isSaved, joinedPlayers, userById } from '../state/selectors';
 import { useApp } from '../state/store';
 import { Artwork, sportArt } from './Artwork';
 import { SportIcon } from './icons';
@@ -169,7 +169,7 @@ export function GameCard({ game: g, variant = 'row', reasons }: { game: Game; va
   const people = players.map((p) => userById(s, p.userId)).filter(Boolean) as User[];
   const d = distanceTo(s, f);
   const left = g.maxPlayers - players.length;
-  const title = `${g.format ? `${g.format} ` : ''}${sportName(g.sport)}`;
+  const title = gameTitle(g);
   const open = () => nav.push('game', { id: g.id });
   const mine = players.some((p) => p.userId === 'me');
 

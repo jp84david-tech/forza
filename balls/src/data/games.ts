@@ -74,7 +74,7 @@ const SEEDS: Seed[] = [
   {
     id: 'g18', sport: 'badminton', format: 'Doubles', facilityId: 'holloway-leisure', spaceId: 'hlc-b1', day: 1, hour: 20, level: 'casual', max: 4, price: 350,
     creator: 'u6', players: ['u14', 'u29'],
-    description: 'Casual doubles. One more needed!',
+    description: 'Casual doubles. One more needed.',
   },
   {
     id: 'g8', sport: 'volleyball', format: 'Beach 2v2', facilityId: 'hornsey-beach', spaceId: 'hbv-1', day: 3, hour: 19, level: 'casual', max: 8, price: 425,

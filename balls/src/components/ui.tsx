@@ -8,7 +8,7 @@ import { nav } from '../state/nav';
 // ---------------------------------------------------------------- buttons
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'night' | 'outline';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'night' | 'outline' | 'accent';
   size?: 'sm' | 'md' | 'lg';
   block?: boolean;
   loading?: boolean;

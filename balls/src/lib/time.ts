@@ -56,32 +56,20 @@ export const weekday = (d: Date) => WEEKDAYS[d.getDay()];
 export const weekdayShort = (d: Date) => WD_SHORT[d.getDay()];
 export const monthShort = (d: Date) => MONTHS[d.getMonth()];
 
-/** 7:00 PM */
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** 19:00 (24-hour, as used across the UK). */
 export function fmtTime(d: Date | string): string {
   const x = typeof d === 'string' ? new Date(d) : d;
-  let h = x.getHours();
-  const m = x.getMinutes();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+  return `${pad(x.getHours())}:${pad(x.getMinutes())}`;
 }
 
-/** 7 PM, or 7:30 PM */
-export function fmtTimeShort(d: Date | string): string {
-  const x = typeof d === 'string' ? new Date(d) : d;
-  const m = x.getMinutes();
-  let h = x.getHours();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return m ? `${h}:${String(m).padStart(2, '0')} ${ampm}` : `${h} ${ampm}`;
-}
+/** Same as fmtTime; kept for call sites that used to drop ":00". */
+export const fmtTimeShort = fmtTime;
 
-/** 7:00–8:00 PM (drops the first meridiem when both match). */
+/** 19:00–20:00 */
 export function fmtRange(start: Date | string, end: Date | string): string {
-  const a = fmtTime(start);
-  const b = fmtTime(end);
-  if (a.slice(-2) === b.slice(-2)) return `${a.slice(0, -3)}–${b}`;
-  return `${a}–${b}`;
+  return `${fmtTime(start)}–${fmtTime(end)}`;
 }
 
 /** Tonight / Today / Tomorrow / Saturday / Sat 4 Oct */
@@ -141,13 +129,11 @@ export function fmtDuration(mins: number): string {
   return `${Number.isInteger(h) ? h : h.toFixed(1)} hr${h === 1 ? '' : 's'}`;
 }
 
-/** Hour number to label: 19 → "7 PM" */
+/** Hour number to label: 19 → "19:00", 19.5 → "19:30" */
 export function hourLabel(h: number): string {
   const whole = Math.floor(h);
   const mins = Math.round((h - whole) * 60);
-  const ampm = whole >= 12 && whole < 24 ? 'PM' : 'AM';
-  const hh = whole % 12 || 12;
-  return mins ? `${hh}:${String(mins).padStart(2, '0')} ${ampm}` : `${hh} ${ampm}`;
+  return `${pad(whole % 24)}:${pad(mins)}`;
 }
 
 export function greeting(d: Date = now()): string {

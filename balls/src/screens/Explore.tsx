@@ -109,7 +109,7 @@ function Preview({ f, sport, onClose }: { f: Facility; sport?: SportId; onClose:
               nav.push('book', { facilityId: f.id, sport, ...(next ? { spaceId: next.space.id, start: next.start.toISOString() } : {}) });
             }}
           >
-            {next ? `Book ${fmtTime(next.start).replace(':00', '')}` : 'Check availability'}
+            {next ? `Book ${fmtTime(next.start)}` : 'Check availability'}
           </Button>
         ) : (
           <DirectionsButton f={f} variant="primary" label="Get directions" />
@@ -395,7 +395,7 @@ export function CompareScreen({ params }: ScreenComponentProps) {
             ))}
           </div>
         )}
-        <h2 className="compare-title">{hasFormats ? format.toUpperCase() : def.name.toUpperCase()}</h2>
+        <h2 className="compare-title">{hasFormats ? format : def.name}</h2>
         <p className="fine">Off-peak prices shown first. Peak applies weekday evenings and weekends.</p>
         {rows.length ? (
           <ol className="compare">

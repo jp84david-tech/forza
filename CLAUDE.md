@@ -23,8 +23,17 @@
 - Guests can browse without an account. An account is only asked for when doing something that needs one (booking, joining, saving, messaging, registering, reviewing, reporting, following). After signing up they return to the same screen.
 - Agreed order of work: quick wins first (guest browsing, installable app), then choose the one core thing BALLS does best and where it launches, then build the real backend around that choice.
 
+## Design (Sept 2026 redesign, from the owner's mockup and logos)
+
+- Dark first: background `#0b1410`, cards `#131f1a`, accent lime `#d4ff3a` with dark text on it. Light mode exists; accent text there is dark green `#3f6b00`. Tokens live in `balls/src/styles/tokens.css`.
+- Fonts: Barlow (UI), Barlow Condensed (big titles, countdowns), Archivo 900 only for the "balls" wordmark.
+- Small corner radii (4 to 10px), 1px outlines, no gradients or glows. Sport colours are all the one accent.
+- Logos: the lime square "b" mark is the app icon and splash (`public/icons`, drawn as vector in `components/icons.tsx`). The lockup (mark + "balls") is used everywhere else. The logo lime is `#9ef01a`, slightly different from the UI lime `#d4ff3a` (both as supplied).
+- 24-hour times ("19:30"). Plain, short copy: no slogans, exclamation marks or em dashes in UI text.
+
 ## Open questions for the owner
 
 - Launch focus: which sport, which core use (filling pickup games vs booking venues), which area.
+- Whether the logo lime and UI lime should be the same colour.
 - Whether to keep the name "BALLS" (memorable, but hard to search and may put off venue partners and app stores).
 - Backend and payments provider, once the focus is decided.

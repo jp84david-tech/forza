@@ -1,73 +1,73 @@
 /*
- * BALLS design tokens.
+ * balls design tokens.
  *
- * Palette: ultramarine ("Court Blue") as the single brand accent on cool,
- * blue-biased neutrals. Semantic colours (available / warning / danger) are
- * separate from the brand so "selected" and "available" never look alike.
- * Dark mode is a deep navy night-pitch palette, not an inversion.
+ * Dark first: near-black green with one accent, a bright lime. Lime is used
+ * for fills and highlights; text on lime is always dark. In light mode lime
+ * stays a fill colour and accent text switches to a dark green so it stays
+ * readable on white.
  */
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --bg: #0b1410;
+  --bg-elev: #0f1914;
+  --surface: #131f1a;
+  --surface-2: #1a2821;
+  --surface-3: #22322a;
+  --line: #1f2c25;
+  --line-strong: #2e3d35;
 
-  --bg: #f3f4f8;
-  --bg-elev: #f8f9fc;
-  --surface: #ffffff;
-  --surface-2: #eef0f6;
-  --surface-3: #e3e6ef;
-  --line: #e2e5ee;
-  --line-strong: #cbd0df;
+  --ink: #eef2ea;
+  --ink-2: #a7b1a9;
+  --ink-3: #758078;
+  --ink-inverse: #0b1410;
 
-  --ink: #0c0f1e;
-  --ink-2: #4b5270;
-  --ink-3: #7e849d;
-  --ink-inverse: #ffffff;
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #1f2d13;
+  --brand-text: #d4ff3a;
+  --brand-ink: #0b1410;
 
-  --brand: #2f3cf4;
-  --brand-strong: #2230d6;
-  --brand-soft: #e7e9ff;
-  --brand-text: #2733e0;
-  --brand-ink: #ffffff;
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #eef2ea;
 
-  --night: #0c0f1e;
-  --night-2: #171b33;
-  --night-ink: #f2f3fa;
+  --success: #d4ff3a;
+  --success-soft: #1f2d13;
+  --success-line: #4d6118;
+  --warning: #ffb547;
+  --warning-soft: #2e2311;
+  --danger: #ff6b5e;
+  --danger-soft: #331815;
+  --gold: #f2c94c;
 
-  --success: #0c8a4f;
-  --success-soft: #e1f5ea;
-  --success-line: #9fdcbc;
-  --warning: #a86200;
-  --warning-soft: #fff1d9;
-  --danger: #cf2f2f;
-  --danger-soft: #fde6e6;
-  --gold: #c58a00;
+  --map-land: #0f1a15;
+  --map-park: #15281d;
+  --map-wood: #13241a;
+  --map-cemetery: #152019;
+  --map-water: #0f2328;
+  --map-road: #24322b;
+  --map-road-casing: #09100d;
+  --map-minor: #17231d;
+  --map-rail: #2c3b33;
+  --map-label: #7d8a82;
+  --map-park-label: #6f9b63;
 
-  --map-land: #eceef3;
-  --map-park: #cfe7cf;
-  --map-wood: #c2dfc1;
-  --map-cemetery: #dbe6d6;
-  --map-water: #b9d6f0;
-  --map-road: #ffffff;
-  --map-road-casing: #d3d7e2;
-  --map-minor: #f8f9fb;
-  --map-rail: #b9bfcf;
-  --map-label: #5b627c;
-  --map-park-label: #3e7a4e;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
+  --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
+  --scrim: rgb(2 6 4 / 70%);
+  --glass: rgb(11 20 16 / 90%);
 
-  --shadow-1: 0 1px 2px rgb(12 15 30 / 6%), 0 1px 1px rgb(12 15 30 / 4%);
-  --shadow-2: 0 10px 28px -12px rgb(12 15 30 / 28%), 0 2px 6px rgb(12 15 30 / 6%);
-  --shadow-3: 0 -12px 40px rgb(12 15 30 / 18%);
-  --scrim: rgb(8 10 22 / 48%);
-  --glass: rgb(255 255 255 / 82%);
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
 
-  --r-xs: 8px;
-  --r-sm: 12px;
-  --r-md: 16px;
-  --r-lg: 22px;
-  --r-xl: 28px;
-
-  --font: 'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --display-stretch: 118%;
+  --font: 'Barlow', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Barlow Condensed', 'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --font-logo: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
 
   --gutter: 16px;
   --tabbar-h: 60px;
@@ -79,189 +79,167 @@
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #080a14;
-    --bg-elev: #0d1020;
-    --surface: #111427;
-    --surface-2: #191d34;
-    --surface-3: #232843;
-    --line: #20253d;
-    --line-strong: #323956;
-    --ink: #f1f2f9;
-    --ink-2: #a6abc6;
-    --ink-3: #737a99;
-    --ink-inverse: #0c0f1e;
-    --brand: #4f5bff;
-    --brand-strong: #3f4af0;
-    --brand-soft: #1c2150;
-    --brand-text: #9ba3ff;
-    --brand-ink: #ffffff;
-    --night: #151934;
-    --night-2: #1d2244;
-    --success: #3ccf86;
-    --success-soft: #0f2a1f;
-    --success-line: #1f5a3f;
-    --warning: #f0b14a;
-    --warning-soft: #2e2311;
-    --danger: #ff6b6b;
-    --danger-soft: #331618;
-    --gold: #f0c04a;
-    --map-land: #0f1220;
-    --map-park: #13261c;
-    --map-wood: #112219;
-    --map-cemetery: #151f1b;
-    --map-water: #0e2236;
-    --map-road: #252a41;
-    --map-road-casing: #0a0c16;
-    --map-minor: #181c2e;
-    --map-rail: #2c3250;
-    --map-label: #7d84a4;
-    --map-park-label: #5e9a70;
-    --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
-    --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
-    --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
-    --scrim: rgb(2 3 10 / 66%);
-    --glass: rgb(17 20 39 / 84%);
-  }
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --bg: #080a14;
-  --bg-elev: #0d1020;
-  --surface: #111427;
-  --surface-2: #191d34;
-  --surface-3: #232843;
-  --line: #20253d;
-  --line-strong: #323956;
-  --ink: #f1f2f9;
-  --ink-2: #a6abc6;
-  --ink-3: #737a99;
-  --ink-inverse: #0c0f1e;
-  --brand: #4f5bff;
-  --brand-strong: #3f4af0;
-  --brand-soft: #1c2150;
-  --brand-text: #9ba3ff;
-  --brand-ink: #ffffff;
-  --night: #151934;
-  --night-2: #1d2244;
-  --success: #3ccf86;
-  --success-soft: #0f2a1f;
-  --success-line: #1f5a3f;
-  --warning: #f0b14a;
-  --warning-soft: #2e2311;
-  --danger: #ff6b6b;
-  --danger-soft: #331618;
-  --gold: #f0c04a;
-  --map-land: #0f1220;
-  --map-park: #13261c;
-  --map-wood: #112219;
-  --map-cemetery: #151f1b;
-  --map-water: #0e2236;
-  --map-road: #252a41;
-  --map-road-casing: #0a0c16;
-  --map-minor: #181c2e;
-  --map-rail: #2c3250;
-  --map-label: #7d84a4;
-  --map-park-label: #5e9a70;
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
-  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
-  --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
-  --scrim: rgb(2 3 10 / 66%);
-  --glass: rgb(17 20 39 / 84%);
-}
-
-/* The in-app appearance setting wins over the system/host theme. */
+/* Appearance setting: dark (default), light, or match the device. */
 .app[data-scheme='light'],
 .desk[data-scheme='light'] {
   color-scheme: light;
-  --bg: #f3f4f8;
-  --bg-elev: #f8f9fc;
+  --bg: #f4f6f1;
+  --bg-elev: #f8faf6;
   --surface: #ffffff;
-  --surface-2: #eef0f6;
-  --surface-3: #e3e6ef;
-  --line: #e2e5ee;
-  --line-strong: #cbd0df;
-  --ink: #0c0f1e;
-  --ink-2: #4b5270;
-  --ink-3: #7e849d;
+  --surface-2: #edf0ea;
+  --surface-3: #e1e6de;
+  --line: #e0e5dc;
+  --line-strong: #c7cfc3;
+
+  --ink: #0b1410;
+  --ink-2: #4a564e;
+  --ink-3: #78837b;
   --ink-inverse: #ffffff;
-  --brand: #2f3cf4;
-  --brand-strong: #2230d6;
-  --brand-soft: #e7e9ff;
-  --brand-text: #2733e0;
-  --night: #0c0f1e;
-  --night-2: #171b33;
-  --success: #0c8a4f;
-  --success-soft: #e1f5ea;
-  --success-line: #9fdcbc;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #eef9cf;
+  --brand-text: #3f6b00;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #eef2ea;
+
+  --success: #2f7d12;
+  --success-soft: #e6f4d9;
+  --success-line: #a9d58a;
   --warning: #a86200;
   --warning-soft: #fff1d9;
-  --danger: #cf2f2f;
-  --danger-soft: #fde6e6;
-  --gold: #c58a00;
-  --map-land: #eceef3;
-  --map-park: #cfe7cf;
-  --map-wood: #c2dfc1;
-  --map-cemetery: #dbe6d6;
-  --map-water: #b9d6f0;
+  --danger: #cf3a2f;
+  --danger-soft: #fde7e4;
+  --gold: #b88700;
+
+  --map-land: #eef1ea;
+  --map-park: #d3e8c8;
+  --map-wood: #c6e0bb;
+  --map-cemetery: #dce7d6;
+  --map-water: #bcd9e6;
   --map-road: #ffffff;
-  --map-road-casing: #d3d7e2;
-  --map-minor: #f8f9fb;
-  --map-rail: #b9bfcf;
-  --map-label: #5b627c;
-  --map-park-label: #3e7a4e;
-  --shadow-1: 0 1px 2px rgb(12 15 30 / 6%), 0 1px 1px rgb(12 15 30 / 4%);
-  --shadow-2: 0 10px 28px -12px rgb(12 15 30 / 28%), 0 2px 6px rgb(12 15 30 / 6%);
-  --shadow-3: 0 -12px 40px rgb(12 15 30 / 18%);
-  --scrim: rgb(8 10 22 / 48%);
-  --glass: rgb(255 255 255 / 82%);
+  --map-road-casing: #d3d9cf;
+  --map-minor: #f8faf6;
+  --map-rail: #bcc4b8;
+  --map-label: #5b665e;
+  --map-park-label: #3f7a3a;
+
+  --shadow-1: 0 1px 2px rgb(11 20 16 / 6%), 0 1px 1px rgb(11 20 16 / 4%);
+  --shadow-2: 0 10px 28px -12px rgb(11 20 16 / 26%), 0 2px 6px rgb(11 20 16 / 6%);
+  --shadow-3: 0 -12px 40px rgb(11 20 16 / 16%);
+  --scrim: rgb(6 12 9 / 50%);
+  --glass: rgb(255 255 255 / 90%);
 }
 
-.app[data-scheme='dark'],
-.desk[data-scheme='dark'] {
+@media (prefers-color-scheme: light) {
+  .app[data-scheme='system'],
+  .desk[data-scheme='system'] {
+  color-scheme: light;
+  --bg: #f4f6f1;
+  --bg-elev: #f8faf6;
+  --surface: #ffffff;
+  --surface-2: #edf0ea;
+  --surface-3: #e1e6de;
+  --line: #e0e5dc;
+  --line-strong: #c7cfc3;
+
+  --ink: #0b1410;
+  --ink-2: #4a564e;
+  --ink-3: #78837b;
+  --ink-inverse: #ffffff;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #eef9cf;
+  --brand-text: #3f6b00;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #eef2ea;
+
+  --success: #2f7d12;
+  --success-soft: #e6f4d9;
+  --success-line: #a9d58a;
+  --warning: #a86200;
+  --warning-soft: #fff1d9;
+  --danger: #cf3a2f;
+  --danger-soft: #fde7e4;
+  --gold: #b88700;
+
+  --map-land: #eef1ea;
+  --map-park: #d3e8c8;
+  --map-wood: #c6e0bb;
+  --map-cemetery: #dce7d6;
+  --map-water: #bcd9e6;
+  --map-road: #ffffff;
+  --map-road-casing: #d3d9cf;
+  --map-minor: #f8faf6;
+  --map-rail: #bcc4b8;
+  --map-label: #5b665e;
+  --map-park-label: #3f7a3a;
+
+  --shadow-1: 0 1px 2px rgb(11 20 16 / 6%), 0 1px 1px rgb(11 20 16 / 4%);
+  --shadow-2: 0 10px 28px -12px rgb(11 20 16 / 26%), 0 2px 6px rgb(11 20 16 / 6%);
+  --shadow-3: 0 -12px 40px rgb(11 20 16 / 16%);
+  --scrim: rgb(6 12 9 / 50%);
+  --glass: rgb(255 255 255 / 90%);
+  }
+}
+
+/* Play Now and a few hero surfaces stay dark in either mode. */
+.force-dark {
   color-scheme: dark;
-  --bg: #080a14;
-  --bg-elev: #0d1020;
-  --surface: #111427;
-  --surface-2: #191d34;
-  --surface-3: #232843;
-  --line: #20253d;
-  --line-strong: #323956;
-  --ink: #f1f2f9;
-  --ink-2: #a6abc6;
-  --ink-3: #737a99;
-  --ink-inverse: #0c0f1e;
-  --brand: #4f5bff;
-  --brand-strong: #3f4af0;
-  --brand-soft: #1c2150;
-  --brand-text: #9ba3ff;
-  --night: #151934;
-  --night-2: #1d2244;
-  --success: #3ccf86;
-  --success-soft: #0f2a1f;
-  --success-line: #1f5a3f;
-  --warning: #f0b14a;
+  --bg: #0b1410;
+  --bg-elev: #0f1914;
+  --surface: #131f1a;
+  --surface-2: #1a2821;
+  --surface-3: #22322a;
+  --line: #1f2c25;
+  --line-strong: #2e3d35;
+
+  --ink: #eef2ea;
+  --ink-2: #a7b1a9;
+  --ink-3: #758078;
+  --ink-inverse: #0b1410;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #1f2d13;
+  --brand-text: #d4ff3a;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #eef2ea;
+
+  --success: #d4ff3a;
+  --success-soft: #1f2d13;
+  --success-line: #4d6118;
+  --warning: #ffb547;
   --warning-soft: #2e2311;
-  --danger: #ff6b6b;
-  --danger-soft: #331618;
-  --gold: #f0c04a;
-  --map-land: #0f1220;
-  --map-park: #13261c;
-  --map-wood: #112219;
-  --map-cemetery: #151f1b;
-  --map-water: #0e2236;
-  --map-road: #252a41;
-  --map-road-casing: #0a0c16;
-  --map-minor: #181c2e;
-  --map-rail: #2c3250;
-  --map-label: #7d84a4;
-  --map-park-label: #5e9a70;
+  --danger: #ff6b5e;
+  --danger-soft: #331815;
+  --gold: #f2c94c;
+
+  --map-land: #0f1a15;
+  --map-park: #15281d;
+  --map-wood: #13241a;
+  --map-cemetery: #152019;
+  --map-water: #0f2328;
+  --map-road: #24322b;
+  --map-road-casing: #09100d;
+  --map-minor: #17231d;
+  --map-rail: #2c3b33;
+  --map-label: #7d8a82;
+  --map-park-label: #6f9b63;
+
   --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
   --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
   --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
-  --scrim: rgb(2 3 10 / 66%);
-  --glass: rgb(17 20 39 / 84%);
+  --scrim: rgb(2 6 4 / 70%);
+  --glass: rgb(11 20 16 / 90%);
 }

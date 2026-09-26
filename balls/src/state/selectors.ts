@@ -8,6 +8,9 @@ import { distanceMiles } from '../lib/geo';
 import { now } from '../lib/time';
 import type { AppState } from './store';
 import { MAP_CENTER } from '../data/map';
+import { SPORT_BY_ID } from '../data/sports';
+
+const SPORT_NAMES: Record<string, string> = Object.fromEntries(Object.entries(SPORT_BY_ID).map(([k, v]) => [k, v.name]));
 
 /**
  * Derived data. Each selector is a pure function of AppState; the expensive
@@ -32,7 +35,7 @@ export const me = memo((s: AppState): User => {
     id: ME,
     name: a ? `${a.firstName}${a.lastName ? ` ${a.lastName[0]}.` : ''}` : 'You',
     username: a?.username ?? 'you',
-    color: a?.color ?? '#3346F5',
+    color: a?.color ?? '#3d5a4a',
     photo: a?.photo,
     area: s.location?.label ?? 'North London',
     sports: s.profile.sports,
@@ -50,6 +53,14 @@ export function userById(s: AppState, id: string): User | undefined {
 }
 
 export const firstName = (u: User | undefined) => (u ? u.name.split(' ')[0] : 'Someone');
+
+/** "5-a-side football", "Padel doubles", "Basketball". */
+export function gameTitle(g: Pick<Game, 'sport' | 'format'>): string {
+  const sport = SPORT_NAMES[g.sport] ?? g.sport;
+  if (!g.format) return sport;
+  if (/^(singles|doubles|mixed)/i.test(g.format)) return `${sport} ${g.format.toLowerCase()}`;
+  return `${g.format} ${sport.toLowerCase()}`;
+}
 
 export const isMinor = (s: AppState) => s.account?.ageGroup !== undefined && s.account.ageGroup !== 'adult';
 

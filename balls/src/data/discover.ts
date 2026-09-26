@@ -66,7 +66,7 @@ export const COACHES: Coach[] = [
     qualifications: ['Basketball England Level 2', 'DBS checked'],
   },
   {
-    id: 'c3', name: 'Sophie Laurent', sports: ['padel', 'tennis'], color: '#3346F5', rating: 4.9, reviewCount: 41, area: 'Archway', from: 4000, safeguarding: true,
+    id: 'c3', name: 'Sophie Laurent', sports: ['padel', 'tennis'], color: '#3d5a4a', rating: 4.9, reviewCount: 41, area: 'Archway', from: 4000, safeguarding: true,
     bio: 'Padel coach at Archway Padel Club. I help tennis players adapt and total beginners fall in love with the walls.',
     qualifications: ['LTA Padel Coach', 'DBS checked'],
   },
@@ -133,19 +133,19 @@ export const TRAINING: TrainingSession[] = [
 ];
 
 export const SHOPS: Shop[] = [
-  { id: 'sh1', name: 'Archway Sports Exchange', kind: 'shop', description: 'Second-hand boots, rackets and kit, with trade-ins welcome.', area: 'Archway', lat: 51.5651, lng: -0.1345, rating: 4.6, sports: ['football', 'tennis', 'running'], hours: 'Open until 7 PM' },
-  { id: 'sh2', name: 'Strung Out Racket Studio', kind: 'stringing', description: 'Same-day tennis, badminton and padel restringing.', area: 'Crouch End', lat: 51.5795, lng: -0.1229, rating: 4.9, sports: ['tennis', 'badminton', 'padel'], hours: 'Open until 6 PM' },
-  { id: 'sh3', name: 'Holloway Boot Room', kind: 'shop', description: 'Football boots, astro trainers and goalkeeper gloves.', area: 'Holloway', lat: 51.5531, lng: -0.1150, rating: 4.4, sports: ['football', 'rugby'], hours: 'Open until 8 PM' },
-  { id: 'sh4', name: 'Heath Sports Physio', kind: 'physio', description: 'Sports injury clinic with same-week appointments.', area: 'Kentish Town', lat: 51.5512, lng: -0.1417, rating: 4.8, sports: ['running', 'football', 'tennis'], hours: 'Open until 9 PM' },
-  { id: 'sh5', name: 'Camden Run Co.', kind: 'shop', description: 'Running shoes with free gait analysis and a Thursday run club.', area: 'Camden Town', lat: 51.5395, lng: -0.1428, rating: 4.7, sports: ['running'], hours: 'Open until 7 PM' },
+  { id: 'sh1', name: 'Archway Sports Exchange', kind: 'shop', description: 'Second-hand boots, rackets and kit, with trade-ins welcome.', area: 'Archway', lat: 51.5651, lng: -0.1345, rating: 4.6, sports: ['football', 'tennis', 'running'], hours: 'Open until 19:00' },
+  { id: 'sh2', name: 'Strung Out Racket Studio', kind: 'stringing', description: 'Same-day tennis, badminton and padel restringing.', area: 'Crouch End', lat: 51.5795, lng: -0.1229, rating: 4.9, sports: ['tennis', 'badminton', 'padel'], hours: 'Open until 18:00' },
+  { id: 'sh3', name: 'Holloway Boot Room', kind: 'shop', description: 'Football boots, astro trainers and goalkeeper gloves.', area: 'Holloway', lat: 51.5531, lng: -0.1150, rating: 4.4, sports: ['football', 'rugby'], hours: 'Open until 20:00' },
+  { id: 'sh4', name: 'Heath Sports Physio', kind: 'physio', description: 'Sports injury clinic with same-week appointments.', area: 'Kentish Town', lat: 51.5512, lng: -0.1417, rating: 4.8, sports: ['running', 'football', 'tennis'], hours: 'Open until 21:00' },
+  { id: 'sh5', name: 'Camden Run Co.', kind: 'shop', description: 'Running shoes with free gait analysis and a Thursday run club.', area: 'Camden Town', lat: 51.5395, lng: -0.1428, rating: 4.7, sports: ['running'], hours: 'Open until 19:00' },
 ];
 
 export const FEED: FeedItem[] = [
   { id: 'f1', kind: 'tournament', title: 'Highgate 5s Cup: 4 places left', body: 'Registration closes Friday. Sixteen teams, one trophy.', sport: 'football', at: minsAgo(90), link: { route: 'tournament', params: { id: 't1' } }, art: { kind: 'football', caption: '', time: 'night', seed: 2 } },
   { id: 'f2', kind: 'new-venue', title: 'New on BALLS: Clocktower Padel', body: 'Two covered courts in Crouch End, bookable from £28.', sport: 'padel', at: minsAgo(60 * 20), link: { route: 'facility', params: { id: 'clocktower-padel' } }, art: { kind: 'padel', caption: '', variant: 'green', time: 'dusk', seed: 91 } },
-  { id: 'f3', kind: 'training', title: 'Beginner basketball clinic: 4 spots', body: 'Coach Dre, Tuesday 7 PM at Holloway Leisure Centre.', sport: 'basketball', at: minsAgo(60 * 5), link: { route: 'session', params: { id: 's1' } }, art: { kind: 'basketball', caption: '', variant: 'hardwood', seed: 103 } },
-  { id: 'f4', kind: 'popular-game', title: 'Saturday 11-a-side is nearly full', body: '18 of 22 players in. Finsbury Park, 10 AM.', sport: 'football', at: minsAgo(60 * 3), link: { route: 'game', params: { id: 'g16' } }, art: { kind: 'football', caption: '', time: 'day', seed: 22 } },
+  { id: 'f3', kind: 'training', title: 'Beginner basketball clinic: 4 spots', body: 'Coach Dre, Tuesday 19:00 at Holloway Leisure Centre.', sport: 'basketball', at: minsAgo(60 * 5), link: { route: 'session', params: { id: 's1' } }, art: { kind: 'basketball', caption: '', variant: 'hardwood', seed: 103 } },
+  { id: 'f4', kind: 'popular-game', title: 'Saturday 11-a-side is nearly full', body: '18 of 22 players in. Finsbury Park, 10:00.', sport: 'football', at: minsAgo(60 * 3), link: { route: 'game', params: { id: 'g16' } }, art: { kind: 'football', caption: '', time: 'day', seed: 22 } },
   { id: 'f5', kind: 'event', title: 'Heath 5K Social Run this Sunday', body: 'Free, untimed, with pacers for every ability.', sport: 'running', at: minsAgo(60 * 30), link: { route: 'event', params: { id: 'e3' } }, art: { kind: 'running', caption: '', time: 'day', seed: 162 } },
-  { id: 'f6', kind: 'announcement', title: 'Floodlights now until 11 PM', body: 'Highgate Sports Centre has extended evening hours on all three pitches.', sport: 'football', at: minsAgo(60 * 50), link: { route: 'facility', params: { id: 'highgate-sc' } }, art: { kind: 'football', caption: '', time: 'night', seed: 1 } },
+  { id: 'f6', kind: 'announcement', title: 'Floodlights now until 23:00', body: 'Highgate Sports Centre has extended evening hours on all three pitches.', sport: 'football', at: minsAgo(60 * 50), link: { route: 'facility', params: { id: 'highgate-sc' } }, art: { kind: 'football', caption: '', time: 'night', seed: 1 } },
   { id: 'f7', kind: 'new-venue', title: 'Hornsey Beach Volleyball is open', body: 'Covered sand courts, all year round. Thursday social league starting soon.', sport: 'volleyball', at: minsAgo(60 * 72), link: { route: 'facility', params: { id: 'hornsey-beach' } }, art: { kind: 'volleyball', caption: '', variant: 'beach', seed: 111 } },
 ];

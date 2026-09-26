@@ -1,7 +1,7 @@
-import { Camera, Check, ChevronLeft, Eye, EyeOff, Lock, MapPin, ShieldCheck, Sparkles, Users, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, Eye, EyeOff, Info, Lock, MapPin, ShieldCheck, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SportCard } from '../components/cards';
-import { LogoMark, SportIcon } from '../components/icons';
+import { Logo, SportIcon } from '../components/icons';
 import { MapView, type MapMarkerData } from '../components/MapView';
 import { LocationPicker } from '../components/sheets';
 import { Button, Field } from '../components/ui';
@@ -31,7 +31,7 @@ function Welcome({ go }: { go: (s: Step) => void }) {
         <MapView markers={WELCOME_MARKERS} interactive={false} initialZoom={0.085} center={{ lat: 51.5655, lng: -0.1335 }} user={{ lat: 51.5567, lng: -0.138 }} controls={false} />
         <div className="welcome__fade" />
         <div className="welcome__live welcome__live--a">
-          <span className="live-dot" /> 5-a-side · 7 PM · 2 spots left
+          <span className="live-dot" /> 5-a-side · 19:00 · 2 spots left
         </div>
         <div className="welcome__live welcome__live--b">
           <span className="live-dot" /> Padel doubles · need 1
@@ -41,10 +41,9 @@ function Welcome({ go }: { go: (s: Step) => void }) {
         </div>
       </div>
       <div className="welcome__body">
-        <LogoMark size={52} />
-        <div className="eyebrow eyebrow--light">Welcome to BALLS</div>
-        <h1 className="welcome__title">Your local sports world.</h1>
-        <p className="welcome__lede">Find a pitch, book a court, join a game tonight. Sport is happening around you right now.</p>
+        <Logo size={44} />
+        <h1 className="welcome__title">Games and pitches near you</h1>
+        <p className="welcome__lede">See which games need players tonight, and book pitches and courts nearby.</p>
         <div className="welcome__actions">
           <Button size="lg" block onClick={() => go('sports')}>
             Get started
@@ -168,7 +167,7 @@ function Login({ go, onBack, onSignUp }: { go: (s: Step) => void; onBack: () => 
         </button>
       </header>
       <form className="onb__scroll" onSubmit={submit} noValidate>
-        <h1 className="onb__title">Welcome back.</h1>
+        <h1 className="onb__title">Log in</h1>
         <p className="onb__lede">Log in to see your games, bookings and stats.</p>
         <div className="social">
           <Button variant="outline" block size="lg" onClick={() => { setLoading(true); setTimeout(signInDemo, 600); }}>
@@ -199,7 +198,7 @@ function Login({ go, onBack, onSignUp }: { go: (s: Step) => void; onBack: () => 
           Log in
         </Button>
         <p className="demo-hint">
-          <Sparkles size={14} /> Demo: any email and a password of 8+ characters opens the sample account (David).
+          <Info size={14} /> Demo: any email and a password of 8+ characters opens the sample account (David).
         </p>
         {onSignUp && (
           <p className="onb__switch">
@@ -330,8 +329,8 @@ export function Onboarding({ join }: { join?: { start: 'signup' | 'login'; onClo
         <StepShell
           step={2}
           onBack={back}
-          title="Roughly how good are you?"
-          lede="It helps us match you with the right games. Levels are self-chosen and just a guide. Change them anytime."
+          title="What level are you?"
+          lede="We use this to suggest games at your level. You can change it later."
           footer={
             <Button block size="lg" onClick={() => setStep('distance')}>
               Continue
@@ -369,7 +368,7 @@ export function Onboarding({ join }: { join?: { start: 'signup' | 'login'; onClo
         <StepShell
           step={3}
           onBack={back}
-          title="How far will you go?"
+          title="How far will you travel?"
           lede="We’ll show venues and games within this distance first."
           footer={
             <Button block size="lg" onClick={() => setStep('location')}>
@@ -404,7 +403,7 @@ export function Onboarding({ join }: { join?: { start: 'signup' | 'login'; onClo
       break;
     case 'location':
       content = (
-        <StepShell step={4} onBack={back} title="Find sport near you" footer={<Button block size="lg" variant="ghost" disabled={!s.location} onClick={() => setStep('profile')}>{s.location ? `Continue with ${s.location.label}` : 'Choose a location to continue'}</Button>}>
+        <StepShell step={4} onBack={back} title="Where do you play?" footer={<Button block size="lg" variant="ghost" disabled={!s.location} onClick={() => setStep('profile')}>{s.location ? `Continue with ${s.location.label}` : 'Choose a location to continue'}</Button>}>
           <ul className="why-list">
             <li>
               <MapPin size={18} /> See venues, prices and free slots nearby
