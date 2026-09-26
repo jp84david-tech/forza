@@ -4,6 +4,7 @@ import { Artwork } from '../components/Artwork';
 import { AvailabilityCalendar } from '../components/AvailabilityCalendar';
 import { BookingCard, GameCard, SportBadge } from '../components/cards';
 import { SportIcon } from '../components/icons';
+import { joinLayer, needsAccount } from '../components/Join';
 import { SheetBody, SheetFooter, SheetHeader } from '../components/Sheet';
 import { DirectionsButton, openDirections, openInvite, openLogResult, openShare, PaymentMethodSelect } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, IconButton, Pill, Row, Screen, Section, Segmented, Stepper, Switch } from '../components/ui';
@@ -50,8 +51,9 @@ function openWaitlist(spaceId: string, slot: Slot, duration: number) {
           </Button>
           <Button
             onClick={() => {
-              joinWaitlist(spaceId, slot.start, duration);
               close();
+              if (needsAccount('waitlist')) return;
+              joinWaitlist(spaceId, slot.start, duration);
             }}
           >
             Join waitlist
@@ -115,7 +117,7 @@ export function BookScreen({ params }: ScreenComponentProps) {
           label={sel ? `${space.name} · ${fmtDay(sel)} ${fmtRange(sel, new Date(sel.getTime() + duration * 60_000))}` : 'Pick a time'}
           sub={q ? `${moneyExact(q.subtotal)}${space.unit === 'session' ? ` for ${plural(people, 'person', 'people')}` : ` for ${fmtDuration(duration)}`}` : 'Green slots are free to book'}
         >
-          <Button size="lg" disabled={!sel} onClick={() => nav.push('checkout', { spaceId, start: selected!, duration: String(duration), people: String(people) })}>
+          <Button size="lg" disabled={!sel} onClick={() => !needsAccount('book') && nav.push('checkout', { spaceId, start: selected!, duration: String(duration), people: String(people) })}>
             Continue
           </Button>
         </CtaBar>
@@ -803,7 +805,33 @@ export function BookingDetailScreen({ params }: ScreenComponentProps) {
 
 // ---------------------------------------------------------------- bookings tab
 
-export function BookingsScreen({ retap }: ScreenComponentProps) {
+export function BookingsScreen(props: ScreenComponentProps) {
+  const s = useApp();
+  if (!s.account) {
+    return (
+      <Screen title="Bookings" header="large" back={false} retap={props.retap}>
+        <div className="pad">
+          <EmptyState
+            icon={<CalendarClock size={26} />}
+            title="Your bookings will live here"
+            body="Book a pitch or court, or join a game, and it shows up here with your check-in code, reminders and who’s paid their share."
+            action={{ label: 'Create free account', onClick: () => joinLayer.open('signup') }}
+            secondary={{ label: 'Find somewhere to play', onClick: () => nav.go('explore', undefined, { view: 'list' }) }}
+          />
+          <p className="guest-login">
+            Already have an account?{' '}
+            <button type="button" className="link" onClick={() => joinLayer.open('login')}>
+              Log in
+            </button>
+          </p>
+        </div>
+      </Screen>
+    );
+  }
+  return <MemberBookings {...props} />;
+}
+
+function MemberBookings({ retap }: ScreenComponentProps) {
   const s = useApp();
   const [tab, setTab] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming');
   const up = upcoming(s);

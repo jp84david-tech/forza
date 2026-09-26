@@ -6,17 +6,20 @@ This is a working, mobile-first prototype built with React and TypeScript. Every
 
 ## Try it
 
-- **No setup:** open [`../balls.html`](../balls.html) in a browser. It is the whole app in one file.
+- **Online:** open `app/index.html` from the repo through any static host (for example raw.githack.com or GitHub Pages). This copy is installable: "Add to Home screen" gives it its own icon, it opens full screen, and it works offline.
+- **No setup:** open [`../balls.html`](../balls.html) in a browser. It is the whole app in one file, good for downloading or sending. A downloaded file can't be installed as an app.
 - **Develop:**
 
   ```bash
   cd balls
   npm install
   npm run dev      # http://localhost:5173
-  npm run build    # typecheck + single-file build in dist/index.html
+  npm run build    # typecheck, build to dist/, then copy to ../app and ../balls.html
   ```
 
 On a phone it runs full screen. On a desktop it appears inside a device frame, and on tablets the lists switch to two columns.
+
+**Guests:** **Just look around** on the welcome screen opens the app without an account. Booking, joining, saving, messaging, registering, following and reporting ask for a free account first, then return you to the same screen with what you picked still selected.
 
 **Demo account:** on the welcome screen tap **I have an account** and log in with any email and a password of 8 or more characters. That opens David's account, which has bookings, a cost split in progress, joined games, stats and notifications. **Get started** runs the real onboarding and creates a fresh, empty account instead.
 

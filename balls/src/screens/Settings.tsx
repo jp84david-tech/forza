@@ -25,6 +25,7 @@ import {
   UserX,
   Wallet } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { InstallRow } from '../components/Install';
 import { confirmDialog } from '../components/Sheet';
 import { LocationPicker } from '../components/sheets';
 import { SportIcon } from '../components/icons';
@@ -85,6 +86,7 @@ export function SettingsScreen() {
             <Row icon={<CalendarDays size={18} />} title="Play & booking" subtitle={`Within ${s.prefs.distance} mi · ${s.prefs.splitByDefault ? 'split costs by default' : 'pay in full by default'}`} onClick={() => nav.push('settingsPlay')} />
             <Row icon={<Bell size={18} />} title="Notifications" onClick={() => nav.push('settingsNotifications')} />
             <Row icon={<Palette size={18} />} title="Appearance" subtitle={s.settings.theme === 'system' ? 'Match device' : s.settings.theme === 'dark' ? 'Dark' : 'Light'} onClick={() => nav.push('settingsAppearance')} />
+            <InstallRow />
           </div>
         </Section>
         <Section title="Privacy & safety">

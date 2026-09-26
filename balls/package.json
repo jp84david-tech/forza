@@ -3,10 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "BALLS — the all-in-one local sports platform (mobile-first web prototype).",
+  "description": "BALLS \u2014 the all-in-one local sports platform (mobile-first web prototype).",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/copy-builds.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

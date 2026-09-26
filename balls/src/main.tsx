@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { registerServiceWorker } from './lib/install';
 import { nav } from './state/nav';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -15,6 +16,8 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+if (import.meta.env.PROD) registerServiceWorker();
 
 // Exposed in development only, for automated UI tests.
 if (import.meta.env.DEV) (window as unknown as { __nav: typeof nav }).__nav = nav;

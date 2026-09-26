@@ -168,11 +168,31 @@ function checkAchievements() {
 
 // ---------------------------------------------------------------- auth & onboarding
 
-export function signInDemo() {
-  const settings = getState().settings;
-  setState(() => demoState(settings));
+/** Look around without an account. */
+export function browseAsGuest() {
+  setState((s) => ({ ...s, guest: true }));
   nav.reset();
-  analytics.track('signed_in', { method: 'email' });
+  analytics.track('guest_started');
+}
+
+/**
+ * A guest who signs up or logs in stays on the screen they were on, so they
+ * can finish what they started. Everyone else starts from Home.
+ */
+function afterSignIn(wasGuest: boolean, message: string) {
+  if (!wasGuest) {
+    nav.reset();
+    return;
+  }
+  ui.closeAll();
+  ui.toast(message, { tone: 'success' });
+}
+
+export function signInDemo() {
+  const { settings, guest } = getState();
+  setState(() => demoState(settings));
+  afterSignIn(guest, 'Logged in. Carry on where you left off.');
+  analytics.track('signed_in', { method: 'email', fromGuest: guest });
 }
 
 export interface SignUpInput {
@@ -189,7 +209,7 @@ export interface SignUpInput {
 }
 
 export function signUp(input: SignUpInput, method: 'email' | 'apple' | 'google' = 'email') {
-  const settings = getState().settings;
+  const { settings, guest, recentSearches } = getState();
   const base = emptyState(settings);
   const minor = input.ageGroup !== 'adult';
   setState(() => ({
@@ -207,6 +227,7 @@ export function signUp(input: SignUpInput, method: 'email' | 'apple' | 'google' 
       demo: false,
     },
     onboarded: true,
+    recentSearches,
     profile: { ...base.profile, sports: input.sports },
     prefs: { ...base.prefs, distance: input.distance },
     location: input.location,
@@ -225,8 +246,8 @@ export function signUp(input: SignUpInput, method: 'email' | 'apple' | 'google' 
       },
     ],
   }));
-  nav.reset();
-  analytics.track('signed_up', { method, sports: input.sports.length, minor });
+  afterSignIn(guest, `Welcome to BALLS, ${input.firstName}. You’re all set.`);
+  analytics.track('signed_up', { method, sports: input.sports.length, minor, fromGuest: guest });
 }
 
 export function signOut() {

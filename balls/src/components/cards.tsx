@@ -9,6 +9,7 @@ import { fmtDay, fmtRange, fmtShortDate, fmtTime, fmtWhen, weekdayShort } from '
 import { availabilityToday, priceRange } from '../services/availability';
 import { reliability } from '../services/trust';
 import { toggleSaved } from '../state/actions';
+import { needsAccount } from './Join';
 import { nav } from '../state/nav';
 import { availCtx, bookingStatus, distanceTo, facilityDistance, facilityRating, facilitySports, isSaved, joinedPlayers, userById } from '../state/selectors';
 import { useApp } from '../state/store';
@@ -64,6 +65,7 @@ export function SaveButton({ facilityId, variant = 'glass' }: { facilityId: stri
       aria-label={saved ? 'Remove from saved' : 'Save venue'}
       onClick={(e) => {
         e.stopPropagation();
+        if (needsAccount('save')) return;
         toggleSaved(facilityId);
       }}
     >

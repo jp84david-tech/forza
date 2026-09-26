@@ -4,6 +4,7 @@ import { Artwork, sportArt } from '../components/Artwork';
 import { GameCard, PlayerCard, ReliabilityBadge, SportBadge, SpotsBar } from '../components/cards';
 import { SportIcon } from '../components/icons';
 import { confirmDialog, SheetBody, SheetFooter, SheetHeader } from '../components/Sheet';
+import { needsAccount } from '../components/Join';
 import { DirectionsButton, openInvite, openReport, openShare, PaymentMethodSelect } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, Field, IconButton, Pill, Row, Screen, Section, Segmented, Stepper } from '../components/ui';
 import { FACILITIES, FACILITY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/facilities';
@@ -538,6 +539,7 @@ export function GameScreen({ params }: ScreenComponentProps) {
   const shareText = organiser ? `Join my ${sportName(g.sport).toLowerCase()} game on BALLS: ${fmtWhen(g.start)} at ${f.name}. ${left} ${left === 1 ? 'spot' : 'spots'} left.` : `${title} on BALLS: ${fmtWhen(g.start)} at ${f.name}.`;
 
   function invite() {
+    if (needsAccount('invite')) return;
     openInvite({
       title: 'Invite friends',
       subtitle: `${title} · ${fmtWhen(g!.start)}`,
@@ -616,7 +618,7 @@ export function GameScreen({ params }: ScreenComponentProps) {
   else
     footer = (
       <CtaBar label={<span className="cta-price">{g.pricePerPlayer ? money(g.pricePerPlayer) : 'Free'}<small>{g.pricePerPlayer ? ' per person' : ''}</small></span>} sub={left <= 2 ? `Only ${plural(left, 'spot')} left` : `${plural(left, 'spot')} left`}>
-        <Button size="lg" onClick={() => ui.open('Join game', (close) => <JoinSheet g={g} close={close} />)}>
+        <Button size="lg" onClick={() => !needsAccount('join') && ui.open('Join game', (close) => <JoinSheet g={g} close={close} />)}>
           Join game
         </Button>
       </CtaBar>
@@ -899,6 +901,7 @@ export function CreateGameScreen({ params }: ScreenComponentProps) {
       setTimeout(() => document.querySelector('.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30);
       return;
     }
+    if (needsAccount('create')) return;
     const g = createGame({
       sport,
       format,

@@ -5,6 +5,7 @@ import { GameCard, SaveButton, SportBadge } from '../components/cards';
 import { SportIcon } from '../components/icons';
 import { MapView } from '../components/MapView';
 import { SheetBody, SheetHeader } from '../components/Sheet';
+import { needsAccount } from '../components/Join';
 import { DirectionsButton, openReport, openShare } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, ErrorState, IconButton, Pill, RatingDisplay, Row, Screen, Section, Skeleton } from '../components/ui';
 import { ATTRIBUTE_LABELS, sportName } from '../data/sports';
@@ -230,7 +231,7 @@ export function FacilityScreen({ params }: ScreenComponentProps) {
         <SheetHeader title={f.name} onClose={close} />
         <SheetBody>
           <div className="list-card">
-            <Row icon={alertOn ? <BellRing size={18} /> : <Bell size={18} />} title={alertOn ? 'Turn off availability alerts' : 'Alert me when evenings free up'} onClick={() => { toggleAlert(f.id); close(); }} />
+            <Row icon={alertOn ? <BellRing size={18} /> : <Bell size={18} />} title={alertOn ? 'Turn off availability alerts' : 'Alert me when evenings free up'} onClick={() => { close(); if (!needsAccount('alert')) toggleAlert(f.id); }} />
             <Row icon={<Share2 size={18} />} title="Share venue" onClick={() => { close(); share(); }} />
             <Row icon={<Flag size={18} />} title="Report a problem with this venue" onClick={() => { close(); openReport('facility', f.id, f.name); }} danger />
           </div>
@@ -301,7 +302,7 @@ export function FacilityScreen({ params }: ScreenComponentProps) {
         </div>
         <div className="fac-actions">
           <DirectionsButton f={f} variant="secondary" />
-          <Button variant="secondary" icon={alertOn ? <BellRing size={17} /> : <Bell size={17} />} onClick={() => toggleAlert(f.id)} aria-pressed={alertOn}>
+          <Button variant="secondary" icon={alertOn ? <BellRing size={17} /> : <Bell size={17} />} onClick={() => !needsAccount('alert') && toggleAlert(f.id)} aria-pressed={alertOn}>
             {alertOn ? 'Alerts on' : 'Alert me'}
           </Button>
         </div>

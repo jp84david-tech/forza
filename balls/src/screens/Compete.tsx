@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Artwork, sportArt } from '../components/Artwork';
 import { SportBadge, TournamentCard } from '../components/cards';
 import { SportIcon } from '../components/icons';
+import { needsAccount } from '../components/Join';
 import { SheetBody, SheetFooter, SheetHeader } from '../components/Sheet';
 import { DirectionsButton, openReport, openShare, PaymentMethodSelect } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, Field, IconButton, Pill, Screen, Section, Segmented } from '../components/ui';
@@ -530,7 +531,7 @@ export function TournamentScreen({ params }: ScreenComponentProps) {
   else
     footer = (
       <CtaBar label={<span className="cta-price">{money(t.entryFee)}<small> per {t.entryUnit}</small></span>} sub={closesIn > 0 ? `Closes in ${fmtCountdown(t.closesAt)}` : 'Closing soon'}>
-        <Button size="lg" onClick={() => ui.open('Register', (close) => <RegisterSheet kind="tournament" id={t.id} title={t.name} fee={t.entryFee} unit={t.entryUnit} teamSize={t.teamSize} allowFreeAgent={t.teamSize > 1} close={close} />)}>
+        <Button size="lg" onClick={() => !needsAccount('register') && ui.open('Register', (close) => <RegisterSheet kind="tournament" id={t.id} title={t.name} fee={t.entryFee} unit={t.entryUnit} teamSize={t.teamSize} allowFreeAgent={t.teamSize > 1} close={close} />)}>
           Register
         </Button>
       </CtaBar>
@@ -688,7 +689,7 @@ export function LeagueScreen({ params }: ScreenComponentProps) {
           </CtaBar>
         ) : (
           <CtaBar label={<span className="cta-price">{money(l.entryFee)}<small> per team</small></span>} sub={`Next season starts ${fmtShortDate(l.startDate)}`}>
-            <Button size="lg" onClick={() => ui.open('Join league', (close) => <RegisterSheet kind="league" id={l.id} title={l.name} fee={l.entryFee} unit="team" teamSize={SPORT_BY_ID[l.sport].formats[0]?.players ? Math.ceil(SPORT_BY_ID[l.sport].formats[0].players / 2) : 5} allowFreeAgent={l.freeAgents} close={close} />)}>
+            <Button size="lg" onClick={() => !needsAccount('register') && ui.open('Join league', (close) => <RegisterSheet kind="league" id={l.id} title={l.name} fee={l.entryFee} unit="team" teamSize={SPORT_BY_ID[l.sport].formats[0]?.players ? Math.ceil(SPORT_BY_ID[l.sport].formats[0].players / 2) : 5} allowFreeAgent={l.freeAgents} close={close} />)}>
               Join league
             </Button>
           </CtaBar>

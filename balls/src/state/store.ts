@@ -63,6 +63,8 @@ export interface AppState {
   v: 1;
   account: Account | null;
   onboarded: boolean;
+  /** Looking around without an account. Cleared when they sign up or log in. */
+  guest: boolean;
   profile: Profile;
   prefs: Preferences;
   location: UserLocation | null;
@@ -123,6 +125,7 @@ export function emptyState(settings?: Settings): AppState {
     v: 1,
     account: null,
     onboarded: false,
+    guest: false,
     profile: { sports: [], attendance: { attended: 0, lateCancels: 0, noShows: 0 }, gamesPlayed: 0, achievements: [], stats: [], venues: [], earlyGames: 0, tournaments: 0, bio: '' },
     prefs: DEFAULT_PREFS,
     location: null,

@@ -1,4 +1,4 @@
-import { Camera, Check, ChevronLeft, Eye, EyeOff, Lock, MapPin, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { Camera, Check, ChevronLeft, Eye, EyeOff, Lock, MapPin, ShieldCheck, Sparkles, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SportCard } from '../components/cards';
 import { LogoMark, SportIcon } from '../components/icons';
@@ -11,7 +11,7 @@ import { SKILL_LEVELS, sportName } from '../data/sports';
 import type { AgeGroup, SkillLevel, SportId } from '../data/types';
 import { cx, money } from '../lib/format';
 import { distanceMiles } from '../lib/geo';
-import { requestPasswordReset, signInDemo, signUp } from '../state/actions';
+import { browseAsGuest, requestPasswordReset, signInDemo, signUp } from '../state/actions';
 import { getState, useApp } from '../state/store';
 import { MAP_CENTER } from '../data/map';
 
@@ -52,27 +52,34 @@ function Welcome({ go }: { go: (s: Step) => void }) {
           <Button size="lg" block variant="night" onClick={() => go('login')}>
             I have an account
           </Button>
+          <button type="button" className="welcome__guest" onClick={browseAsGuest}>
+            Just look around
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function StepShell({ step, onBack, title, lede, children, footer }: { step: number; onBack: () => void; title: string; lede?: string; children: React.ReactNode; footer: React.ReactNode }) {
+function StepShell({ step, onBack, title, lede, children, footer, backLabel = 'Back', progress = true }: { step: number; onBack: () => void; title: string; lede?: string; children: React.ReactNode; footer: React.ReactNode; backLabel?: string; progress?: boolean }) {
   return (
     <div className="onb">
       <header className="onb__top">
-        <button type="button" className="iconbtn iconbtn--plain" onClick={onBack} aria-label="Back">
-          <ChevronLeft size={24} strokeWidth={2.2} />
+        <button type="button" className="iconbtn iconbtn--plain" onClick={onBack} aria-label={backLabel}>
+          {backLabel === 'Close' ? <X size={24} strokeWidth={2.2} /> : <ChevronLeft size={24} strokeWidth={2.2} />}
         </button>
-        <div className="onb__progress" role="progressbar" aria-valuemin={1} aria-valuemax={FLOW.length} aria-valuenow={step} aria-label={`Step ${step} of ${FLOW.length}`}>
-          {FLOW.map((_, i) => (
-            <span key={i} className={cx('onb__bar', i < step && 'is-done')} />
-          ))}
-        </div>
-        <span className="onb__count">
-          {step}/{FLOW.length}
-        </span>
+        {progress && (
+          <>
+            <div className="onb__progress" role="progressbar" aria-valuemin={1} aria-valuemax={FLOW.length} aria-valuenow={step} aria-label={`Step ${step} of ${FLOW.length}`}>
+              {FLOW.map((_, i) => (
+                <span key={i} className={cx('onb__bar', i < step && 'is-done')} />
+              ))}
+            </div>
+            <span className="onb__count">
+              {step}/{FLOW.length}
+            </span>
+          </>
+        )}
       </header>
       <div className="onb__scroll">
         <h1 className="onb__title">{title}</h1>
@@ -137,7 +144,7 @@ export function PhotoInput({ photo, color, name, onChange }: { photo?: string; c
   );
 }
 
-function Login({ go }: { go: (s: Step) => void }) {
+function Login({ go, onBack, onSignUp }: { go: (s: Step) => void; onBack: () => void; onSignUp?: () => void }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
@@ -156,7 +163,7 @@ function Login({ go }: { go: (s: Step) => void }) {
   return (
     <div className="onb">
       <header className="onb__top">
-        <button type="button" className="iconbtn iconbtn--plain" onClick={() => go('welcome')} aria-label="Back">
+        <button type="button" className="iconbtn iconbtn--plain" onClick={onBack} aria-label="Back">
           <ChevronLeft size={24} strokeWidth={2.2} />
         </button>
       </header>
@@ -194,6 +201,14 @@ function Login({ go }: { go: (s: Step) => void }) {
         <p className="demo-hint">
           <Sparkles size={14} /> Demo: any email and a password of 8+ characters opens the sample account (David).
         </p>
+        {onSignUp && (
+          <p className="onb__switch">
+            New to BALLS?{' '}
+            <button type="button" className="link" onClick={onSignUp}>
+              Create a free account
+            </button>
+          </p>
+        )}
       </form>
     </div>
   );
@@ -253,8 +268,13 @@ function Forgot({ go }: { go: (s: Step) => void }) {
   );
 }
 
-export function Onboarding() {
-  const [step, setStep] = useState<Step>('welcome');
+/**
+ * First-run onboarding. With `join`, it's the short sign-up a guest sees when
+ * they try something that needs an account: just the account form (or log in),
+ * closable, returning them to where they were.
+ */
+export function Onboarding({ join }: { join?: { start: 'signup' | 'login'; onClose: () => void } } = {}) {
+  const [step, setStep] = useState<Step>(join ? (join.start === 'login' ? 'login' : 'profile') : 'welcome');
   const [sports, setSports] = useState<SportId[]>([]);
   const [levels, setLevels] = useState<Record<string, SkillLevel>>({});
   const [distance, setDistance] = useState(3);
@@ -273,7 +293,13 @@ export function Onboarding() {
       content = <Welcome go={setStep} />;
       break;
     case 'login':
-      content = <Login go={setStep} />;
+      content = (
+        <Login
+          go={setStep}
+          onBack={join ? (join.start === 'login' ? join.onClose : () => setStep('profile')) : () => setStep('welcome')}
+          onSignUp={() => setStep(join ? 'profile' : 'sports')}
+        />
+      );
       break;
     case 'forgot':
       content = <Forgot go={setStep} />;
@@ -395,7 +421,7 @@ export function Onboarding() {
       );
       break;
     case 'profile':
-      content = <ProfileStep onBack={back} sports={sports} levels={levels} distance={distance} />;
+      content = <ProfileStep onBack={join ? join.onClose : back} onLogin={() => setStep('login')} quick={!!join} sports={sports} levels={levels} distance={distance} />;
       break;
   }
   return (
@@ -408,7 +434,7 @@ export function Onboarding() {
   );
 }
 
-function ProfileStep({ onBack, sports, levels, distance }: { onBack: () => void; sports: SportId[]; levels: Record<string, SkillLevel>; distance: number }) {
+function ProfileStep({ onBack, onLogin, quick, sports, levels, distance }: { onBack: () => void; onLogin: () => void; quick: boolean; sports: SportId[]; levels: Record<string, SkillLevel>; distance: number }) {
   const [first, setFirst] = useState('');
   const [last, setLast] = useState('');
   const [username, setUsername] = useState('');
@@ -472,8 +498,10 @@ function ProfileStep({ onBack, sports, levels, distance }: { onBack: () => void;
     <StepShell
       step={5}
       onBack={onBack}
-      title="Create your profile"
-      lede="This is what other players see. Keep it simple: first name and a username."
+      progress={!quick}
+      backLabel={quick ? 'Close' : 'Back'}
+      title={quick ? 'Create your free account' : 'Create your profile'}
+      lede={quick ? 'Takes about 30 seconds. You’ll go straight back to what you were doing.' : 'This is what other players see. Keep it simple: first name and a username.'}
       footer={
         <Button block size="lg" loading={loading} onClick={() => submit('email')} disabled={tooYoung}>
           Create account
@@ -571,6 +599,12 @@ function ProfileStep({ onBack, sports, levels, distance }: { onBack: () => void;
         </span>
       </label>
       {errors.terms && <p className="field__error">{errors.terms}</p>}
+      <p className="onb__switch">
+        Already have an account?{' '}
+        <button type="button" className="link" onClick={onLogin}>
+          Log in
+        </button>
+      </p>
     </StepShell>
   );
 }

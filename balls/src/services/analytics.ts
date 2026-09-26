@@ -28,7 +28,10 @@ export type AnalyticsEvent =
   | 'report_submitted'
   | 'filter_applied'
   | 'signed_up'
-  | 'signed_in';
+  | 'signed_in'
+  | 'guest_started'
+  | 'account_prompted'
+  | 'app_installed';
 
 type Props = Record<string, string | number | boolean | undefined>;
 

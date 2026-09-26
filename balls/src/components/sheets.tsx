@@ -12,6 +12,7 @@ import { addTestCard, block, logResult, report, setLocation, setPrefs } from '..
 import { getState, useApp } from '../state/store';
 import { ui } from '../state/ui';
 import { userById } from '../state/selectors';
+import { needsAccount } from './Join';
 import { SheetBody, SheetFooter, SheetHeader } from './Sheet';
 import { Avatar, Button, Chip, Field, Stepper, Switch } from './ui';
 import { MAP_CENTER } from '../data/map';
@@ -230,6 +231,7 @@ function ReportSheet({ target, id, name, close }: { target: ReportTarget; id: st
 }
 
 export function openReport(target: ReportTarget, id: string, name: string) {
+  if (needsAccount('report')) return;
   ui.open('Report', (close) => <ReportSheet target={target} id={id} name={name} close={close} />);
 }
 

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Artwork } from '../components/Artwork';
 import { FacilityCard, GameCard, SportCard } from '../components/cards';
 import { SportIcon } from '../components/icons';
+import { InstallBanner } from '../components/Install';
 import { DirectionsButton, openLocation } from '../components/sheets';
 import { Button, EmptyState, ErrorState, IconButton, Section, SkeletonCard } from '../components/ui';
 import { FACILITIES, FACILITY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/facilities';
@@ -181,7 +182,12 @@ export function HomeScreen({ retap }: ScreenComponentProps) {
       <div className="scroll" ref={setScrollBox}>
         <div className="greet">
           <h1 className="greet__title">
-            {greeting()}, <span>{name}</span>
+            {greeting()}
+            {name && (
+              <>
+                , <span>{name}</span>
+              </>
+            )}
           </h1>
           <p className="greet__sub">What are you playing today?</p>
         </div>
@@ -236,6 +242,8 @@ export function HomeScreen({ retap }: ScreenComponentProps) {
             </button>
           ))}
         </div>
+
+        <InstallBanner />
 
         {status === 'error' ? (
           <ErrorState onRetry={retry} />

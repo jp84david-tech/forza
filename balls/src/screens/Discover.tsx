@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Artwork, sportArt } from '../components/Artwork';
 import { EventCard, FacilityCard, GameCard, SportBadge, TournamentCard, TrainingCard } from '../components/cards';
 import { SportIcon } from '../components/icons';
+import { needsAccount } from '../components/Join';
 import { SheetBody, SheetFooter, SheetHeader } from '../components/Sheet';
 import { DirectionsButton, openShare, PaymentMethodSelect } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, IconButton, Pill, RatingDisplay, Screen, Section, Segmented } from '../components/ui';
@@ -215,7 +216,7 @@ export function EventScreen({ params }: ScreenComponentProps) {
           </CtaBar>
         ) : (
           <CtaBar label={<span className="cta-price">{e.price ? money(e.price) : 'Free'}</span>} sub={left > 0 ? `${plural(left, 'place')} left` : 'Fully booked'}>
-            <Button size="lg" disabled={left <= 0 || minorBlocked} onClick={() => ui.open('Book', (close) => <BookPlaceSheet kind="event" id={e.id} title={e.title} price={e.price} close={close} />)}>
+            <Button size="lg" disabled={left <= 0 || minorBlocked} onClick={() => !needsAccount('register') && ui.open('Book', (close) => <BookPlaceSheet kind="event" id={e.id} title={e.title} price={e.price} close={close} />)}>
               {minorBlocked ? 'Adults only' : left > 0 ? 'Book a place' : 'Full'}
             </Button>
           </CtaBar>
@@ -374,7 +375,7 @@ export function SessionScreen({ params }: ScreenComponentProps) {
           </CtaBar>
         ) : (
           <CtaBar label={<span className="cta-price">{money(t.price)}</span>} sub={left > 0 ? `${plural(left, 'place')} left` : 'Fully booked'}>
-            <Button size="lg" disabled={left <= 0} onClick={() => ui.open('Book', (close) => <BookPlaceSheet kind="training" id={t.id} title={t.title} price={t.price} close={close} />)}>
+            <Button size="lg" disabled={left <= 0} onClick={() => !needsAccount('register') && ui.open('Book', (close) => <BookPlaceSheet kind="training" id={t.id} title={t.title} price={t.price} close={close} />)}>
               {left > 0 ? 'Book session' : 'Full'}
             </Button>
           </CtaBar>
@@ -452,6 +453,7 @@ export function CoachScreen({ params }: ScreenComponentProps) {
             size="lg"
             disabled={requested}
             onClick={() =>
+              !needsAccount('request') &&
               ui.open('Request a session', (close) => (
                 <>
                   <SheetHeader title={`Request a session with ${c.name.split(' ')[0]}`} onClose={close} />

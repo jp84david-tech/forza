@@ -1,5 +1,6 @@
 import { CalendarDays, Compass, House, Trophy, UserRound } from 'lucide-react';
 import { type ComponentType, useEffect, useRef, useState } from 'react';
+import { joinLayer, useJoinLayer } from './components/Join';
 import { SheetHost, ToastHost } from './components/Sheet';
 import { LogoMark } from './components/icons';
 import { cx } from './lib/format';
@@ -20,12 +21,12 @@ const TABS: Array<{ id: Tab; label: string; icon: ComponentType<{ size?: number;
 ];
 
 /** Bottom navigation bar. */
-function NavigationBar({ hidden }: { hidden: boolean }) {
+function NavigationBar({ hidden, covered }: { hidden: boolean; covered: boolean }) {
   const n = useNav();
   const s = useApp();
   const next = upcoming(s).length;
   return (
-    <nav className={cx('tabbar', hidden && 'is-hidden')} aria-label="Main">
+    <nav className={cx('tabbar', hidden && 'is-hidden')} aria-label="Main" inert={covered || undefined}>
       {TABS.map((t) => {
         const on = n.tab === t.id;
         const Icon = t.icon;
@@ -100,7 +101,7 @@ function Stack({ tab, routes, active }: { tab: Tab; routes: Route[]; active: boo
   );
 }
 
-function Shell() {
+function Shell({ covered }: { covered: boolean }) {
   const n = useNav();
   const [visited, setVisited] = useState<Set<Tab>>(new Set(['home']));
   useEffect(() => {
@@ -112,11 +113,26 @@ function Shell() {
 
   return (
     <>
-      <div className="stage">
+      <div className="stage" inert={covered || undefined}>
         {TABS.map((t) => (visited.has(t.id) || t.id === n.tab ? <Stack key={t.id} tab={t.id} routes={n.stacks[t.id]} active={n.tab === t.id} /> : null))}
       </div>
-      <NavigationBar hidden={hideBar} />
+      <NavigationBar hidden={hideBar} covered={covered} />
     </>
+  );
+}
+
+/** The short sign-up a guest sees over the app, so they come back to the same screen. */
+function JoinHost() {
+  const j = useJoinLayer();
+  const s = useApp();
+  useEffect(() => {
+    if (s.account && j.open) joinLayer.close();
+  }, [s.account, j.open]);
+  if (!j.open) return null;
+  return (
+    <div className={cx('join-layer', j.closing && 'is-closing')} role="dialog" aria-modal="true" aria-label="Create an account or log in">
+      <Onboarding key={j.start} join={{ start: j.start, onClose: joinLayer.close }} />
+    </div>
   );
 }
 
@@ -160,6 +176,7 @@ function StatusBar() {
 
 export function App() {
   const s = useApp();
+  const j = useJoinLayer();
   const framed = useFrameMode();
   const scheme = s.settings.theme === 'system' ? undefined : s.settings.theme;
   const unread = unreadCount(s);
@@ -176,7 +193,8 @@ export function App() {
   const app = (
     <div className={cx('app', framed && 'app--framed')} data-scheme={scheme}>
       {framed && <StatusBar />}
-      {s.account && s.onboarded ? <Shell /> : <Onboarding />}
+      {(s.account && s.onboarded) || s.guest ? <Shell covered={j.open} /> : <Onboarding />}
+      <JoinHost />
       <SheetHost />
       <ToastHost />
     </div>

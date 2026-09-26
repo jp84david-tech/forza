@@ -5619,3 +5619,218 @@
   color: var(--ink-3);
   word-break: break-word;
 }
+
+/* ------------------------------------------------------------------ guests */
+
+.welcome__guest {
+  justify-self: center;
+  margin-top: 2px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 650;
+  color: rgb(255 255 255 / 78%);
+}
+
+.welcome__guest:hover,
+.welcome__guest:focus-visible {
+  color: #fff;
+  background: rgb(255 255 255 / 8%);
+}
+
+.onb__switch {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+/* Short sign-up shown over the app; the app stays mounted underneath. */
+.join-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 250;
+  animation: modal-in 380ms var(--ease) both;
+}
+
+.join-layer.is-closing {
+  animation: modal-out 260ms var(--ease-in) both;
+}
+
+.joinprompt {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 10px;
+  padding-top: 18px;
+}
+
+.joinprompt__title {
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+  max-width: 22ch;
+  text-wrap: balance;
+}
+
+.joinprompt__body {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  max-width: 34ch;
+}
+
+.joinprompt__perks,
+.guestcard__perks {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+  text-align: left;
+  font-size: 14.5px;
+  font-weight: 560;
+  color: var(--ink-2);
+}
+
+.joinprompt__perks {
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  width: 100%;
+  max-width: 340px;
+  font-size: 13.5px;
+}
+
+.joinprompt__perks li,
+.guestcard__perks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.joinprompt__perks svg,
+.guestcard__perks svg {
+  flex: none;
+  color: var(--brand-text);
+}
+
+.joinprompt__actions,
+.guestcard__actions {
+  display: grid;
+  gap: 8px;
+}
+
+.guestcard {
+  display: grid;
+  gap: 12px;
+  padding: 22px 20px 20px;
+  border-radius: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.guestcard__title {
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 800;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+}
+
+.guestcard__body {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.guestcard__actions {
+  margin-top: 6px;
+}
+
+.guest-login {
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ install */
+
+.install-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px var(--gutter) 0;
+  padding: 12px 8px 12px 14px;
+  border-radius: 18px;
+  background: var(--brand-soft);
+  color: var(--ink);
+}
+
+.install-banner__body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.install-banner__body b {
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.install-banner__body span {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.install-banner__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  color: var(--ink-3);
+}
+
+.install-steps {
+  display: grid;
+  gap: 14px;
+  padding: 4px 0 8px;
+}
+
+.install-steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+
+.install-steps__n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.install-inline {
+  display: inline;
+  vertical-align: -2px;
+  color: var(--brand-text);
+}
+
+.install-note {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  padding-bottom: 8px;
+}

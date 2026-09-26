@@ -1,9 +1,11 @@
-import { Ban, CalendarDays, Check, ChevronRight, Flag, Heart, Info, Lock, MapPin, MoreHorizontal, Pencil, Settings, Share2, Shapes, ShieldCheck, Star, Sunrise, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
+import { Ban, Building2, CalendarDays, Check, ChevronRight, CircleHelp, FileText, Flag, FlaskConical, Heart, Info, Lock, LogOut, MapPin, MessageCircle, MoreHorizontal, Palette, Pencil, Settings, Share2, Shapes, ShieldCheck, Star, Sunrise, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { FacilityCard, PlayerCard, ReliabilityBadge, SportBadge, SportCard } from '../components/cards';
-import { SportIcon } from '../components/icons';
+import { LogoMark, SportIcon } from '../components/icons';
+import { InstallRow } from '../components/Install';
+import { joinLayer, needsAccount } from '../components/Join';
 import { confirmDialog, SheetBody, SheetHeader } from '../components/Sheet';
-import { openLogResult, openReport, openShare } from '../components/sheets';
+import { openLocation, openLogResult, openReport, openShare } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, Field, IconButton, Pill, Row, Screen, Section } from '../components/ui';
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../data/achievements';
 import { statsFor } from '../data/compete';
@@ -14,7 +16,7 @@ import type { SkillLevel, SportId, SportLevel } from '../data/types';
 import { cx, plural } from '../lib/format';
 import { fmtShortDate, monthShort } from '../lib/time';
 import { reliability } from '../services/trust';
-import { block, inviteToGame, progressFor, setSports, toggleFollow, updateAccount, updateProfile } from '../state/actions';
+import { block, inviteToGame, progressFor, setSports, signOut, toggleFollow, updateAccount, updateProfile } from '../state/actions';
 import { nav } from '../state/nav';
 import { me, pastActivity, upcoming, userById } from '../state/selectors';
 import { useApp } from '../state/store';
@@ -204,8 +206,69 @@ export function StatsScreen({ params }: ScreenComponentProps) {
 
 // ---------------------------------------------------------------- profile tab
 
+/** Profile tab for someone looking around without an account. */
+function GuestProfile({ retap }: { retap: number }) {
+  const s = useApp();
+  return (
+    <Screen title="Profile" header="large" back={false} retap={retap}>
+      <div className="pad stack-24">
+        <div className="guestcard">
+          <LogoMark size={48} />
+          <h2 className="guestcard__title">You’re looking around as a guest</h2>
+          <p className="guestcard__body">Create a free account to book, join games and keep track of your season. It takes about 30 seconds.</p>
+          <ul className="guestcard__perks">
+            <li>
+              <CalendarDays size={17} /> Book pitches and courts, and split the cost
+            </li>
+            <li>
+              <MessageCircle size={17} /> Join games and chat with the group
+            </li>
+            <li>
+              <Heart size={17} /> Save venues and get alerts when slots free up
+            </li>
+            <li>
+              <Trophy size={17} /> Stats, achievements, leagues and tournaments
+            </li>
+          </ul>
+          <div className="guestcard__actions">
+            <Button block size="lg" onClick={() => joinLayer.open('signup')}>
+              Create free account
+            </Button>
+            <Button block size="lg" variant="secondary" onClick={() => joinLayer.open('login')}>
+              Log in
+            </Button>
+          </div>
+        </div>
+
+        <Section title="Settings">
+          <div className="list-card">
+            <Row icon={<MapPin size={18} />} title="Location" subtitle={s.location?.label ?? 'Not set'} onClick={openLocation} />
+            <Row icon={<Palette size={18} />} title="Appearance" subtitle={s.settings.theme === 'system' ? 'Match device' : s.settings.theme === 'dark' ? 'Dark' : 'Light'} onClick={() => nav.push('settingsAppearance')} />
+            <InstallRow />
+          </div>
+        </Section>
+        <Section title="Support">
+          <div className="list-card">
+            <Row icon={<CircleHelp size={18} />} title="Help centre" onClick={() => nav.push('settingsHelp')} />
+            <Row icon={<FileText size={18} />} title="Terms of service" onClick={() => nav.push('settingsLegal', { doc: 'terms' })} />
+            <Row icon={<FileText size={18} />} title="Privacy policy" onClick={() => nav.push('settingsLegal', { doc: 'privacy' })} />
+          </div>
+        </Section>
+        <Section title="More">
+          <div className="list-card">
+            <Row icon={<Building2 size={18} />} title="BALLS for venues" subtitle="Manage prices, availability and bookings" onClick={() => nav.push('partner')} />
+            <Row icon={<FlaskConical size={18} />} title="Demo tools" subtitle="Error states, reset data, analytics events" onClick={() => nav.push('settingsDemo')} />
+            <Row icon={<LogOut size={18} />} title="Back to the welcome screen" onClick={signOut} chevron={false} />
+          </div>
+        </Section>
+      </div>
+    </Screen>
+  );
+}
+
 export function ProfileScreen({ retap }: ScreenComponentProps) {
   const s = useApp();
+  if (!s.account) return <GuestProfile retap={retap} />;
   const u = me(s);
   const r = reliability(u.attendance);
   const unlocked = new Set(s.profile.achievements.map((a) => a.id));
@@ -381,6 +444,7 @@ export function PlayerScreen({ params }: ScreenComponentProps) {
   const hidden = u.visibility === 'private' || (u.visibility === 'players' && !played);
 
   const invite = () => {
+    if (needsAccount('invite')) return;
     const games = myGames.map((a) => (a.kind === 'game' ? a.game : s.games.find((g) => g.id === (a.kind === 'booking' ? a.booking.gameId : '')))).filter(Boolean);
     ui.open('Invite to a game', (close) => (
       <>
@@ -431,6 +495,7 @@ export function PlayerScreen({ params }: ScreenComponentProps) {
               danger
               onClick={async () => {
                 close();
+                if (!blocked && needsAccount('block')) return;
                 if (!blocked && (await confirmDialog({ title: `Block ${u.name.split(' ')[0]}?`, body: 'You won’t see each other’s games or messages, and they can’t invite you. They won’t be told.', confirm: 'Block', danger: true }))) {
                   block(u.id);
                   nav.pop();
@@ -453,7 +518,7 @@ export function PlayerScreen({ params }: ScreenComponentProps) {
       footer={
         !blocked && !hidden ? (
           <CtaBar>
-            <Button variant={following ? 'secondary' : 'secondary'} onClick={() => toggleFollow(u.id)} aria-pressed={following}>
+            <Button variant={following ? 'secondary' : 'secondary'} onClick={() => !needsAccount('follow') && toggleFollow(u.id)} aria-pressed={following}>
               {following ? (
                 <>
                   <Check size={16} /> Following
@@ -658,7 +723,7 @@ export function FriendsScreen() {
                   user={u}
                   onClick={() => nav.push('player', { id: u.id })}
                   trailing={
-                    <Button size="sm" variant="secondary" onClick={() => toggleFollow(u.id)}>
+                    <Button size="sm" variant="secondary" onClick={() => !needsAccount('follow') && toggleFollow(u.id)}>
                       Follow
                     </Button>
                   }
