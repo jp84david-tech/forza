@@ -804,7 +804,7 @@ export function PartnerScreen() {
             </Section>
             <Section title="Coming to the dashboard">
               <ul className="rules">
-                <li>Add courts and pitches, opening hours and photos</li>
+                <li>Add courts, opening hours and photos</li>
                 <li>Create events and run tournaments</li>
                 <li>Handle cancellations and refunds</li>
               </ul>

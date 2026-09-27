@@ -322,8 +322,8 @@ function InviteSheet({ title, subtitle, exclude, onSend, share, close, sport }: 
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const people = useMemo(() => {
-    const friends = s.following.map((id) => userById(s, id)).filter(Boolean) as User[];
-    const others = PEOPLE.filter((p) => !s.following.includes(p.id) && (!sport || p.sports.some((x) => x.sport === sport))).slice(0, 8);
+    const friends = s.friends.map((id) => userById(s, id)).filter(Boolean) as User[];
+    const others = PEOPLE.filter((p) => !s.friends.includes(p.id) && (!sport || p.sports.some((x) => x.sport === sport))).slice(0, 8);
     return [...friends, ...others].filter((p) => !exclude.includes(p.id) && !s.blocked.includes(p.id) && p.visibility !== 'private');
   }, [s, exclude, sport]);
   const list = people.filter((p) => !q || `${p.name} ${p.username}`.toLowerCase().includes(q.toLowerCase()));
@@ -359,7 +359,7 @@ function InviteSheet({ title, subtitle, exclude, onSend, share, close, sport }: 
                 <span className="pick__body">
                   <b>{p.name}</b>
                   <small>
-                    {s.following.includes(p.id) ? 'Friend' : 'Plays nearby'} · {main ? `${sportName(main.sport)}, ${levelLabel(main.level)}` : `@${p.username}`}
+                    {s.friends.includes(p.id) ? 'Friend' : 'Plays nearby'} · {main ? `${sportName(main.sport)}, ${levelLabel(main.level)}` : `@${p.username}`}
                   </small>
                 </span>
                 <span className="pick__box" aria-hidden="true">

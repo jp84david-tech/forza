@@ -1,4 +1,4 @@
-import { CalendarCheck, Heart, MessageCircle, Trophy } from 'lucide-react';
+import { CalendarCheck, GraduationCap, MessageCircle, Users } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { analytics } from '../services/analytics';
 import { getState } from '../state/store';
@@ -19,16 +19,16 @@ const COPY: Record<JoinReason, { title: string; body: string }> = {
   book: { title: 'Create a free account to book', body: 'Your booking, receipt and check-in code are kept in your account, and you can split the cost with friends.' },
   join: { title: 'Create a free account to join', body: 'So the organiser knows who’s coming. You’ll get the group chat, reminders and your share to pay.' },
   create: { title: 'Create a free account to post your game', body: 'Players who join can message you, and we’ll tell you as the spots fill up.' },
-  save: { title: 'Create a free account to save venues', body: 'Keep your favourite pitches and courts in one place and get told when good slots free up.' },
+  save: { title: 'Create a free account to save venues', body: 'Keep your favourite courts in one place and get told when good slots free up.' },
   alert: { title: 'Create a free account for alerts', body: 'We’ll let you know when evening slots free up at this venue.' },
   waitlist: { title: 'Create a free account to join the waitlist', body: 'If this slot frees up we’ll hold it for you and let you know straight away.' },
   register: { title: 'Create a free account to sign up', body: 'Your place, team and payment are kept in your account, with reminders before it starts.' },
   review: { title: 'Create a free account to write a review', body: 'Reviews come from people who’ve played there, so each one is linked to an account.' },
   report: { title: 'Create a free account to report this', body: 'Reports are linked to an account so our team can follow up and prevent misuse.' },
-  follow: { title: 'Create a free account to follow players', body: 'See when people you follow create games, and invite them to yours.' },
+  follow: { title: 'Create a free account to add friends', body: 'Add friends by username and invite each other to games.' },
   invite: { title: 'Create a free account to invite players', body: 'Invite people to your games and see who’s accepted.' },
   block: { title: 'Create a free account to block players', body: 'Blocking stops someone messaging you or seeing your games.' },
-  request: { title: 'Create a free account to request a session', body: 'The coach replies to your account so you can arrange a time.' },
+  request: { title: 'Create a free account to book a lesson', body: 'Your lesson and payment are kept in your account, with a reminder before it starts.' },
 };
 
 // ---------------------------------------------------------------- sign-up layer state
@@ -82,16 +82,16 @@ function JoinPrompt({ reason, close }: { reason: JoinReason; close: () => void }
         <p className="joinprompt__body">{c.body}</p>
         <ul className="joinprompt__perks">
           <li>
-            <CalendarCheck size={17} /> Book and split costs
+            <CalendarCheck size={17} /> Book courts
           </li>
           <li>
             <MessageCircle size={17} /> Join games and chat
           </li>
           <li>
-            <Heart size={17} /> Save venues
+            <GraduationCap size={17} /> Book coaches
           </li>
           <li>
-            <Trophy size={17} /> Track your stats
+            <Users size={17} /> Add friends
           </li>
         </ul>
       </SheetBody>

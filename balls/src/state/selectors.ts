@@ -8,7 +8,7 @@ import { distanceMiles } from '../lib/geo';
 import { now } from '../lib/time';
 import type { AppState } from './store';
 import { MAP_CENTER } from '../data/map';
-import { SPORT_BY_ID } from '../data/sports';
+import { PLAYABLE, SPORT_BY_ID } from '../data/sports';
 
 const SPORT_NAMES: Record<string, string> = Object.fromEntries(Object.entries(SPORT_BY_ID).map(([k, v]) => [k, v.name]));
 
@@ -213,11 +213,11 @@ export const unreadCount = (s: AppState) => s.notifications.filter((n) => !n.rea
 
 /** Sports ordered by what this user plays, then the rest of the catalogue. */
 export function sportOrder(s: AppState): SportId[] {
-  const mine = s.profile.sports.map((x) => x.sport);
+  const mine = s.profile.sports.map((x) => x.sport).filter((x) => PLAYABLE.includes(x));
   const booked = s.bookings.map((b) => b.sport);
   const freq = new Map<SportId, number>();
   booked.forEach((sp) => freq.set(sp, (freq.get(sp) ?? 0) + 1));
-  const all: SportId[] = ['football', 'basketball', 'tennis', 'padel', 'badminton', 'volleyball', 'cricket', 'rugby', 'running', 'gym', 'swimming', 'other'];
+  const all: SportId[] = PLAYABLE;
   const rest = all.filter((x) => !mine.includes(x)).sort((a, b) => (freq.get(b) ?? 0) - (freq.get(a) ?? 0));
   return [...mine, ...rest];
 }

@@ -439,7 +439,11 @@ export interface Coach {
   qualifications: string[];
   safeguarding: boolean; // DBS-checked
   area: string;
-  from: number; // pence per session
+  from: number; // pence per hour, 1:1
+  /** Where they coach. */
+  venueId?: ID;
+  /** Short line shown in lists, e.g. "Ex-tour player". */
+  headline?: string;
 }
 
 export interface TrainingSession {
@@ -604,4 +608,29 @@ export interface PrivacyPrefs {
   showOnLeaderboards: boolean;
   showArea: boolean;
   invitesFrom: 'everyone' | 'played-with' | 'nobody';
+}
+
+// ---------------------------------------------------------------- Friends & coaching
+
+export interface FriendRequest {
+  id: ID;
+  userId: ID;
+  /** 'out' = I asked them; 'in' = they asked me. */
+  dir: 'in' | 'out';
+  at: string;
+}
+
+/** A paid session with a coach. */
+export interface Lesson {
+  id: ID;
+  coachId: ID;
+  facilityId: ID;
+  sport: SportId;
+  start: string;
+  end: string;
+  players: 1 | 2;
+  amount: number;
+  paymentId: ID;
+  status: 'confirmed' | 'cancelled';
+  createdAt: string;
 }

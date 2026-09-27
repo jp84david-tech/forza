@@ -1,12 +1,17 @@
-import type { ComponentType } from 'react';
-import { BookingConfirmedScreen, BookingDetailScreen, BookingsScreen, BookScreen, CheckoutScreen } from './Booking';
-import { CompeteScreen, LeaderboardScreen, LeagueScreen, LeaguesScreen, TournamentScreen, TournamentsScreen } from './Compete';
-import { CoachScreen, EventScreen, EventsScreen, FeedScreen, NotificationsScreen, SearchScreen, ServicesScreen, SessionScreen, SportHubScreen, TrainingScreen } from './Discover';
+import { type ComponentType, createElement } from 'react';
+import { SearchX } from 'lucide-react';
+import { EmptyState, Screen } from '../components/ui';
+import { FACILITY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/facilities';
+import { BookingConfirmedScreen, BookingDetailScreen, BookScreen, CheckoutScreen } from './Booking';
+import { BookHubScreen, LessonScreen } from './BookHub';
+import { CoachScreen, FriendsHubScreen } from './FriendsHub';
+import { LeaderboardScreen, LeagueScreen, LeaguesScreen, TournamentScreen, TournamentsScreen } from './Compete';
+import { EventScreen, EventsScreen, FeedScreen, NotificationsScreen, SearchScreen, ServicesScreen, SessionScreen, SportHubScreen, TrainingScreen } from './Discover';
 import { CompareScreen, ExploreScreen } from './Explore';
 import { FacilityScreen, ReviewsScreen, WriteReviewScreen } from './Facility';
 import { HomeScreen } from './Home';
 import { ChatScreen, CreateGameScreen, GameScreen, GamesScreen, PlayNowScreen } from './Play';
-import { AchievementsScreen, EditProfileScreen, EditSportsScreen, FriendsScreen, MyReviewsScreen, PlayerScreen, ProfileScreen, SavedScreen, StatsScreen } from './Profile';
+import { AchievementsScreen, EditProfileScreen, EditSportsScreen, MyReviewsScreen, PlayerScreen, ProfileScreen, SavedScreen, StatsScreen } from './Profile';
 import {
   AccountSettings,
   AppearanceSettings,
@@ -37,15 +42,33 @@ interface RouteDef {
   hideTabBar?: boolean;
   /** Slides up rather than across (Play Now, Search). */
   modal?: boolean;
+  /** Tab roots with the second switch above the tab bar (Book, Friends). */
+  subbar?: boolean;
 }
+
+/** A screen for a venue, court or booking that doesn't exist (old link, removed venue). */
+function NotFound({ what }: { what: string }) {
+  const body = createElement(EmptyState, { icon: createElement(SearchX, { size: 24 }), title: `This ${what} isn’t available`, body: 'It may have been removed. Go back and try another.' });
+  return createElement(Screen, { title: 'Not found', children: body });
+}
+
+/** Render `component` only when `ok(params)`; otherwise a friendly not-found screen. */
+function guard(component: ComponentType<ScreenComponentProps>, what: string, ok: (p: ScreenComponentProps['params']) => boolean): ComponentType<ScreenComponentProps> {
+  return function Guarded(props: ScreenComponentProps) {
+    return ok(props.params) ? createElement(component, props) : createElement(NotFound, { what });
+  };
+}
+
+const hasVenue = (p: ScreenComponentProps['params']) => !!FACILITY_BY_ID[p.id ?? ''];
 
 export const ROUTES: Record<string, RouteDef> = {
   // tab roots
   home: { component: HomeScreen },
   explore: { component: ExploreScreen },
-  bookings: { component: BookingsScreen },
-  compete: { component: CompeteScreen },
+  bookHub: { component: BookHubScreen, subbar: true },
+  friendsHub: { component: FriendsHubScreen, subbar: true },
   profile: { component: ProfileScreen },
+  lesson: { component: LessonScreen, hideTabBar: true },
 
   // discovery
   search: { component: SearchScreen, hideTabBar: true, modal: true },
@@ -61,11 +84,11 @@ export const ROUTES: Record<string, RouteDef> = {
   compare: { component: CompareScreen },
 
   // venues & booking
-  facility: { component: FacilityScreen, hideTabBar: true },
-  reviews: { component: ReviewsScreen, hideTabBar: true },
-  writeReview: { component: WriteReviewScreen, hideTabBar: true },
-  book: { component: BookScreen, hideTabBar: true },
-  checkout: { component: CheckoutScreen, hideTabBar: true },
+  facility: { component: guard(FacilityScreen, 'venue', hasVenue), hideTabBar: true },
+  reviews: { component: guard(ReviewsScreen, 'venue', hasVenue), hideTabBar: true },
+  writeReview: { component: guard(WriteReviewScreen, 'venue', hasVenue), hideTabBar: true },
+  book: { component: guard(BookScreen, 'venue', (p) => !!FACILITY_BY_ID[p.facilityId ?? ''] && spacesFor(p.facilityId!).some((x) => !x.walkUp)), hideTabBar: true },
+  checkout: { component: guard(CheckoutScreen, 'court', (p) => !!SPACE_BY_ID[p.spaceId ?? ''] && !!p.start), hideTabBar: true },
   bookingConfirmed: { component: BookingConfirmedScreen, hideTabBar: true, modal: true },
   booking: { component: BookingDetailScreen },
 
@@ -89,7 +112,6 @@ export const ROUTES: Record<string, RouteDef> = {
   achievements: { component: AchievementsScreen },
   saved: { component: SavedScreen },
   myReviews: { component: MyReviewsScreen },
-  friends: { component: FriendsScreen },
   editProfile: { component: EditProfileScreen, hideTabBar: true },
   editSports: { component: EditSportsScreen, hideTabBar: true },
 

@@ -1,11 +1,13 @@
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../data/achievements';
 import { FACILITY_BY_ID, POLICY_BY_ID, SPACE_BY_ID } from '../data/facilities';
 import { PEOPLE, PERSON_BY_ID } from '../data/people';
+import { COACH_BY_ID } from '../data/discover';
 import { SPORT_BY_ID, sportName } from '../data/sports';
 import type {
   Booking,
   Game,
   GamePlayer,
+  Lesson,
   Link,
   Notification,
   NotificationCategory,
@@ -104,8 +106,8 @@ export function openNotification(n: Notification) {
   markRead(n.id);
   if (!n.link) return;
   const { route, params } = n.link;
-  if (route === 'booking') nav.go('bookings', 'booking', params);
-  else if (route === 'achievements') nav.go('profile', 'achievements');
+  if (route === 'booking' || route === 'lesson') nav.go('book', route, params);
+  else if (route === 'friends') nav.openSub('friends', 'friends');
   else nav.push(route, params);
 }
 
@@ -160,7 +162,7 @@ function checkAchievements() {
   setState((st) => ({ ...st, profile: { ...st.profile, achievements: [...st.profile.achievements, ...fresh.map((a) => ({ id: a.id, at: iso() }))] } }));
   fresh.forEach((a, i) =>
     setTimeout(() => {
-      ui.toast(`Achievement unlocked: ${a.name}`, { icon: 'trophy', tone: 'success', action: { label: 'See', run: () => nav.go('profile', 'achievements') } });
+      ui.toast(`Achievement unlocked: ${a.name}`, { icon: 'trophy', tone: 'success', action: { label: 'See', run: () => nav.push('achievements') } });
       notify({ type: 'achievement', title: `Achievement unlocked: ${a.name}`, body: a.description, link: { route: 'achievements' } });
     }, 900 + i * 1200),
   );
@@ -312,7 +314,7 @@ export function toggleSaved(facilityId: string) {
     saved: saved ? s.saved.filter((x) => x.facilityId !== facilityId) : [{ facilityId, at: iso() }, ...s.saved],
   }));
   analytics.track(saved ? 'facility_unsaved' : 'facility_saved', { facility: facilityId });
-  if (!saved) ui.toast('Saved to your venues', { icon: 'heart', action: { label: 'View', run: () => nav.go('profile', 'saved') } });
+  if (!saved) ui.toast('Saved to your venues', { icon: 'heart', action: { label: 'View', run: () => nav.push('saved') } });
   else ui.toast('Removed from saved');
 }
 
@@ -756,7 +758,7 @@ export function report(targetType: ReportTarget, targetId: string, reason: strin
 }
 
 export function block(userId: string) {
-  setState((s) => ({ ...s, blocked: [...new Set([...s.blocked, userId])], following: s.following.filter((x) => x !== userId) }));
+  setState((s) => ({ ...s, blocked: [...new Set([...s.blocked, userId])], friends: s.friends.filter((x) => x !== userId), friendRequests: s.friendRequests.filter((r) => r.userId !== userId) }));
   ui.toast(`${firstName(userById(getState(), userId))} is blocked. You won’t see each other’s games or messages.`);
 }
 
@@ -765,10 +767,82 @@ export function unblock(userId: string) {
   ui.toast('Unblocked');
 }
 
-export function toggleFollow(userId: string) {
-  const on = getState().following.includes(userId);
-  setState((s) => ({ ...s, following: on ? s.following.filter((x) => x !== userId) : [...s.following, userId] }));
-  if (!on) ui.toast(`You’re following ${firstName(userById(getState(), userId))}`);
+// ---------------------------------------------------------------- friends
+
+/** Ask someone to be friends. They show up as a friend once they accept. */
+export function sendFriendRequest(userId: string) {
+  const s = getState();
+  if (s.friends.includes(userId) || s.friendRequests.some((r) => r.userId === userId)) return;
+  const name = firstName(userById(s, userId));
+  setState((st) => ({ ...st, friendRequests: [{ id: uid('fr'), userId, dir: 'out', at: iso() }, ...st.friendRequests] }));
+  ui.toast(`Request sent to ${name}`);
+  // Demo "backend": most people accept a few seconds later.
+  const person = PERSON_BY_ID[userId];
+  if (person && person.visibility !== 'private') {
+    later(3500, () => {
+      const cur = getState();
+      if (!cur.friendRequests.some((r) => r.userId === userId && r.dir === 'out')) return;
+      setState((st) => ({ ...st, friends: [userId, ...st.friends], friendRequests: st.friendRequests.filter((r) => r.userId !== userId) }));
+      notify({ type: 'invitation', title: `${name} accepted your friend request`, body: 'You can now invite each other to games.', link: { route: 'player', params: { id: userId } } }, { toast: true });
+    });
+  }
+}
+
+export function acceptFriendRequest(userId: string) {
+  setState((s) => ({ ...s, friends: [userId, ...s.friends.filter((x) => x !== userId)], friendRequests: s.friendRequests.filter((r) => r.userId !== userId) }));
+  ui.toast(`You and ${firstName(userById(getState(), userId))} are now friends`, { tone: 'success' });
+}
+
+export function declineFriendRequest(userId: string) {
+  setState((s) => ({ ...s, friendRequests: s.friendRequests.filter((r) => r.userId !== userId) }));
+}
+
+export function removeFriend(userId: string) {
+  setState((s) => ({ ...s, friends: s.friends.filter((x) => x !== userId) }));
+  ui.toast(`Removed ${firstName(userById(getState(), userId))} from friends`);
+}
+
+// ---------------------------------------------------------------- coaching
+
+/** Book and pay for a session with a coach. */
+export async function bookLesson(input: { coachId: string; start: string; mins: number; players: 1 | 2; amount: number; methodId?: string }): Promise<{ ok: true; lesson: Lesson } | { ok: false; error: string }> {
+  const coach = COACH_BY_ID[input.coachId];
+  if (!coach) return { ok: false, error: 'This coach isn’t available.' };
+  if (!input.methodId) return { ok: false, error: 'Choose a payment method.' };
+  const facilityId = coach.venueId ?? '';
+  const f = FACILITY_BY_ID[facilityId];
+  const paid = await takePayment(input.amount, input.methodId, `${coach.name} · ${f?.name ?? 'Lesson'}`);
+  if (!paid.ok) return paid;
+  const start = new Date(input.start);
+  const lesson: Lesson = {
+    id: uid('ls'),
+    coachId: coach.id,
+    facilityId,
+    sport: coach.sports[0],
+    start: start.toISOString(),
+    end: addMinutes(start, input.mins).toISOString(),
+    players: input.players,
+    amount: input.amount,
+    paymentId: paid.payment.id,
+    status: 'confirmed',
+    createdAt: iso(),
+  };
+  setState((s) => ({ ...s, lessons: [lesson, ...s.lessons] }));
+  notify({ type: 'booking-confirmed', title: `Lesson booked with ${coach.name.split(' ')[0]}`, body: `${fmtWhen(lesson.start)} at ${f?.name ?? 'the venue'}.`, link: { route: 'lesson', params: { id: lesson.id } } });
+  analytics.track('booking_completed', { kind: 'lesson', coach: coach.id, amount: input.amount });
+  return { ok: true, lesson };
+}
+
+export function cancelLesson(id: string) {
+  const l = getState().lessons.find((x) => x.id === id);
+  if (!l) return;
+  const refund = new Date(l.start).getTime() - Date.now() >= 24 * HOUR ? l.amount : 0;
+  setState((s) => ({
+    ...s,
+    lessons: s.lessons.map((x) => (x.id === id ? { ...x, status: 'cancelled' } : x)),
+    payments: s.payments.map((p) => (p.id === l.paymentId && refund ? { ...p, status: 'refunded', refunded: refund } : p)),
+  }));
+  ui.toast(refund ? `Lesson cancelled. ${money(refund)} will be refunded.` : 'Lesson cancelled. It was within 24 hours, so there’s no refund.');
 }
 
 // ---------------------------------------------------------------- search

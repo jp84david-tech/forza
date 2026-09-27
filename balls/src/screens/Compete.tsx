@@ -39,7 +39,7 @@ export function leaderboard(s: AppState, sport: SportId, stat: string, scope: Sc
     if (s.blocked.includes(p.id) || p.visibility === 'private') continue;
     const line = statsFor(p.id, sport);
     if (!line || line.values[stat] == null) continue;
-    if (scope === 'friends' && !s.following.includes(p.id)) continue;
+    if (scope === 'friends' && !s.friends.includes(p.id)) continue;
     if (scope === 'local') {
       const at = AREA_AT[p.area];
       if (!at || distanceMiles(at, origin(s)) > 2.5) continue;

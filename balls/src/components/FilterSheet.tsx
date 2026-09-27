@@ -8,7 +8,7 @@ import { useApp } from '../state/store';
 import { SportIcon } from './icons';
 import { SheetBody, SheetFooter, SheetHeader } from './Sheet';
 import { Button, Chip } from './ui';
-import { sportName } from '../data/sports';
+import { PLAYABLE, sportName } from '../data/sports';
 
 const FEATURE_ICONS: Record<FeatureId, React.ReactNode> = {
   changing: <DoorOpen size={15} />,
@@ -22,7 +22,7 @@ const FEATURE_ICONS: Record<FeatureId, React.ReactNode> = {
   seating: <Armchair size={15} />,
 };
 
-const FILTER_SPORTS: SportId[] = ['football', 'basketball', 'tennis', 'padel', 'badminton', 'volleyball', 'cricket', 'rugby', 'running', 'gym', 'swimming', 'other'];
+const FILTER_SPORTS: SportId[] = PLAYABLE;
 
 function toggle<T>(list: T[], v: T): T[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];

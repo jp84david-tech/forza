@@ -21,21 +21,21 @@ On a phone it runs full screen. On a desktop it appears inside a device frame, a
 
 **Guests:** **Just look around** on the welcome screen opens the app without an account. Booking, joining, saving, messaging, registering, following and reporting ask for a free account first, then return you to the same screen with what you picked still selected.
 
-**Demo account:** on the welcome screen tap **I have an account** and log in with any email and a password of 8 or more characters. That opens David's account, which has bookings, a cost split in progress, joined games, stats and notifications. **Get started** runs the real onboarding and creates a fresh, empty account instead.
+**Demo account:** on the welcome screen tap **I have an account** and log in with any email and a password of 8 or more characters. That opens David's account: court bookings with a cost split in progress, a coach lesson, joined games, friends and two friend requests. **Get started** runs the real onboarding and creates a fresh, empty account instead.
 
 ## What's in it
 
+BALLS is focused on **tennis and padel**.
+
 | Area | What works |
 | --- | --- |
-| **Home** | Personal greeting, next game with live countdown, favourite sports first, Play Now, quick actions, nearby games, “free tonight” slots for your most-booked sport, popular venues, local feed |
-| **Explore** | Pan and pinch-zoom vector map of North London with price markers, your approximate location, marker preview (price, rating, next free slot, one-tap Book), map/list toggle, sport chips, full filter sheet (sport, distance, price, date, time, venue type, facilities, rating), sort, price comparison |
-| **Venues** | Photo gallery, rating breakdown, sport-specific spaces (format, surface, floodlights; court type; lanes), peak and off-peak prices, facilities, opening hours, map and directions, reviews with “load more”, write a review (only after playing there), availability alerts, report |
-| **Booking** | Space → duration → day (Today / Tomorrow / This week) → time. Green is available, grey is full, brand blue is selected, always with a text label too. Waitlists on full slots, review and pay, cost splitting with exact 1p rounding, confirmation, booking page with check-in code, who has paid, cancellation with a refund quote from the venue's policy |
-| **Play** | Play Now (sport → level → when → results, or your usual in one tap), find a game, game page, join and pay your share, leave (with late-cancel warning), create a game (from scratch or from a booking), invite friends, share link, group chat with safety rules |
-| **Compete** | Your season, tournaments (register as a team or free agent), leagues (table, fixtures), sport-specific leaderboards (local, friends, global), achievements, events, training and coaches |
-| **Profile** | Profile, sport-specific stats with form and weekly chart, achievements, saved venues, reviews, friends, public player profiles with reliability |
-| **Settings** | Account, profile, sports, location, play and booking preferences, preferred maps app, notifications per category, appearance (system, light, dark), privacy, security, payment methods, blocked users, help, report a problem, terms, privacy policy, log out |
-| **Venue side** | “BALLS for venues” dashboard: today's bookings, utilisation, revenue, edit prices, block out spaces (players see changes straight away), reviews |
+| **Home** | Welcome screen with your next booking, a "Book a court" card with a slow picture slideshow, and shortcuts to Play and Coaches. Profile and settings open from the avatar. |
+| **Explore** | Map and list of every padel and tennis venue nearby, filters, venue pages with photos, courts, prices, reviews, directions and availability alerts. |
+| **Book → Book** | Pick padel or tennis, a day and a time of day, and see every free court nearby with its prices. Tap a time to book, split the cost and pay. |
+| **Book → My bookings** | Upcoming, past and cancelled courts, games you've joined and coach lessons, with check-in codes, who's paid and cancellation with refunds. |
+| **Friends → Play** | Open games that need players. Join and pay your share, chat with the group, or create your own game. |
+| **Friends → Coaches** | Six local coaches. Pick a length, just you or you and a friend, a day and a time, and pay. Cancel free up to 24 hours before. |
+| **Friends → Friends** | Search by username. Add people; they show as friends once you've both added each other. Accept or decline requests. Sign-up tells you if a username is taken and suggests another. |
 
 Things other people would do in a live app are simulated so the flows can be tried alone: a waitlisted slot opens up after about 25 seconds, invited friends accept or pay their share, players join games you create, and someone replies in chat.
 

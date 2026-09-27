@@ -6,8 +6,8 @@ import { MapView, type MapMarkerData } from '../components/MapView';
 import { LocationPicker } from '../components/sheets';
 import { Button, Field } from '../components/ui';
 import { FACILITIES, spacesFor } from '../data/facilities';
-import { AVATAR_COLORS, TAKEN_USERNAMES } from '../data/people';
-import { SKILL_LEVELS, sportName } from '../data/sports';
+import { AVATAR_COLORS, usernameTaken } from '../data/people';
+import { PLAYABLE, SKILL_LEVELS, sportName } from '../data/sports';
 import type { AgeGroup, SkillLevel, SportId } from '../data/types';
 import { cx, money } from '../lib/format';
 import { distanceMiles } from '../lib/geo';
@@ -17,7 +17,7 @@ import { MAP_CENTER } from '../data/map';
 
 type Step = 'welcome' | 'login' | 'forgot' | 'sports' | 'levels' | 'distance' | 'location' | 'profile';
 const FLOW: Step[] = ['sports', 'levels', 'distance', 'location', 'profile'];
-const ALL: SportId[] = ['football', 'basketball', 'tennis', 'padel', 'badminton', 'volleyball', 'cricket', 'rugby', 'running', 'gym', 'swimming', 'other'];
+const ALL: SportId[] = PLAYABLE;
 
 const WELCOME_MARKERS: MapMarkerData[] = FACILITIES.slice(0, 14).map((f) => {
   const sp = spacesFor(f.id)[0];
@@ -31,7 +31,7 @@ function Welcome({ go }: { go: (s: Step) => void }) {
         <MapView markers={WELCOME_MARKERS} interactive={false} initialZoom={0.085} center={{ lat: 51.5655, lng: -0.1335 }} user={{ lat: 51.5567, lng: -0.138 }} controls={false} />
         <div className="welcome__fade" />
         <div className="welcome__live welcome__live--a">
-          <span className="live-dot" /> 5-a-side · 19:00 · 2 spots left
+          <span className="live-dot" /> Tennis doubles · 19:00 · 1 spot left
         </div>
         <div className="welcome__live welcome__live--b">
           <span className="live-dot" /> Padel doubles · need 1
@@ -42,8 +42,8 @@ function Welcome({ go }: { go: (s: Step) => void }) {
       </div>
       <div className="welcome__body">
         <Logo size={44} />
-        <h1 className="welcome__title">Games and pitches near you</h1>
-        <p className="welcome__lede">See which games need players tonight, and book pitches and courts nearby.</p>
+        <h1 className="welcome__title">Padel and tennis near you</h1>
+        <p className="welcome__lede">Book a court, join a game or find a coach nearby.</p>
         <div className="welcome__actions">
           <Button size="lg" block onClick={() => go('sports')}>
             Get started
@@ -453,7 +453,7 @@ function ProfileStep({ onBack, onLogin, quick, sports, levels, distance }: { onB
     if (!touchedUser) setUsername(first ? `${first.toLowerCase().replace(/[^a-z0-9]/g, '')}${last ? last[0].toLowerCase() : ''}` : '');
   }, [first, last, touchedUser]);
 
-  const userErr = !username ? null : !/^[a-z0-9_]{3,20}$/.test(username) ? 'Use 3–20 lowercase letters, numbers or _' : TAKEN_USERNAMES.has(username) ? 'That username is taken' : null;
+  const userErr = !username ? null : !/^[a-z0-9_]{3,20}$/.test(username) ? 'Use 3–20 lowercase letters, numbers or _' : usernameTaken(username);
 
   const submit = (method: 'email' | 'apple' | 'google' = 'email') => {
     const e: Record<string, string> = {};

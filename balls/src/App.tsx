@@ -1,11 +1,12 @@
-import { CalendarDays, Compass, House, Trophy, UserRound } from 'lucide-react';
+import { CalendarDays, Compass, House, Users } from 'lucide-react';
 import { type ComponentType, useEffect, useRef, useState } from 'react';
+import { ScreenBoundary } from './components/ErrorBoundary';
 import { joinLayer, useJoinLayer } from './components/Join';
 import { SheetHost, ToastHost } from './components/Sheet';
 import { Logo } from './components/icons';
 import { cx } from './lib/format';
 import { analytics } from './services/analytics';
-import { type Route, type Tab, nav, useNav } from './state/nav';
+import { type Route, type SubState, type Tab, nav, useNav } from './state/nav';
 import { upcoming, unreadCount } from './state/selectors';
 import { useApp } from './state/store';
 import { ROUTES } from './screens/routes';
@@ -15,16 +16,59 @@ import { fmtTime, now } from './lib/time';
 const TABS: Array<{ id: Tab; label: string; icon: ComponentType<{ size?: number; strokeWidth?: number }> }> = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'explore', label: 'Explore', icon: Compass },
-  { id: 'bookings', label: 'Bookings', icon: CalendarDays },
-  { id: 'compete', label: 'Compete', icon: Trophy },
-  { id: 'profile', label: 'Profile', icon: UserRound },
+  { id: 'book', label: 'Book', icon: CalendarDays },
+  { id: 'friends', label: 'Friends', icon: Users },
 ];
+
+const SUBS: { [T in keyof SubState]: Array<{ id: SubState[T]; label: string }> } = {
+  book: [
+    { id: 'book', label: 'Book' },
+    { id: 'mine', label: 'My bookings' },
+  ],
+  friends: [
+    { id: 'play', label: 'Play' },
+    { id: 'coaches', label: 'Coaches' },
+    { id: 'friends', label: 'Friends' },
+  ],
+};
+
+/** The second switch that sits just above the tab bar on Book and Friends. */
+function SubBar({ hidden }: { hidden: boolean }) {
+  const n = useNav();
+  const tab = n.tab;
+  if (tab !== 'book' && tab !== 'friends') return null;
+  const items = SUBS[tab] as Array<{ id: string; label: string }>;
+  const cur = n.sub[tab];
+  const i = Math.max(0, items.findIndex((x) => x.id === cur));
+  const show = !hidden && n.stacks[tab].length === 1;
+  return (
+    <div className={cx('subbar', !show && 'is-hidden')} aria-hidden={!show}>
+      <div className="subbar__track" role="tablist" aria-label={tab === 'book' ? 'Book' : 'Friends'} style={{ ['--n' as string]: items.length, ['--i' as string]: i }}>
+        <span className="subbar__thumb" aria-hidden="true" />
+        {items.map((it) => (
+          <button
+            key={it.id}
+            type="button"
+            role="tab"
+            aria-selected={it.id === cur}
+            tabIndex={show ? 0 : -1}
+            className={cx('subbar__item', it.id === cur && 'is-active')}
+            onClick={() => (tab === 'book' ? nav.setSub('book', it.id as SubState['book']) : nav.setSub('friends', it.id as SubState['friends']))}
+          >
+            {it.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Bottom navigation bar. */
 function NavigationBar({ hidden, covered }: { hidden: boolean; covered: boolean }) {
   const n = useNav();
   const s = useApp();
   const next = upcoming(s).length;
+  const requests = s.friendRequests.filter((r) => r.dir === 'in').length;
   return (
     <nav className={cx('tabbar', hidden && 'is-hidden')} aria-label="Main" inert={covered || undefined}>
       {TABS.map((t) => {
@@ -36,12 +80,12 @@ function NavigationBar({ hidden, covered }: { hidden: boolean; covered: boolean 
             type="button"
             className={cx('tabbar__item', on && 'is-active')}
             aria-current={on ? 'page' : undefined}
-            aria-label={t.id === 'bookings' && next > 0 ? `${t.label}, ${next} upcoming` : t.label}
+            aria-label={t.id === 'book' && next > 0 ? `${t.label}, ${next} upcoming` : t.id === 'friends' && requests > 0 ? `${t.label}, ${requests} requests` : t.label}
             onClick={() => nav.switchTab(t.id)}
           >
             <span className="tabbar__icon">
               <Icon size={23} strokeWidth={on ? 2.3 : 1.9} />
-              {t.id === 'bookings' && next > 0 && <span className="tabbar__dot" aria-hidden="true" />}
+              {((t.id === 'book' && next > 0) || (t.id === 'friends' && requests > 0)) && <span className="tabbar__dot" aria-hidden="true" />}
             </span>
             <span className="tabbar__label">{t.label}</span>
           </button>
@@ -89,11 +133,13 @@ function Stack({ tab, routes, active }: { tab: Tab; routes: Route[]; active: boo
         return (
           <div
             key={r.key}
-            className={cx('screen', i > 0 && 'is-pushed', r.leaving && 'is-leaving', !r.leaving && i < topIndex && 'is-covered', !r.leaving && i < topIndex && topIsModal && 'under-modal', def.modal && 'is-modal', !def.hideTabBar && 'with-tabbar')}
+            className={cx('screen', i > 0 && 'is-pushed', r.leaving && 'is-leaving', !r.leaving && i < topIndex && 'is-covered', !r.leaving && i < topIndex && topIsModal && 'under-modal', def.modal && 'is-modal', !def.hideTabBar && 'with-tabbar', def.subbar && i === 0 && 'with-subbar')}
             aria-hidden={!isTop}
             inert={!isTop ? true : undefined}
           >
-            <Comp params={r.params} routeKey={r.key} retap={i === 0 ? n.retap[tab] : 0} />
+            <ScreenBoundary onBack={() => (i > 0 ? nav.pop() : nav.reset())}>
+              <Comp params={r.params} routeKey={r.key} retap={i === 0 ? n.retap[tab] : 0} />
+            </ScreenBoundary>
           </div>
         );
       })}
@@ -116,6 +162,7 @@ function Shell({ covered }: { covered: boolean }) {
       <div className="stage" inert={covered || undefined}>
         {TABS.map((t) => (visited.has(t.id) || t.id === n.tab ? <Stack key={t.id} tab={t.id} routes={n.stacks[t.id]} active={n.tab === t.id} /> : null))}
       </div>
+      <SubBar hidden={hideBar || covered} />
       <NavigationBar hidden={hideBar} covered={covered} />
     </>
   );
@@ -205,12 +252,12 @@ export function App() {
     <div className="desk" data-scheme={scheme}>
       <aside className="desk__brand">
         <Logo size={44} className="desk__logo" />
-        <h1 className="desk__title">Games and pitches near you</h1>
-        <p className="desk__lede">See which games need players, book a pitch or court, and split the cost with your group.</p>
+        <h1 className="desk__title">Padel and tennis near you</h1>
+        <p className="desk__lede">Book a court, join a game when you’re short of players, and find a coach. All in one place.</p>
         <ul className="desk__points">
-          <li>Every pitch, court and pool nearby on one map</li>
+          <li>Every padel and tennis court nearby on one map</li>
           <li>Join a game tonight in a couple of taps</li>
-          <li>Costs split automatically, with who’s paid</li>
+          <li>Book and pay for lessons with local coaches</li>
         </ul>
         <p className="desk__note">Prototype. Best on a phone.</p>
       </aside>

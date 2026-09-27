@@ -862,7 +862,7 @@ export function CreateGameScreen({ params }: ScreenComponentProps) {
   const s = useApp();
   const fromBooking = params.bookingId ? s.bookings.find((b) => b.id === params.bookingId) : undefined;
   const order = sportOrder(s).filter((x) => x !== 'gym' && x !== 'swimming');
-  const [sport, setSport] = useState<SportId>(fromBooking?.sport ?? ((params.sport as SportId) || order[0] || 'football'));
+  const [sport, setSport] = useState<SportId>(fromBooking?.sport ?? ((params.sport as SportId) || order[0] || 'padel'));
   const def = SPORT_BY_ID[sport];
   const bookingSpace = fromBooking ? SPACE_BY_ID[fromBooking.spaceId] : undefined;
   const [format, setFormat] = useState<string | undefined>(bookingSpace?.attrs.format ?? def.formats[0]?.label);
@@ -1079,7 +1079,7 @@ export function CreateGameScreen({ params }: ScreenComponentProps) {
               />
               {!(free || walkUp) && (
                 <div className="costrow">
-                  <Field label="Total cost" htmlFor="cg-total" hint="e.g. the pitch hire">
+                  <Field label="Total cost" htmlFor="cg-total" hint="e.g. the court hire">
                     <div className="input-wrap input-wrap--prefix">
                       <span className="input-wrap__prefix">£</span>
                       <input id="cg-total" className="input" inputMode="decimal" placeholder="40.00" value={total} onChange={(e) => setTotal(e.target.value.replace(/[^\d.]/g, ''))} />
@@ -1098,7 +1098,7 @@ export function CreateGameScreen({ params }: ScreenComponentProps) {
         </div>
 
         <Field label="Description" htmlFor="cg-desc" optional hint="Pace, rules, what to bring. Keep contact details out: players can chat in the app.">
-          <textarea id="cg-desc" className="input textarea" rows={3} maxLength={400} placeholder="Friendly game, bibs provided. Arrive 10 minutes early." value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea id="cg-desc" className="input textarea" rows={3} maxLength={400} placeholder="Friendly doubles, balls provided. Arrive 10 minutes early." value={description} onChange={(e) => setDescription(e.target.value)} />
         </Field>
 
         <div className="bstep">

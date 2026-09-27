@@ -171,6 +171,9 @@ export const SPORTS: Sport[] = [
   },
 ];
 
+/** BALLS launches with tennis and padel only. */
+export const PLAYABLE: SportId[] = ['padel', 'tennis'];
+
 export const SPORT_BY_ID = Object.fromEntries(SPORTS.map((s) => [s.id, s])) as Record<SportId, Sport>;
 
 export const sportName = (id: SportId) => SPORT_BY_ID[id]?.name ?? 'Sport';

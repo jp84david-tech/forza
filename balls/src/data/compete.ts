@@ -10,7 +10,7 @@ import type { SportId } from './types';
 
 const sat = daysUntil(6);
 
-export const TOURNAMENTS: Tournament[] = [
+const ALL_TOURNAMENTS: Tournament[] = [
   {
     id: 't1',
     name: 'Highgate 5s Cup',
@@ -243,7 +243,7 @@ function league(l: Omit<League, 'fixtures'> & { weekday: number; hour: number })
   return { ...rest, fixtures: makeFixtures(l.id, l.teams, weekday, hour) };
 }
 
-export const LEAGUES: League[] = [
+const ALL_LEAGUES: League[] = [
   league({
     id: 'l1',
     name: 'Tuesday Night 5s',
@@ -415,3 +415,7 @@ export function statsFor(userId: string, sport: SportId): StatLine | null {
   if (sport === 'cricket') values.runs = Math.round(g * (8 + skill * 20) * (0.7 + r() * 0.6));
   return { sport, values, form: [], weekly: [] };
 }
+
+// BALLS launches with tennis and padel only.
+export const TOURNAMENTS = ALL_TOURNAMENTS.filter((t) => t.sport === 'tennis' || t.sport === 'padel');
+export const LEAGUES = ALL_LEAGUES.filter((l) => l.sport === 'tennis' || l.sport === 'padel');

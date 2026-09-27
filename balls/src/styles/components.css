@@ -115,7 +115,7 @@
 }
 
 .btn--danger-outline {
-  color: var(--danger);
+  color: var(--ink);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent);
 }
 
@@ -371,12 +371,12 @@
 
 .pill--warning {
   background: var(--warning-soft);
-  color: var(--warning);
+  color: var(--ink);
 }
 
 .pill--danger {
   background: var(--danger-soft);
-  color: var(--danger);
+  color: var(--ink);
 }
 
 .pill--night {
@@ -393,7 +393,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: var(--gold);
+  color: var(--brand-text);
   font-weight: 650;
 }
 
@@ -953,6 +953,10 @@ input[type='range'] {
 
 .notice--warn {
   background: var(--warning-soft);
+  color: var(--ink);
+}
+
+.notice--warn svg {
   color: var(--warning);
 }
 
@@ -1534,14 +1538,19 @@ input[type='range'] {
 
 .sport-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
 }
 
-@media (min-width: 520px) {
-  .app:not(.app--framed) .sport-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
+.sport-grid .sportcard {
+  width: 100%;
+  min-height: 150px;
+  align-content: center;
+  font-size: 16px;
+}
+
+.sport-grid .sportcard.is-active {
+  background: var(--brand-soft);
 }
 
 /* ------------------------------------------------------------------ availability + reliability */
@@ -1574,7 +1583,7 @@ input[type='range'] {
 }
 
 .avail--limited {
-  color: var(--warning);
+  color: var(--ink);
 }
 
 .avail--limited .avail__dot {
@@ -1582,7 +1591,7 @@ input[type='range'] {
 }
 
 .avail--full {
-  color: var(--danger);
+  color: var(--ink-2);
 }
 
 .avail--full .avail__dot {
@@ -1614,7 +1623,7 @@ input[type='range'] {
 }
 
 .avail--overlay.avail--full {
-  color: #b42424;
+  color: #0b1410;
 }
 
 .avail--overlay.avail--walk-up,
@@ -1657,7 +1666,7 @@ input[type='range'] {
 }
 
 .rel--low {
-  color: var(--warning);
+  color: var(--ink);
 }
 
 .spots {
@@ -2099,7 +2108,7 @@ input[type='range'] {
 
 .ecard__left.is-low,
 .trcard__left.is-low {
-  color: var(--warning);
+  color: var(--brand-text);
 }
 
 .tcard {
@@ -2434,7 +2443,7 @@ input[type='range'] {
 .bcard__split {
   font-size: 12px;
   font-weight: 650;
-  color: var(--warning);
+  color: var(--brand-text);
 }
 
 .bcard__actions {
@@ -2463,7 +2472,7 @@ input[type='range'] {
 }
 
 .bcard__btn--danger {
-  color: var(--danger);
+  color: var(--ink);
 }
 
 /* ------------------------------------------------------------------ map */

@@ -13,25 +13,20 @@ import type { Facility, Review, SportId } from './types';
 
 const HANDWRITTEN: Array<Omit<Review, 'id' | 'at'> & { daysAgo: number }> = [
   {
-    facilityId: 'highgate-sc', userId: 'u1', sport: 'football', daysAgo: 3,
+    facilityId: 'highgate-sc', userId: 'u2', sport: 'tennis', daysAgo: 3,
     rating: { overall: 5, surface: 5, cleanliness: 4, facilities: 5, value: 4 },
-    text: 'Best 5-a-side pitches this side of Archway Road. The floodlights are bright, the 3G is barely worn and bibs are free. Only gripe: the car park fills up after 7.',
-    photos: [{ kind: 'football', caption: 'Pitch 2', time: 'night', seed: 901 }],
+    text: 'Four good hard courts and the lights are bright enough for proper evening doubles. Only gripe: the car park fills up after 19:00.',
+    photos: [{ kind: 'tennis', caption: 'Court 3', variant: 'hard', time: 'night', seed: 901 }],
   },
   {
-    facilityId: 'highgate-sc', userId: 'u4', sport: 'basketball', daysAgo: 9,
-    rating: { overall: 5, surface: 5, cleanliness: 5, facilities: 4, value: 4 },
-    text: 'The main hall floor is superb for basketball: proper sprung wood and firm rims. Booked through BALLS and split it six ways in about a minute.',
-  },
-  {
-    facilityId: 'highgate-sc', userId: 'u9', sport: 'football', daysAgo: 16,
+    facilityId: 'highgate-sc', userId: 'u9', sport: 'padel', daysAgo: 16,
     rating: { overall: 4, surface: 4, cleanliness: 3, facilities: 4, value: 4 },
-    text: 'Good pitches and easy booking. The changing rooms are a bit tired, but the showers were hot and the café does a decent bacon roll.',
+    text: 'The padel courts are newer than the tennis ones and play well. Changing rooms are a bit tired, but the showers were hot.',
   },
   {
-    facilityId: 'tufnell-pitch', userId: 'u15', sport: 'football', daysAgo: 2,
+    facilityId: 'tufnell-courts', userId: 'u15', sport: 'tennis', daysAgo: 2,
     rating: { overall: 4, surface: 4, cleanliness: 4, facilities: 3, value: 5 },
-    text: 'Unbeatable price for floodlit football. The cages are tight, so sharpen your passing. Money goes to the junior sessions, which is a nice bonus.',
+    text: 'Unbeatable price for floodlit tennis. Surface is a bit quick but fair. Money goes to the junior sessions, which is a nice bonus.',
   },
   {
     facilityId: 'archway-padel', userId: 'u10', sport: 'padel', daysAgo: 4,
@@ -45,15 +40,14 @@ const HANDWRITTEN: Array<Omit<Review, 'id' | 'at'> & { daysAgo: number }> = [
     text: 'The artificial clay is a joy, slow enough for long rallies. Lights are good for evening doubles. Racket hire saved me when I forgot mine.',
   },
   {
-    facilityId: 'gospel-oak-lido', userId: 'u26', sport: 'swimming', daysAgo: 1,
-    rating: { overall: 5, surface: 5, cleanliness: 4, facilities: 4, value: 5 },
-    text: 'The 7am slot is the best way to start a day in London. Cold, clear and quiet. Booking a slot in advance means no queue at the gate.',
-    photos: [{ kind: 'swimming', caption: 'Morning swim', variant: 'lido', time: 'dusk', seed: 903 }],
+    facilityId: 'camden-padel', userId: 'u19', sport: 'padel', daysAgo: 5,
+    rating: { overall: 5, surface: 5, cleanliness: 4, facilities: 4, value: 3 },
+    text: 'Playing on a roof at sunset is hard to beat. Not cheap at peak times, but the courts are excellent.',
   },
   {
-    facilityId: 'nl-basketball', userId: 'u28', sport: 'basketball', daysAgo: 5,
-    rating: { overall: 4, surface: 4, cleanliness: 3, facilities: 3, value: 5 },
-    text: 'Solid free courts with new glass backboards. The evening run starts around 6. Bring water, as the fountain is hit and miss.',
+    facilityId: 'holloway-tennis', userId: 'u28', sport: 'tennis', daysAgo: 8,
+    rating: { overall: 5, surface: 5, cleanliness: 4, facilities: 5, value: 3 },
+    text: 'Saved our weekly singles all winter. Warm, well lit and no wind. Book early for evenings.',
   },
 ];
 

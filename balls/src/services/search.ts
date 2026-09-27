@@ -1,7 +1,7 @@
 import { COACHES, EVENTS, SHOPS, TRAINING } from '../data/discover';
 import { LEAGUES, TOURNAMENTS } from '../data/compete';
 import { FACILITIES, FACILITY_BY_ID, KIND_LABELS, spacesFor } from '../data/facilities';
-import { SPORTS, SPORT_BY_ID, sportName, levelLabel } from '../data/sports';
+import { PLAYABLE, SPORTS, SPORT_BY_ID, sportName, levelLabel } from '../data/sports';
 import type { Link, SportId } from '../data/types';
 import { fmtWhen } from '../lib/time';
 import type { AppState } from '../state/store';
@@ -95,7 +95,7 @@ function tokenScore(q: string, d: Doc): number {
 
 export function buildIndex(s: AppState): Doc[] {
   const docs: Doc[] = [];
-  for (const sp of SPORTS) {
+  for (const sp of SPORTS.filter((x) => PLAYABLE.includes(x.id))) {
     docs.push(doc({ type: 'sport', id: sp.id, title: sp.name, subtitle: 'Venues, games and events', sport: sp.id, link: { route: 'sport', params: { id: sp.id } } }, SYNONYMS[sp.id]));
   }
   for (const f of FACILITIES) {

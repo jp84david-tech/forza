@@ -708,7 +708,7 @@ export function SportHubScreen({ params }: ScreenComponentProps) {
 
 // ---------------------------------------------------------------- search
 
-const POPULAR = ['5-a-side', 'Padel', 'Tennis courts', 'Swimming', 'Highgate', 'Basketball'];
+const POPULAR = ['Padel', 'Tennis courts', 'Indoor tennis', 'Highgate', 'Crouch End', 'Coaches'];
 
 export function SearchScreen() {
   const s = useApp();

@@ -17,9 +17,10 @@
   --line: #1f2c25;
   --line-strong: #2e3d35;
 
-  --ink: #eef2ea;
-  --ink-2: #a7b1a9;
-  --ink-3: #758078;
+  /* Words are white (or lime, or black on lime): secondary text is white, just dimmer. */
+  --ink: #ffffff;
+  --ink-2: rgb(255 255 255 / 70%);
+  --ink-3: rgb(255 255 255 / 50%);
   --ink-inverse: #0b1410;
 
   --brand: #d4ff3a;
@@ -30,7 +31,7 @@
 
   --night: #0b1410;
   --night-2: #131f1a;
-  --night-ink: #eef2ea;
+  --night-ink: #ffffff;
 
   --success: #d4ff3a;
   --success-soft: #1f2d13;
@@ -92,8 +93,8 @@
   --line-strong: #c7cfc3;
 
   --ink: #0b1410;
-  --ink-2: #4a564e;
-  --ink-3: #78837b;
+  --ink-2: rgb(11 20 16 / 72%);
+  --ink-3: rgb(11 20 16 / 52%);
   --ink-inverse: #ffffff;
 
   --brand: #d4ff3a;
@@ -104,7 +105,7 @@
 
   --night: #0b1410;
   --night-2: #131f1a;
-  --night-ink: #eef2ea;
+  --night-ink: #ffffff;
 
   --success: #2f7d12;
   --success-soft: #e6f4d9;
@@ -147,8 +148,8 @@
   --line-strong: #c7cfc3;
 
   --ink: #0b1410;
-  --ink-2: #4a564e;
-  --ink-3: #78837b;
+  --ink-2: rgb(11 20 16 / 72%);
+  --ink-3: rgb(11 20 16 / 52%);
   --ink-inverse: #ffffff;
 
   --brand: #d4ff3a;
@@ -159,7 +160,7 @@
 
   --night: #0b1410;
   --night-2: #131f1a;
-  --night-ink: #eef2ea;
+  --night-ink: #ffffff;
 
   --success: #2f7d12;
   --success-soft: #e6f4d9;
@@ -201,9 +202,10 @@
   --line: #1f2c25;
   --line-strong: #2e3d35;
 
-  --ink: #eef2ea;
-  --ink-2: #a7b1a9;
-  --ink-3: #758078;
+  /* Words are white (or lime, or black on lime): secondary text is white, just dimmer. */
+  --ink: #ffffff;
+  --ink-2: rgb(255 255 255 / 70%);
+  --ink-3: rgb(255 255 255 / 50%);
   --ink-inverse: #0b1410;
 
   --brand: #d4ff3a;
@@ -214,7 +216,7 @@
 
   --night: #0b1410;
   --night-2: #131f1a;
-  --night-ink: #eef2ea;
+  --night-ink: #ffffff;
 
   --success: #d4ff3a;
   --success-soft: #1f2d13;

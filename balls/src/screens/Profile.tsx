@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { FacilityCard, PlayerCard, ReliabilityBadge, SportBadge, SportCard } from '../components/cards';
 import { Logo, SportIcon } from '../components/icons';
 import { InstallRow } from '../components/Install';
+import { FriendButton } from '../components/FriendButton';
 import { joinLayer, needsAccount } from '../components/Join';
 import { confirmDialog, SheetBody, SheetHeader } from '../components/Sheet';
 import { openLocation, openLogResult, openReport, openShare } from '../components/sheets';
@@ -10,13 +11,13 @@ import { Avatar, Button, Chip, CtaBar, EmptyState, Field, IconButton, Pill, Row,
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_ID } from '../data/achievements';
 import { statsFor } from '../data/compete';
 import { FACILITIES, FACILITY_BY_ID, spacesFor } from '../data/facilities';
-import { DEMO_FRIENDS, PEOPLE, TAKEN_USERNAMES } from '../data/people';
-import { levelLabel, SKILL_LEVELS, SPORT_BY_ID, sportName } from '../data/sports';
+import { DEMO_FRIENDS, PEOPLE, usernameTaken } from '../data/people';
+import { levelLabel, PLAYABLE, SKILL_LEVELS, SPORT_BY_ID, sportName } from '../data/sports';
 import type { SkillLevel, SportId, SportLevel } from '../data/types';
-import { cx, plural } from '../lib/format';
+import { cx } from '../lib/format';
 import { fmtShortDate, monthShort } from '../lib/time';
 import { reliability } from '../services/trust';
-import { block, inviteToGame, progressFor, setSports, signOut, toggleFollow, updateAccount, updateProfile } from '../state/actions';
+import { block, inviteToGame, progressFor, setSports, signOut, updateAccount, updateProfile } from '../state/actions';
 import { nav } from '../state/nav';
 import { me, pastActivity, upcoming, userById } from '../state/selectors';
 import { useApp } from '../state/store';
@@ -210,7 +211,7 @@ export function StatsScreen({ params }: ScreenComponentProps) {
 function GuestProfile({ retap }: { retap: number }) {
   const s = useApp();
   return (
-    <Screen title="Profile" header="large" back={false} retap={retap}>
+    <Screen title="Profile" retap={retap}>
       <div className="pad stack-24">
         <div className="guestcard">
           <Logo size={34} />
@@ -218,7 +219,7 @@ function GuestProfile({ retap }: { retap: number }) {
           <p className="guestcard__body">Create a free account to book, join games and keep track of your season. It takes about 30 seconds.</p>
           <ul className="guestcard__perks">
             <li>
-              <CalendarDays size={17} /> Book pitches and courts, and split the cost
+              <CalendarDays size={17} /> Book padel and tennis courts, and split the cost
             </li>
             <li>
               <MessageCircle size={17} /> Join games and chat with the group
@@ -271,42 +272,26 @@ export function ProfileScreen({ retap }: ScreenComponentProps) {
   if (!s.account) return <GuestProfile retap={retap} />;
   const u = me(s);
   const r = reliability(u.attendance);
-  const unlocked = new Set(s.profile.achievements.map((a) => a.id));
-  const top = s.profile.stats[0];
   const saved = s.saved.map((x) => FACILITY_BY_ID[x.facilityId]).filter(Boolean);
-  const hours = Math.round(s.profile.gamesPlayed * 1.1);
 
   return (
     <Screen
       title="Profile"
-      header="large"
-      back={false}
       retap={retap}
       actions={
-        <>
-          <IconButton label="Share profile" onClick={() => openShare({ title: 'Share profile', text: `Play with me on BALLS: @${u.username}`, path: `u/${u.username}` })}>
-            <Share2 size={20} />
-          </IconButton>
-          <IconButton label="Settings" onClick={() => nav.push('settings')}>
-            <Settings size={21} />
-          </IconButton>
-        </>
+        <IconButton label="Share profile" onClick={() => openShare({ title: 'Share profile', text: `Add me on BALLS: @${u.username}`, path: `u/${u.username}` })}>
+          <Share2 size={20} />
+        </IconButton>
       }
     >
       <div className="pad stack-24">
-        <div className="phead">
-          <Avatar name={s.account?.firstName ?? 'You'} color={u.color} photo={u.photo} size={76} />
+        <div className="phead phead--center">
+          <Avatar name={s.account.firstName} color={u.color} photo={u.photo} size={84} />
           <div className="phead__body">
             <h2>
-              {s.account?.firstName} {s.account?.lastName}
+              {s.account.firstName} {s.account.lastName}
             </h2>
             <p>@{u.username}</p>
-            <div className="phead__meta">
-              <span>
-                <MapPin size={13} /> {u.area}
-              </span>
-              <ReliabilityBadge user={u} />
-            </div>
           </div>
         </div>
         <div className="pstats">
@@ -314,30 +299,23 @@ export function ProfileScreen({ retap }: ScreenComponentProps) {
             <b>{s.profile.gamesPlayed}</b>
             <span>Games</span>
           </div>
-          <div>
-            <b>{hours}</b>
-            <span>Hours</span>
-          </div>
+          <button type="button" onClick={() => nav.openSub('friends', 'friends')}>
+            <b>{s.friends.length}</b>
+            <span>Friends</span>
+          </button>
           <button type="button" onClick={() => openReliability()}>
             <b>{r.score !== null ? `${r.score}%` : '—'}</b>
             <span>
               Reliability <Info size={11} />
             </span>
           </button>
-          <button type="button" onClick={() => nav.push('friends')}>
-            <b>{s.following.length}</b>
-            <span>Friends</span>
-          </button>
         </div>
-        <Button variant="secondary" block icon={<Pencil size={16} />} onClick={() => nav.push('editProfile')}>
-          Edit profile
-        </Button>
 
         <Section title="My sports" action="Edit" onAction={() => nav.push('editSports')}>
           {s.profile.sports.length ? (
             <div className="mysports">
               {s.profile.sports.map((x) => (
-                <button key={x.sport} type="button" className="mysport" onClick={() => nav.push('sport', { id: x.sport })}>
+                <button key={x.sport} type="button" className="mysport" onClick={() => nav.push('editSports')}>
                   <SportBadge sport={x.sport} size={36} />
                   <span>
                     <b>{sportName(x.sport)}</b>
@@ -349,55 +327,13 @@ export function ProfileScreen({ retap }: ScreenComponentProps) {
           ) : (
             <EmptyState compact icon={<Shapes size={22} />} title="Add the sports you play" action={{ label: 'Add sports', onClick: () => nav.push('editSports') }} />
           )}
-          <p className="fine">Levels are self-rated and help us match you with the right games.</p>
-        </Section>
-
-        <Section title="My stats" action="All stats" onAction={() => nav.push('stats')}>
-          {top ? (
-            <button type="button" className="statsum" onClick={() => nav.push('stats', { sport: top.sport })}>
-              <span className="statsum__sport">
-                <SportIcon sport={top.sport} size={16} /> {sportName(top.sport)}
-              </span>
-              <span className="statsum__vals">
-                {SPORT_BY_ID[top.sport].stats.slice(0, 4).map((st) => (
-                  <span key={st.id}>
-                    <b>{st.kind === 'percent' ? `${top.values[st.id] ?? 0}%` : top.values[st.id] ?? 0}</b>
-                    <small>{st.label}</small>
-                  </span>
-                ))}
-              </span>
-            </button>
-          ) : (
-            <EmptyState compact icon={<TrendingUp size={22} />} title="No stats yet." body="Play a game, then add your result." />
-          )}
-        </Section>
-
-        <Section title="Achievements" action={`${unlocked.size}/${ACHIEVEMENTS.length}`} onAction={() => nav.push('achievements')}>
-          <div className="hscroll hscroll--flush ach-row">
-            {ACHIEVEMENTS.map((a) => (
-              <button key={a.id} type="button" className="ach-btn" onClick={() => nav.push('achievements')}>
-                <AchievementBadge id={a.id} unlocked={unlocked.has(a.id)} size="sm" progress={progressFor(s, a.id).value / progressFor(s, a.id).target} />
-              </button>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Saved" action={saved.length ? 'See all' : undefined} onAction={() => nav.push('saved')}>
-          {saved.length ? (
-            <div className="hscroll hscroll--cards hscroll--flush">
-              {saved.map((f) => (
-                <FacilityCard key={f.id} facility={f} variant="wide" />
-              ))}
-            </div>
-          ) : (
-            <EmptyState compact icon={<Heart size={22} />} title="Save venues you like and they’ll appear here." action={{ label: 'Explore venues', onClick: () => nav.go('explore') }} />
-          )}
         </Section>
 
         <div className="list-card">
-          <Row icon={<CalendarDays size={18} />} title="Bookings" subtitle={`${upcoming(s).length} upcoming`} onClick={() => nav.switchTab('bookings')} />
-          <Row icon={<Star size={18} />} title="My reviews" subtitle={plural(s.reviews.length + (s.account?.demo ? 1 : 0), 'review')} onClick={() => nav.push('myReviews')} />
-          <Row icon={<Users size={18} />} title="Friends" subtitle={`${s.following.length} following`} onClick={() => nav.push('friends')} />
+          <Row icon={<Pencil size={18} />} title="Edit profile" subtitle="Name, photo, username" onClick={() => nav.push('editProfile')} />
+          <Row icon={<Heart size={18} />} title="Saved venues" subtitle={saved.length ? `${saved.length} saved` : 'None yet'} onClick={() => nav.push('saved')} />
+          <Row icon={<CalendarDays size={18} />} title="My bookings" subtitle={`${upcoming(s).length} upcoming`} onClick={() => nav.openSub('book', 'mine')} />
+          <Row icon={<Star size={18} />} title="My reviews" onClick={() => nav.push('myReviews')} />
           <Row icon={<Settings size={18} />} title="Settings" onClick={() => nav.push('settings')} />
         </div>
       </div>
@@ -435,7 +371,6 @@ export function PlayerScreen({ params }: ScreenComponentProps) {
   const s = useApp();
   const u = userById(s, params.id!);
   if (!u) return <Screen title="Player">{null}</Screen>;
-  const following = s.following.includes(u.id);
   const blocked = s.blocked.includes(u.id);
   const played = DEMO_FRIENDS.includes(u.id) && s.account?.demo ? 2 + (Number(u.id.slice(1)) % 5) : 0;
   const main = u.sports[0];
@@ -518,15 +453,7 @@ export function PlayerScreen({ params }: ScreenComponentProps) {
       footer={
         !blocked && !hidden ? (
           <CtaBar>
-            <Button variant={following ? 'secondary' : 'secondary'} onClick={() => !needsAccount('follow') && toggleFollow(u.id)} aria-pressed={following}>
-              {following ? (
-                <>
-                  <Check size={16} /> Following
-                </>
-              ) : (
-                'Follow'
-              )}
-            </Button>
+            <FriendButton userId={u.id} size="md" />
             <Button icon={<UserPlus size={17} />} onClick={invite}>
               Invite to game
             </Button>
@@ -688,12 +615,12 @@ export function MyReviewsScreen() {
 
 export function FriendsScreen() {
   const s = useApp();
-  const friends = s.following.map((id) => userById(s, id)).filter(Boolean);
-  const suggested = PEOPLE.filter((p) => !s.following.includes(p.id) && !s.blocked.includes(p.id) && p.visibility === 'everyone' && p.sports.some((x) => s.profile.sports.some((y) => y.sport === x.sport))).slice(0, 5);
+  const friends = s.friends.map((id) => userById(s, id)).filter(Boolean);
+  const suggested = PEOPLE.filter((p) => !s.friends.includes(p.id) && !s.blocked.includes(p.id) && p.visibility === 'everyone' && p.sports.some((x) => s.profile.sports.some((y) => y.sport === x.sport))).slice(0, 5);
   return (
     <Screen title="Friends">
       <div className="pad stack-20">
-        <button type="button" className="invite-link" onClick={() => openShare({ title: 'Invite friends to BALLS', text: `I’m on BALLS for finding games and booking pitches. Join me:`, path: `invite/${s.account?.username}` })}>
+        <button type="button" className="invite-link" onClick={() => openShare({ title: 'Invite friends to BALLS', text: `I’m on BALLS for padel and tennis. Join me:`, path: `invite/${s.account?.username}` })}>
           <span className="invite-link__icon">
             <UserPlus size={18} />
           </span>
@@ -723,7 +650,7 @@ export function FriendsScreen() {
                   user={u}
                   onClick={() => nav.push('player', { id: u.id })}
                   trailing={
-                    <Button size="sm" variant="secondary" onClick={() => !needsAccount('follow') && toggleFollow(u.id)}>
+                    <Button size="sm" variant="secondary" onClick={() => {}}>
                       Follow
                     </Button>
                   }
@@ -747,7 +674,7 @@ export function EditProfileScreen() {
   const [username, setUsername] = useState(a.username);
   const [bio, setBio] = useState(s.profile.bio);
   const [photo, setPhoto] = useState(a.photo);
-  const err = username !== a.username && (!/^[a-z0-9_]{3,20}$/.test(username) ? 'Use 3–20 lowercase letters, numbers or _' : TAKEN_USERNAMES.has(username) ? 'That username is taken' : null);
+  const err = username !== a.username && (!/^[a-z0-9_]{3,20}$/.test(username) ? 'Use 3–20 lowercase letters, numbers or _' : usernameTaken(username));
   return (
     <Screen
       title="Edit profile"
@@ -796,7 +723,7 @@ export function EditProfileScreen() {
 export function EditSportsScreen() {
   const s = useApp();
   const [list, setList] = useState<SportLevel[]>(s.profile.sports);
-  const all: SportId[] = ['football', 'basketball', 'tennis', 'padel', 'badminton', 'volleyball', 'cricket', 'rugby', 'running', 'gym', 'swimming', 'other'];
+  const all: SportId[] = PLAYABLE;
   const toggle = (sp: SportId) => setList((x) => (x.some((y) => y.sport === sp) ? x.filter((y) => y.sport !== sp) : [...x, { sport: sp, level: 'casual' }]));
   const setLevel = (sp: SportId, level: SkillLevel) => setList((x) => x.map((y) => (y.sport === sp ? { ...y, level } : y)));
   const selected = useMemo(() => new Set(list.map((x) => x.sport)), [list]);

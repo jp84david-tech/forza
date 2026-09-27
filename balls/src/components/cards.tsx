@@ -2,7 +2,7 @@ import { CalendarDays, Clock, Heart, MapPin, Navigation, Trophy, Users } from 'l
 import type { ReactNode } from 'react';
 import { FACILITY_BY_ID, SPACE_BY_ID } from '../data/facilities';
 import { levelLabel, sportName } from '../data/sports';
-import type { Booking, Facility, Game, SportId, SportsEvent, Tournament, TrainingSession, User } from '../data/types';
+import type { Booking, Facility, Game, Lesson, SportId, SportsEvent, Tournament, TrainingSession, User } from '../data/types';
 import { COACH_BY_ID } from '../data/discover';
 import { cx, miles, money, plural } from '../lib/format';
 import { fmtDay, fmtRange, fmtShortDate, fmtTime, fmtWhen, weekdayShort } from '../lib/time';
@@ -74,7 +74,7 @@ export function SaveButton({ facilityId, variant = 'glass' }: { facilityId: stri
   );
 }
 
-export function FacilityCard({ facility: f, variant = 'row', sport, reason }: { facility: Facility; variant?: 'row' | 'wide'; sport?: SportId; reason?: string }) {
+export function FacilityCard({ facility: f, variant = 'row', sport, reason }: { facility: Facility; variant?: 'row' | 'wide' | 'big'; sport?: SportId; reason?: string }) {
   const s = useApp();
   const d = facilityDistance(s, f.id);
   const rating = facilityRating(s, f);
@@ -82,6 +82,42 @@ export function FacilityCard({ facility: f, variant = 'row', sport, reason }: { 
   const range = priceRange(f, sport, s);
   const open = () => nav.push('facility', { id: f.id, sport });
   const unit = range.unit === 'session' ? '/session' : '/hr';
+
+  if (variant === 'big') {
+    const art = (sport && f.images.find((im) => im.kind === sport)) || f.images[0];
+    return (
+      <article className="venue venue--card">
+        <div className="venue__mediawrap">
+          <button type="button" className="venue__media" onClick={open} aria-label={`${f.name}, ${miles(d)} away, rated ${rating.overall}`}>
+            <Artwork art={art} />
+          </button>
+          <div className="venue__tag">
+            <AvailabilityTag facility={f} sport={sport} overlay />
+          </div>
+          <SaveButton facilityId={f.id} />
+        </div>
+        <button type="button" className="venue__body" onClick={open} tabIndex={-1} aria-hidden="true">
+          <span className="venue__head">
+            <h3>{f.name}</h3>
+            <span className="venue__rating">★ {rating.overall.toFixed(1)}</span>
+          </span>
+          <span className="venue__meta">
+            {f.area} · {miles(d)} · {sports.map(sportName).join(' & ')}
+          </span>
+          <span className="venue__meta">
+            {range.min ? (
+              <>
+                {range.min !== range.max ? 'from ' : ''}
+                <b>{money(range.min)}</b> {unit.replace('/', 'per ')}
+              </>
+            ) : (
+              <b>Free</b>
+            )}
+          </span>
+        </button>
+      </article>
+    );
+  }
 
   if (variant === 'wide') {
     return (
@@ -431,6 +467,38 @@ export function BookingCard({ booking: b, onCancel, onDirections }: { booking: B
           )}
         </div>
       )}
+    </article>
+  );
+}
+
+/** A booked session with a coach, shown in My bookings. */
+export function LessonCard({ lesson: l }: { lesson: Lesson }) {
+  const c = COACH_BY_ID[l.coachId];
+  const f = FACILITY_BY_ID[l.facilityId];
+  const cancelled = l.status === 'cancelled';
+  return (
+    <article className={cx('bcard', cancelled ? 'bcard--cancelled' : 'bcard--confirmed')}>
+      <button type="button" className="bcard__hit" onClick={() => nav.push('lesson', { id: l.id })} aria-label={`Lesson with ${c.name}, ${fmtWhen(l.start)}`} />
+      <div className="bcard__top">
+        <div className="bcard__media bcard__media--coach">
+          <Avatar name={c.name} color={c.color} size={52} />
+        </div>
+        <div className="bcard__body">
+          <div className="bcard__status">
+            <SportIcon sport={l.sport} size={14} /> {sportName(l.sport)} lesson
+            {cancelled ? <Pill tone="danger">Cancelled</Pill> : <Pill tone="success">Confirmed</Pill>}
+          </div>
+          <h3 className="bcard__venue">{c.name}</h3>
+          <div className="bcard__when">
+            {fmtDay(l.start)} · {fmtRange(l.start, l.end)}
+          </div>
+          <div className="bcard__meta">
+            <span>{f?.name}</span>
+            <span className="dot-sep" aria-hidden="true" />
+            <span>{money(l.amount)}</span>
+          </div>
+        </div>
+      </div>
     </article>
   );
 }

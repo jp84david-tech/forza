@@ -3,8 +3,10 @@ import type {
   AgeGroup,
   AttendanceRecord,
   Booking,
+  FriendRequest,
   Game,
   GamePlayer,
+  Lesson,
   Message,
   Notification,
   NotificationPrefs,
@@ -84,7 +86,10 @@ export interface AppState {
   waitlists: Waitlist[];
   reports: Report[];
   blocked: string[];
-  following: string[];
+  /** Mutual friends: both people added each other. */
+  friends: string[];
+  friendRequests: FriendRequest[];
+  lessons: Lesson[];
   registrations: Registration[];
   recentSearches: string[];
   blocks: MaintenanceBlock[];
@@ -145,7 +150,9 @@ export function emptyState(settings?: Settings): AppState {
     waitlists: [],
     reports: [],
     blocked: [],
-    following: [],
+    friends: [],
+    friendRequests: [],
+    lessons: [],
     registrations: [],
     recentSearches: [],
     blocks: [],
@@ -158,7 +165,8 @@ export function emptyState(settings?: Settings): AppState {
 
 // ---------------------------------------------------------------- persistence
 
-const KEY = 'balls.state.v1';
+// v2: tennis and padel only (older saves reference venues that no longer exist).
+const KEY = 'balls.state.v2';
 
 function load(): AppState {
   try {

@@ -4,7 +4,15 @@ import { useSyncExternalStore } from 'react';
  * Navigation. Each tab keeps its own stack (like a native tab bar app), so
  * switching tabs never loses your place. Screens push onto the active tab.
  */
-export type Tab = 'home' | 'explore' | 'bookings' | 'compete' | 'profile';
+export type Tab = 'home' | 'explore' | 'book' | 'friends';
+
+/** The Book and Friends tabs each have a second switch above the tab bar. */
+export type BookSub = 'book' | 'mine';
+export type FriendsSub = 'play' | 'coaches' | 'friends';
+export interface SubState {
+  book: BookSub;
+  friends: FriendsSub;
+}
 
 export interface Route {
   key: string;
@@ -17,6 +25,7 @@ export interface NavState {
   stacks: Record<Tab, Route[]>;
   /** Incremented when a tab is re-tapped so its root can scroll to top. */
   retap: Record<Tab, number>;
+  sub: SubState;
 }
 
 let seq = 0;
@@ -27,11 +36,11 @@ const initial = (): NavState => ({
   stacks: {
     home: [route('home')],
     explore: [route('explore')],
-    bookings: [route('bookings')],
-    compete: [route('compete')],
-    profile: [route('profile')],
+    book: [route('bookHub')],
+    friends: [route('friendsHub')],
   },
-  retap: { home: 0, explore: 0, bookings: 0, compete: 0, profile: 0 },
+  retap: { home: 0, explore: 0, book: 0, friends: 0 },
+  sub: { book: 'book', friends: 'play' },
 });
 
 let state: NavState = initial();
@@ -42,7 +51,8 @@ const emit = (next: NavState) => {
 };
 
 export const TAB_FOR_ROUTE: Record<string, Tab> = {
-  booking: 'bookings',
+  booking: 'book',
+  lesson: 'book',
 };
 
 export const nav = {
@@ -103,7 +113,18 @@ export const nav = {
         : Object.keys(params).length
           ? [{ ...root, params: { ...params, _t: String(Date.now()) } }]
           : [root];
-    emit({ ...state, tab, stacks: { ...state.stacks, [tab]: stack } });
+    // Opening a booking lands on the "My bookings" side of the Book tab.
+    const sub = tab === 'book' && (name === 'booking' || name === 'lesson') ? { ...state.sub, book: 'mine' as const } : state.sub;
+    emit({ ...state, tab, sub, stacks: { ...state.stacks, [tab]: stack } });
+  },
+  /** Switch the second bar on the Book or Friends tab. */
+  setSub<T extends keyof SubState>(tab: T, value: SubState[T]) {
+    if (state.sub[tab] === value) return;
+    emit({ ...state, sub: { ...state.sub, [tab]: value } });
+  },
+  /** Go to a tab's root with a given sub-section showing. */
+  openSub<T extends keyof SubState>(tab: T, value: SubState[T]) {
+    emit({ ...state, tab, sub: { ...state.sub, [tab]: value }, stacks: { ...state.stacks, [tab]: [state.stacks[tab][0]] } });
   },
   /** Update params of the current tab's root (e.g. pre-filter Explore). */
   setRootParams(tab: Tab, params: Route['params']) {

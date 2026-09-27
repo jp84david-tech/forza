@@ -2,11 +2,11 @@ import { AlertTriangle, BellRing, CalendarClock, CalendarPlus, Check, CheckCircl
 import { useEffect, useMemo, useState } from 'react';
 import { Artwork } from '../components/Artwork';
 import { AvailabilityCalendar } from '../components/AvailabilityCalendar';
-import { BookingCard, GameCard, SportBadge } from '../components/cards';
+import { BookingCard, GameCard, LessonCard, SportBadge } from '../components/cards';
 import { SportIcon } from '../components/icons';
 import { joinLayer, needsAccount } from '../components/Join';
 import { SheetBody, SheetFooter, SheetHeader } from '../components/Sheet';
-import { DirectionsButton, openDirections, openInvite, openLogResult, openShare, PaymentMethodSelect } from '../components/sheets';
+import { DirectionsButton, openDirections, openInvite, openShare, PaymentMethodSelect } from '../components/sheets';
 import { Avatar, Button, Chip, CtaBar, EmptyState, IconButton, Pill, Row, Screen, Section, Segmented, Stepper, Switch } from '../components/ui';
 import { FACILITY_BY_ID, POLICY_BY_ID, SPACE_BY_ID, spacesFor } from '../data/facilities';
 import { sportName } from '../data/sports';
@@ -438,7 +438,7 @@ export function BookingConfirmedScreen({ params }: ScreenComponentProps) {
           Booking code <b>{b.ref}</b>
         </div>
         <div className="confirm__actions">
-          <Button size="lg" block onClick={() => nav.go('bookings', 'booking', { id: b.id })}>
+          <Button size="lg" block onClick={() => nav.go('book', 'booking', { id: b.id })}>
             View booking
           </Button>
           <DirectionsButton f={f} variant="secondary" size="lg" block label="Get directions" />
@@ -785,9 +785,6 @@ export function BookingDetailScreen({ params }: ScreenComponentProps) {
                 Review {f.name}
               </Button>
             )}
-            <Button variant="secondary" size="lg" block icon={<TrendingUp size={17} />} onClick={() => openLogResult(b.sport, f.id, b.start)}>
-              Add your stats
-            </Button>
             <Button variant="secondary" size="lg" block icon={<Undo2 size={17} />} onClick={() => nav.push('book', { facilityId: f.id, spaceId: b.spaceId })}>
               Book again
             </Button>
@@ -809,14 +806,14 @@ export function BookingsScreen(props: ScreenComponentProps) {
   const s = useApp();
   if (!s.account) {
     return (
-      <Screen title="Bookings" header="large" back={false} retap={props.retap}>
+      <Screen title="My bookings" header="large" back={false} retap={props.retap}>
         <div className="pad">
           <EmptyState
             icon={<CalendarClock size={26} />}
             title="Your bookings will live here"
-            body="Book a pitch or court, or join a game, and it shows up here with your check-in code, reminders and who’s paid their share."
+            body="Book a court, join a game or book a coach, and it shows up here with your check-in code and who’s paid."
             action={{ label: 'Create free account', onClick: () => joinLayer.open('signup') }}
-            secondary={{ label: 'Find somewhere to play', onClick: () => nav.go('explore', undefined, { view: 'list' }) }}
+            secondary={{ label: 'Book a court', onClick: () => nav.setSub('book', 'book') }}
           />
           <p className="guest-login">
             Already have an account?{' '}
@@ -839,6 +836,8 @@ function MemberBookings({ retap }: ScreenComponentProps) {
   const cancelled = s.bookings.filter((b) => b.status === 'cancelled').sort((a, b) => b.start.localeCompare(a.start));
   const waitlists = s.waitlists.filter((w) => (w.status === 'waiting' || w.status === 'offered') && new Date(w.start).getTime() > Date.now());
   const regs = s.registrations.filter((r) => r.status === 'confirmed');
+  const lessons = s.lessons.filter((l) => l.status === 'confirmed' && new Date(l.end).getTime() > Date.now()).sort((a, b) => a.start.localeCompare(b.start));
+  const cancelledLessons = s.lessons.filter((l) => l.status === 'cancelled');
 
   const [, tick] = useState(0);
   useEffect(() => {
@@ -849,14 +848,14 @@ function MemberBookings({ retap }: ScreenComponentProps) {
   const list = useMemo(() => ({ upcoming: up, past, cancelled }), [up, past, cancelled]);
 
   return (
-    <Screen title="Bookings" header="large" back={false} retap={retap}>
+    <Screen title="My bookings" header="large" back={false} retap={retap}>
       <div className="pad">
         <Segmented
           label="Bookings"
           value={tab}
           onChange={setTab}
           options={[
-            { value: 'upcoming', label: 'Upcoming', count: list.upcoming.length },
+            { value: 'upcoming', label: 'Upcoming', count: list.upcoming.length + lessons.length },
             { value: 'past', label: 'Past' },
             { value: 'cancelled', label: 'Cancelled' },
           ]}
@@ -897,6 +896,15 @@ function MemberBookings({ retap }: ScreenComponentProps) {
               </div>
             </Section>
           )}
+          {lessons.length > 0 && (
+            <Section title="Lessons">
+              <div className="cards">
+                {lessons.map((l) => (
+                  <LessonCard key={l.id} lesson={l} />
+                ))}
+              </div>
+            </Section>
+          )}
           {up.length ? (
             <div className="cards">
               {up.map((a) =>
@@ -908,13 +916,14 @@ function MemberBookings({ retap }: ScreenComponentProps) {
               )}
             </div>
           ) : (
-            !waitlists.length && (
+            !waitlists.length &&
+            !lessons.length && (
               <EmptyState
                 icon={<CalendarPlus size={26} />}
-                title="Nothing booked yet."
-                body="Find somewhere to play."
-                action={{ label: 'Explore venues', onClick: () => nav.go('explore', undefined, { view: 'list' }) }}
-                secondary={{ label: 'Play Now', onClick: () => nav.push('playNow') }}
+                title="Nothing booked yet"
+                body="Book a court, join a game or book a coach, and it shows up here."
+                action={{ label: 'Book a court', onClick: () => nav.setSub('book', 'book') }}
+                secondary={{ label: 'Find a game', onClick: () => nav.openSub('friends', 'play') }}
               />
             )
           )}
@@ -950,9 +959,6 @@ function MemberBookings({ retap }: ScreenComponentProps) {
                           <Star size={14} /> Review venue
                         </button>
                       )}
-                      <button type="button" className="chip chip--sm" onClick={() => openLogResult(a.booking.sport, a.booking.facilityId, a.booking.start)}>
-                        <TrendingUp size={14} /> Add stats
-                      </button>
                       <button type="button" className="chip chip--sm" onClick={() => nav.push('book', { facilityId: a.booking.facilityId, spaceId: a.booking.spaceId })}>
                         <Undo2 size={14} /> Book again
                       </button>
@@ -964,15 +970,18 @@ function MemberBookings({ retap }: ScreenComponentProps) {
               )}
             </div>
           ) : (
-            <EmptyState icon={<Clock size={26} />} title="No past games yet." body="Your history shows up here after you play." action={{ label: 'Find a game', onClick: () => nav.push('games') }} />
+            <EmptyState icon={<Clock size={26} />} title="No past games yet." body="Your history shows up here after you play." action={{ label: 'Find a game', onClick: () => nav.openSub('friends', 'play') }} />
           )}
         </div>
       )}
 
       {tab === 'cancelled' && (
         <div className="pad">
-          {cancelled.length ? (
+          {cancelled.length || cancelledLessons.length ? (
             <div className="cards">
+              {cancelledLessons.map((l) => (
+                <LessonCard key={l.id} lesson={l} />
+              ))}
               {cancelled.map((b) => (
                 <div key={b.id} className="pastwrap">
                   <BookingCard booking={b} />

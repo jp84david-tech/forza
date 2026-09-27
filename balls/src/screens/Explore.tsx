@@ -9,7 +9,7 @@ import { SheetBody, SheetHeader } from '../components/Sheet';
 import { DirectionsButton } from '../components/sheets';
 import { Button, Chip, EmptyState, ErrorState, Pill, RatingDisplay, Screen, SkeletonCard } from '../components/ui';
 import { FACILITIES, FACILITY_BY_ID, spacesFor } from '../data/facilities';
-import { SPORT_BY_ID, sportName } from '../data/sports';
+import { PLAYABLE, SPORT_BY_ID, sportName } from '../data/sports';
 import type { Facility, SportId } from '../data/types';
 import { cx, miles, money, scrollEl } from '../lib/format';
 import { fmtDay, fmtTime } from '../lib/time';
@@ -24,7 +24,7 @@ import { useApp } from '../state/store';
 import { ui } from '../state/ui';
 import type { ScreenComponentProps } from './routes';
 
-const CHIP_SPORTS: SportId[] = ['football', 'basketball', 'tennis', 'padel', 'badminton', 'volleyball', 'gym', 'swimming', 'running', 'cricket', 'rugby', 'other'];
+const CHIP_SPORTS: SportId[] = PLAYABLE;
 type Sort = 'recommended' | 'distance' | 'price' | 'rating';
 const SORT_LABELS: Record<Sort, string> = { recommended: 'Recommended', distance: 'Nearest', price: 'Lowest price', rating: 'Top rated' };
 
@@ -304,7 +304,7 @@ export function ExploreScreen({ params, retap }: ScreenComponentProps) {
               {sorted.length ? (
                 <div className="cards">
                   {sorted.map((x) => (
-                    <FacilityCard key={x.f.id} facility={x.f} sport={sport} />
+                    <FacilityCard key={x.f.id} facility={x.f} sport={sport} variant="big" />
                   ))}
                 </div>
               ) : (
@@ -352,7 +352,7 @@ export function ExploreScreen({ params, retap }: ScreenComponentProps) {
 
 export function CompareScreen({ params }: ScreenComponentProps) {
   const s = useApp();
-  const [sport, setSport] = useState<SportId>((params.sport as SportId) ?? 'football');
+  const [sport, setSport] = useState<SportId>((params.sport as SportId) ?? 'padel');
   const def = SPORT_BY_ID[sport];
   const hasFormats = sport === 'football';
   const [format, setFormat] = useState<string>('5-a-side');
@@ -374,7 +374,7 @@ export function CompareScreen({ params }: ScreenComponentProps) {
     rated: rows.length ? Math.max(...rows.map((r) => r.rating)) : 0,
   };
   const playerCount = hasFormats ? def.formats.find((x) => x.label === format)?.players : def.formats[def.formats.length - 1]?.players;
-  const sports = (['football', 'tennis', 'padel', 'badminton', 'basketball', 'volleyball', 'swimming', 'gym', 'cricket'] as SportId[]).filter((x) => FACILITIES.some((f) => spacesFor(f.id).some((sp) => sp.sport === x && !sp.walkUp)));
+  const sports = PLAYABLE.filter((x) => FACILITIES.some((f) => spacesFor(f.id).some((sp) => sp.sport === x && !sp.walkUp)));
 
   return (
     <Screen title="Compare prices">
