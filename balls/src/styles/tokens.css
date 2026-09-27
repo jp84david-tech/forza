@@ -1,0 +1,247 @@
+/*
+ * balls design tokens.
+ *
+ * Dark first: near-black green with one accent, a bright lime. Lime is used
+ * for fills and highlights; text on lime is always dark. In light mode lime
+ * stays a fill colour and accent text switches to a dark green so it stays
+ * readable on white.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #0b1410;
+  --bg-elev: #0f1914;
+  --surface: #131f1a;
+  --surface-2: #1a2821;
+  --surface-3: #22322a;
+  --line: #1f2c25;
+  --line-strong: #2e3d35;
+
+  /* Words are white (or lime, or black on lime): secondary text is white, just dimmer. */
+  --ink: #ffffff;
+  --ink-2: rgb(255 255 255 / 70%);
+  --ink-3: rgb(255 255 255 / 50%);
+  --ink-inverse: #0b1410;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #1f2d13;
+  --brand-text: #d4ff3a;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #ffffff;
+
+  --success: #d4ff3a;
+  --success-soft: #1f2d13;
+  --success-line: #4d6118;
+  --warning: #ffb547;
+  --warning-soft: #2e2311;
+  --danger: #ff6b5e;
+  --danger-soft: #331815;
+  --gold: #f2c94c;
+
+  --map-land: #0f1a15;
+  --map-park: #15281d;
+  --map-wood: #13241a;
+  --map-cemetery: #152019;
+  --map-water: #0f2328;
+  --map-road: #24322b;
+  --map-road-casing: #09100d;
+  --map-minor: #17231d;
+  --map-rail: #2c3b33;
+  --map-label: #7d8a82;
+  --map-park-label: #6f9b63;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
+  --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
+  --scrim: rgb(2 6 4 / 70%);
+  --glass: rgb(11 20 16 / 90%);
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+
+  --font: 'Barlow', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Barlow Condensed', 'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --font-logo: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+
+  --gutter: 16px;
+  --tabbar-h: 60px;
+  --topbar-h: 52px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Appearance setting: dark (default), light, or match the device. */
+.app[data-scheme='light'],
+.desk[data-scheme='light'] {
+  color-scheme: light;
+  --bg: #f4f6f1;
+  --bg-elev: #f8faf6;
+  --surface: #ffffff;
+  --surface-2: #edf0ea;
+  --surface-3: #e1e6de;
+  --line: #e0e5dc;
+  --line-strong: #c7cfc3;
+
+  --ink: #0b1410;
+  --ink-2: rgb(11 20 16 / 72%);
+  --ink-3: rgb(11 20 16 / 52%);
+  --ink-inverse: #ffffff;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #eef9cf;
+  --brand-text: #3f6b00;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #ffffff;
+
+  --success: #2f7d12;
+  --success-soft: #e6f4d9;
+  --success-line: #a9d58a;
+  --warning: #a86200;
+  --warning-soft: #fff1d9;
+  --danger: #cf3a2f;
+  --danger-soft: #fde7e4;
+  --gold: #b88700;
+
+  --map-land: #eef1ea;
+  --map-park: #d3e8c8;
+  --map-wood: #c6e0bb;
+  --map-cemetery: #dce7d6;
+  --map-water: #bcd9e6;
+  --map-road: #ffffff;
+  --map-road-casing: #d3d9cf;
+  --map-minor: #f8faf6;
+  --map-rail: #bcc4b8;
+  --map-label: #5b665e;
+  --map-park-label: #3f7a3a;
+
+  --shadow-1: 0 1px 2px rgb(11 20 16 / 6%), 0 1px 1px rgb(11 20 16 / 4%);
+  --shadow-2: 0 10px 28px -12px rgb(11 20 16 / 26%), 0 2px 6px rgb(11 20 16 / 6%);
+  --shadow-3: 0 -12px 40px rgb(11 20 16 / 16%);
+  --scrim: rgb(6 12 9 / 50%);
+  --glass: rgb(255 255 255 / 90%);
+}
+
+@media (prefers-color-scheme: light) {
+  .app[data-scheme='system'],
+  .desk[data-scheme='system'] {
+  color-scheme: light;
+  --bg: #f4f6f1;
+  --bg-elev: #f8faf6;
+  --surface: #ffffff;
+  --surface-2: #edf0ea;
+  --surface-3: #e1e6de;
+  --line: #e0e5dc;
+  --line-strong: #c7cfc3;
+
+  --ink: #0b1410;
+  --ink-2: rgb(11 20 16 / 72%);
+  --ink-3: rgb(11 20 16 / 52%);
+  --ink-inverse: #ffffff;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #eef9cf;
+  --brand-text: #3f6b00;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #ffffff;
+
+  --success: #2f7d12;
+  --success-soft: #e6f4d9;
+  --success-line: #a9d58a;
+  --warning: #a86200;
+  --warning-soft: #fff1d9;
+  --danger: #cf3a2f;
+  --danger-soft: #fde7e4;
+  --gold: #b88700;
+
+  --map-land: #eef1ea;
+  --map-park: #d3e8c8;
+  --map-wood: #c6e0bb;
+  --map-cemetery: #dce7d6;
+  --map-water: #bcd9e6;
+  --map-road: #ffffff;
+  --map-road-casing: #d3d9cf;
+  --map-minor: #f8faf6;
+  --map-rail: #bcc4b8;
+  --map-label: #5b665e;
+  --map-park-label: #3f7a3a;
+
+  --shadow-1: 0 1px 2px rgb(11 20 16 / 6%), 0 1px 1px rgb(11 20 16 / 4%);
+  --shadow-2: 0 10px 28px -12px rgb(11 20 16 / 26%), 0 2px 6px rgb(11 20 16 / 6%);
+  --shadow-3: 0 -12px 40px rgb(11 20 16 / 16%);
+  --scrim: rgb(6 12 9 / 50%);
+  --glass: rgb(255 255 255 / 90%);
+  }
+}
+
+/* Play Now and a few hero surfaces stay dark in either mode. */
+.force-dark {
+  color-scheme: dark;
+  --bg: #0b1410;
+  --bg-elev: #0f1914;
+  --surface: #131f1a;
+  --surface-2: #1a2821;
+  --surface-3: #22322a;
+  --line: #1f2c25;
+  --line-strong: #2e3d35;
+
+  /* Words are white (or lime, or black on lime): secondary text is white, just dimmer. */
+  --ink: #ffffff;
+  --ink-2: rgb(255 255 255 / 70%);
+  --ink-3: rgb(255 255 255 / 50%);
+  --ink-inverse: #0b1410;
+
+  --brand: #d4ff3a;
+  --brand-strong: #c2ee24;
+  --brand-soft: #1f2d13;
+  --brand-text: #d4ff3a;
+  --brand-ink: #0b1410;
+
+  --night: #0b1410;
+  --night-2: #131f1a;
+  --night-ink: #ffffff;
+
+  --success: #d4ff3a;
+  --success-soft: #1f2d13;
+  --success-line: #4d6118;
+  --warning: #ffb547;
+  --warning-soft: #2e2311;
+  --danger: #ff6b5e;
+  --danger-soft: #331815;
+  --gold: #f2c94c;
+
+  --map-land: #0f1a15;
+  --map-park: #15281d;
+  --map-wood: #13241a;
+  --map-cemetery: #152019;
+  --map-water: #0f2328;
+  --map-road: #24322b;
+  --map-road-casing: #09100d;
+  --map-minor: #17231d;
+  --map-rail: #2c3b33;
+  --map-label: #7d8a82;
+  --map-park-label: #6f9b63;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-2: 0 12px 30px -12px rgb(0 0 0 / 70%), 0 2px 6px rgb(0 0 0 / 30%);
+  --shadow-3: 0 -12px 40px rgb(0 0 0 / 55%);
+  --scrim: rgb(2 6 4 / 70%);
+  --glass: rgb(11 20 16 / 90%);
+}
