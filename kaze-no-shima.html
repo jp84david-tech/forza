@@ -34,11 +34,20 @@
   #prompt b { border: 1px solid #f4e9d8; padding: 2px 9px; margin-right: 10px; font-weight: 400; }
   #loading { position: fixed; bottom: 24px; right: 30px; color: #f4e9d8; font-size: 12px; letter-spacing: 3px; opacity: 0.6; }
 </style>
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-} }
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#1a1410">
+<script>
+  // Installed app / web server: use the bundled copy of three.js (works offline).
+  // Opened straight from a downloaded file: browsers block local modules, so load from the CDN.
+  (() => {
+    const base = location.protocol === 'file:' ? 'https://cdn.jsdelivr.net/npm/three@0.160.0/' : './vendor/three/';
+    const im = document.createElement('script'); im.type = 'importmap';
+    im.textContent = JSON.stringify({ imports: { three: base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/' } });
+    document.currentScript.after(im);
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
+  })();
 </script>
 </head>
 <body>

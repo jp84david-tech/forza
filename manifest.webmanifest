@@ -1,0 +1,16 @@
+{
+  "name": "Kaze no Shima",
+  "short_name": "Kaze no Shima",
+  "description": "Wander a surreal island of wind-blown grass with your samurai and horse.",
+  "start_url": "./kaze-no-shima.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#000000",
+  "theme_color": "#1a1410",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
