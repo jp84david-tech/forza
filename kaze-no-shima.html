@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaze no Shima</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; overflow: hidden; height: 100%; font-family: 'Georgia', 'Times New Roman', serif; }
+  canvas { display: block; }
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%);
+  }
+  #title {
+    position: fixed; top: 28px; left: 36px; color: #f4e9d8; pointer-events: none;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6); transition: opacity 2s;
+  }
+  #title h1 { font-size: 30px; font-weight: 400; letter-spacing: 10px; }
+  #title p { font-size: 13px; letter-spacing: 6px; opacity: 0.7; margin-top: 4px; }
+  #start {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #f4e9d8; background: rgba(10,6,4,0.45); cursor: pointer; text-align: center; transition: opacity 0.6s;
+  }
+  #start h2 { font-size: 64px; font-weight: 400; letter-spacing: 18px; text-shadow: 0 4px 30px rgba(0,0,0,0.7); }
+  #start .jp { font-size: 22px; letter-spacing: 14px; opacity: 0.8; margin-top: 6px; }
+  #start .go { margin-top: 42px; font-size: 14px; letter-spacing: 5px; opacity: 0.85; border: 1px solid rgba(244,233,216,0.5); padding: 12px 28px; }
+  #start .keys { margin-top: 26px; font-size: 13px; letter-spacing: 2px; opacity: 0.6; line-height: 1.9; font-family: 'Segoe UI', sans-serif; }
+  #prompt {
+    position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+    color: #f4e9d8; font-size: 15px; letter-spacing: 4px; opacity: 0; transition: opacity 0.3s;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8); pointer-events: none;
+  }
+  #prompt b { border: 1px solid #f4e9d8; padding: 2px 9px; margin-right: 10px; font-weight: 400; }
+  #loading { position: fixed; bottom: 24px; right: 30px; color: #f4e9d8; font-size: 12px; letter-spacing: 3px; opacity: 0.6; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="vignette"></div>
+<div id="title"><h1>KAZE NO SHIMA</h1><p>風の島 · ISLAND OF WIND</p></div>
+<div id="prompt"></div>
+<div id="loading">GROWING GRASS…</div>
+<div id="start">
+  <h2>KAZE NO SHIMA</h2>
+  <div class="jp">風 の 島</div>
+  <div class="go">CLICK TO BEGIN</div>
+  <div class="keys">
+    W A S D — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run / gallop<br>
+    E — mount / dismount &nbsp;·&nbsp; H — call your horse &nbsp;·&nbsp; Esc — release mouse
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { Water } from 'three/addons/objects/Water.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const params = new URLSearchParams(location.search);
+const LOW = params.get('q') === 'low';
+
+// ─────────────────────────── Renderer / scene ───────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, LOW ? 1 : 1.5));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.42;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 20000);
+
+// Surreal golden-hour sun, low over the sea
+const SUN_ELEV = 5.5, SUN_AZ = 205;
+const sunDir = new THREE.Vector3().setFromSphericalCoords(1,
+  THREE.MathUtils.degToRad(90 - SUN_ELEV), THREE.MathUtils.degToRad(SUN_AZ));
+
+// ─────────────────────────── Noise helpers ───────────────────────────
+function hash(x, z) { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoise(x, z) {
+  const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi;
+  const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+  const a = hash(xi, zi), b = hash(xi + 1, zi), c = hash(xi, zi + 1), d = hash(xi + 1, zi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, z, o = 4) { let s = 0, a = 0.5, f = 1; for (let i = 0; i < o; i++) { s += a * vnoise(x * f, z * f); f *= 2.03; a *= 0.5; } return s; }
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ─────────────────────────── Dirt paths ───────────────────────────
+// A winding loop around the island plus a crossing trail, baked into a distance grid.
+const pathPts = [];
+for (let i = 0; i <= 360; i++) {
+  const a = i / 360 * Math.PI * 2;
+  const r = 27 + 5 * Math.sin(a * 3 + 0.6) + 2.5 * Math.sin(a * 5 + 1.7);
+  pathPts.push([Math.cos(a) * r, Math.sin(a) * r]);
+}
+for (let i = 0; i <= 200; i++) {
+  const t = i / 200, x = lerp(-50, 48, t);
+  pathPts.push([x, 10 * Math.sin(t * Math.PI * 1.6) - 6 + t * 12]);
+}
+const PG = 1, PMIN = -90, PN = 181;
+const pathGrid = new Float32Array(PN * PN);
+for (let j = 0; j < PN; j++) for (let i = 0; i < PN; i++) {
+  const x = PMIN + i * PG, z = PMIN + j * PG; let best = 1e9;
+  for (let k = 0; k < pathPts.length; k++) { const dx = x - pathPts[k][0], dz = z - pathPts[k][1]; const d = dx * dx + dz * dz; if (d < best) best = d; }
+  pathGrid[j * PN + i] = Math.sqrt(best);
+}
+function pathDist(x, z) {
+  const fx = (x - PMIN) / PG, fz = (z - PMIN) / PG;
+  const i = Math.max(0, Math.min(PN - 2, Math.floor(fx))), j = Math.max(0, Math.min(PN - 2, Math.floor(fz)));
+  const u = Math.min(1, Math.max(0, fx - i)), v = Math.min(1, Math.max(0, fz - j));
+  const a = pathGrid[j * PN + i], b = pathGrid[j * PN + i + 1], c = pathGrid[(j + 1) * PN + i], d = pathGrid[(j + 1) * PN + i + 1];
+  return lerp(lerp(a, b, u), lerp(c, d, u), v) + (vnoise(x * 0.9, z * 0.9) - 0.5) * 0.5;
+}
+const pathMask = (x, z) => 1 - smooth(0.8, 1.9, pathDist(x, z));
+
+// ─────────────────────────── Island height ───────────────────────────
+// ~2 acres of walkable grass: island radius ≈ 50 m.
+function islandRadius(x, z) {
+  const r = Math.hypot(x, z) + 1e-5, dx = x / r, dz = z / r;
+  return 50 + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 18;
+}
+function terrainH(x, z) {
+  const t = Math.hypot(x, z) / islandRadius(x, z);
+  const land = 1 - smooth(0.55, 1.0, t);
+  let h = lerp(-5, 0.35, 1 - smooth(0.92, 1.4, t));
+  h += land * (1.2 + 5.5 * fbm(x * 0.022 + 3, z * 0.022 - 5) + 0.6 * fbm(x * 0.12, z * 0.12));
+  h -= pathMask(x, z) * 0.18 * land;
+  return h;
+}
+
+// ─────────────────────────── Sky ───────────────────────────
+const sky = new Sky();
+sky.scale.setScalar(15000);
+const su = sky.material.uniforms;
+su.turbidity.value = 4.5;
+su.rayleigh.value = 3.2;
+su.mieCoefficient.value = 0.005;
+su.mieDirectionalG.value = 0.86;
+su.sunPosition.value.copy(sunDir);
+scene.add(sky);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+const skyClone = new Sky(); skyClone.scale.setScalar(15000);
+Object.keys(su).forEach(k => skyClone.material.uniforms[k].value = su[k].value);
+envScene.add(skyClone);
+scene.environment = pmrem.fromScene(envScene).texture;
+
+scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0055);
+
+// Surreal: a colossal pale moon rising opposite the sun
+const moonDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 11), THREE.MathUtils.degToRad(SUN_AZ + 150));
+const moon = new THREE.Mesh(new THREE.SphereGeometry(420, 48, 32),
+  new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.45, 1.35), fog: false }));
+moon.position.copy(moonDir).multiplyScalar(6000);
+scene.add(moon);
+{ // craters: faint darker patches
+  const g = new THREE.SphereGeometry(421, 48, 32), c = [];
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const n = fbm(p.getX(i) * 0.01 + 5, p.getY(i) * 0.01 + p.getZ(i) * 0.007, 5); c.push(0.9, 0.85, 0.82, Math.max(0, n - 0.5) * 1.1); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 4));
+  const crater = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, fog: false, color: 0x6a5f66, blending: THREE.MultiplyBlending, premultipliedAlpha: true }));
+  crater.position.copy(moon.position); scene.add(crater);
+}
+
+// ─────────────────────────── Lights ───────────────────────────
+const sunCol = new THREE.Color(1.0, 0.72, 0.45);
+const sun = new THREE.DirectionalLight(sunCol, 5.5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 120 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+scene.add(new THREE.HemisphereLight(0xa9b8e0, 0x3a2a14, 0.9));
+
+// ─────────────────────────── Terrain ───────────────────────────
+const TS = 190, TSEG = LOW ? 200 : 340;
+const tGeo = new THREE.PlaneGeometry(TS, TS, TSEG, TSEG); tGeo.rotateX(-Math.PI / 2);
+{
+  const p = tGeo.attributes.position, col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i), h = terrainH(x, z); p.setY(i, h);
+    const pm = pathMask(x, z), n = vnoise(x * 1.7, z * 1.7), n2 = fbm(x * 0.3, z * 0.3);
+    let r = 0.030 + 0.02 * n2, g = 0.040 + 0.02 * n2, b = 0.012;                // soil under grass
+    const dr = (0.15 + 0.06 * n) , dg = (0.095 + 0.04 * n), db = 0.055 + 0.02 * n;  // packed dirt
+    r = lerp(r, dr, pm); g = lerp(g, dg, pm); b = lerp(b, db, pm);
+    const s = 1 - smooth(0.45, 1.0, h);                                           // beach sand
+    r = lerp(r, 0.40 + 0.05 * n, s); g = lerp(g, 0.33 + 0.04 * n, s); b = lerp(b, 0.23, s);
+    const w = 1 - smooth(-0.1, 0.25, h);                                          // wet sand
+    r = lerp(r, 0.17, w); g = lerp(g, 0.14, w); b = lerp(b, 0.10, w);
+    col[i * 3] = r; col[i * 3 + 1] = g; col[i * 3 + 2] = b;
+  }
+  tGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  tGeo.computeVertexNormals();
+}
+const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.6 }));
+terrain.receiveShadow = true;
+scene.add(terrain);
+
+// ─────────────────────────── Water ───────────────────────────
+function makeWaterNormals(size = 512) {
+  // Tileable normal map from summed integer-frequency waves
+  const data = new Uint8Array(size * size * 4), waves = [];
+  for (let i = 0; i < 28; i++) waves.push([Math.round((Math.random() - 0.5) * 2 * (2 + i * 1.3)), Math.round((Math.random() - 0.5) * 2 * (2 + i * 1.3)), Math.random() * 6.28, 1 / (1 + i * 0.6)]);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    let dx = 0, dy = 0; const u = x / size, v = y / size;
+    for (const [fx, fy, ph, a] of waves) { const c = Math.cos(6.2832 * (fx * u + fy * v) + ph) * a; dx += c * fx; dy += c * fy; }
+    const n = new THREE.Vector3(-dx * 0.035, -dy * 0.035, 1).normalize(), o = (y * size + x) * 4;
+    data[o] = (n.x * 0.5 + 0.5) * 255; data[o + 1] = (n.y * 0.5 + 0.5) * 255; data[o + 2] = (n.z * 0.5 + 0.5) * 255; data[o + 3] = 255;
+  }
+  const t = new THREE.DataTexture(data, size, size); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true;
+  return t;
+}
+const water = new Water(new THREE.PlaneGeometry(20000, 20000), {
+  textureWidth: LOW ? 512 : 1024, textureHeight: LOW ? 512 : 1024,
+  waterNormals: makeWaterNormals(),
+  sunDirection: sunDir.clone(), sunColor: 0xffc890, waterColor: 0x042a33,
+  distortionScale: 2.2, fog: true,
+});
+water.rotation.x = -Math.PI / 2;
+water.material.uniforms.size.value = 2.5;
+scene.add(water);
+
+// Shore foam: a soft band hugging the coastline
+{
+  const N = 512, inner = [], geo = new THREE.BufferGeometry(), pos = [], uv = [], idx = [];
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+    let lo = 20, hi = 90; // binary search coastline (h = 0)
+    for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
+    pos.push(dx * (lo - 1.2), 0.03, dz * (lo - 1.2), dx * (lo + 2.8), 0.03, dz * (lo + 2.8));
+    uv.push(i / N * 60, 0, i / N * 60, 1);
+    if (i < N) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+  }
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+  var foamMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color(1.3, 1.1, 0.95) } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uCol;
+      float h(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+      float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+      void main(){
+        float wave = fract(vUv.y*1.2 - uTime*0.18);
+        float line = smoothstep(0.0,0.08,wave)*smoothstep(0.35,0.08,wave);
+        float edge = smoothstep(0.0,0.25,vUv.y)*smoothstep(1.0,0.35,vUv.y);
+        float br = n(vec2(vUv.x*8., vUv.y*6.-uTime*0.6))*n(vec2(vUv.x*23., vUv.y*9.+uTime*0.3));
+        float a = (line*0.8 + 0.25*smoothstep(0.35,0.0,vUv.y)) * edge * smoothstep(0.1,0.5,br);
+        gl_FragColor = vec4(uCol, a*0.75);
+      }`,
+  });
+  const foam = new THREE.Mesh(geo, foamMat); foam.renderOrder = 2; scene.add(foam);
+}
+
+// ─────────────────────────── Grass ───────────────────────────
+const blade = new THREE.BufferGeometry();
+{
+  const SEG = 5, p = [], idx = [];
+  for (let i = 0; i < SEG; i++) { const t = i / SEG; p.push(-0.5, t, 0, 0.5, t, 0); }
+  p.push(0, 1, 0);
+  for (let i = 0; i < SEG - 1; i++) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+  const b = (SEG - 1) * 2; idx.push(b, b + 1, SEG * 2);
+  blade.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); blade.setIndex(idx);
+}
+const grassGeo = new THREE.InstancedBufferGeometry();
+grassGeo.index = blade.index; grassGeo.attributes.position = blade.attributes.position;
+const offsets = [], prm = [];
+{
+  const CAND = LOW ? 450000 : 1100000;
+  for (let i = 0; i < CAND; i++) {
+    const x = (Math.random() - 0.5) * 124, z = (Math.random() - 0.5) * 124;
+    const h = terrainH(x, z); if (h < 0.5) continue;
+    const pm = pathMask(x, z); if (Math.random() < pm * 1.4) continue;
+    const shore = smooth(0.5, 1.3, h);
+    if (Math.random() > shore) continue;
+    const patch = fbm(x * 0.05 + 40, z * 0.05);
+    const tall = (0.55 + 0.7 * patch) * (0.55 + 0.45 * shore) * (1 - pm * 0.6) * (0.7 + Math.random() * 0.6);
+    offsets.push(x, h - 0.02, z);
+    prm.push(Math.random() * Math.PI * 2, tall, 0.045 + Math.random() * 0.035, Math.random());
+  }
+  grassGeo.setAttribute('aOffset', new THREE.InstancedBufferAttribute(new Float32Array(offsets), 3));
+  grassGeo.setAttribute('aParams', new THREE.InstancedBufferAttribute(new Float32Array(prm), 4));
+  grassGeo.instanceCount = offsets.length / 3;
+}
+const grassMat = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  uniforms: {
+    uTime: { value: 0 },
+    uPush0: { value: new THREE.Vector4(0, 0, 0.6, 0) },
+    uPush1: { value: new THREE.Vector4(0, 0, 1.2, 0) },
+    uSunDir: { value: sunDir },
+    uSunCol: { value: new THREE.Color(sunCol.r * 5, sunCol.g * 5, sunCol.b * 5) },
+    uAmb: { value: new THREE.Color(0.55, 0.6, 0.85) },
+    uFogCol: { value: scene.fog.color },
+    uFogDen: { value: scene.fog.density },
+  },
+  vertexShader: /* glsl */`
+    uniform float uTime; uniform vec4 uPush0; uniform vec4 uPush1;
+    attribute vec3 aOffset; attribute vec4 aParams;
+    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch;
+    vec2 pushFrom(vec4 P, vec2 root, float t, float h){
+      vec2 d = root - P.xy; float l = length(d) + 1e-4;
+      float f = (1.0 - smoothstep(P.z*0.35, P.z, l)) * P.w;
+      return d / l * f * t * h * 1.1;
+    }
+    void main(){
+      float t = position.y;
+      float rot = aParams.x, h = aParams.y, w = aParams.z, r = aParams.w;
+      vec3 tng = vec3(cos(rot), 0.0, sin(rot));
+      vec3 nrm = vec3(-tng.z, 0.0, tng.x);
+      vec3 wp = aOffset + tng * position.x * w * (1.0 - t * 0.85) + vec3(0.0, t * h, 0.0);
+      wp += nrm * t * t * h * (0.18 + 0.35 * r);                    // natural curl
+      vec2 wdir = normalize(vec2(1.0, 0.35));
+      float g = sin(dot(aOffset.xz, wdir) * 0.09 - uTime * 1.25) * 0.5 + 0.5;
+      float g2 = sin(dot(aOffset.xz, vec2(-0.3, 1.0)) * 0.21 - uTime * 2.1) * 0.5 + 0.5;
+      g = g * g * 0.8 + g2 * 0.2;
+      float flutter = sin(uTime * 4.0 + r * 30.0 + aOffset.x * 0.9) * 0.06;
+      vec2 disp = wdir * (0.12 + g * 0.6 + flutter) * t * t * h;
+      disp += pushFrom(uPush0, aOffset.xz, t, h) + pushFrom(uPush1, aOffset.xz, t, h);
+      float dl = length(disp);
+      wp.xz += disp;
+      wp.y -= min(dl * dl / max(h, 0.05) * 0.6, t * h * 0.8);       // preserve blade length when bent
+      vT = t; vRand = r; vWorld = wp;
+      vPatch = smoothstep(0.35, 0.75, sin(aOffset.x * 0.07) * sin(aOffset.z * 0.06 + 1.3) * 0.5 + 0.5 + r * 0.15);
+      vN = normalize(nrm + vec3(disp.x, 0.0, disp.y) * 0.5);
+      gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen;
+    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch;
+    void main(){
+      vec3 N = normalize(vN); if (!gl_FrontFacing) N = -N;
+      N = normalize(N + vec3(0.0, 1.1, 0.0));
+      vec3 V = normalize(cameraPosition - vWorld);
+      vec3 root = vec3(0.012, 0.025, 0.006);
+      vec3 tipG = vec3(0.16, 0.30, 0.05);
+      vec3 tipD = vec3(0.50, 0.40, 0.13);
+      vec3 col = mix(root, mix(tipG, tipD, vPatch), smoothstep(0.0, 1.0, vT));
+      col *= 0.75 + 0.5 * vRand;
+      float ndl = max(dot(N, uSunDir), 0.0);
+      float back = pow(max(dot(-V, uSunDir), 0.0), 5.0) * vT * vT;
+      float ao = mix(0.2, 1.0, vT);
+      vec3 H = normalize(V + uSunDir);
+      float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.12 * vT;
+      vec3 lit = col * (uSunCol * (ndl * 0.8 + 0.12) + uAmb * 0.9) * ao
+               + col * uSunCol * back * 3.5
+               + uSunCol * spec;
+      float d = length(cameraPosition - vWorld);
+      float fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
+      gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
+    }`,
+});
+const grass = new THREE.Mesh(grassGeo, grassMat);
+grass.frustumCulled = false;
+scene.add(grass);
+
+// Don't render grass into the sea reflection (cheap, and invisible anyway)
+{ const orig = water.onBeforeRender.bind(water);
+  water.onBeforeRender = (...a) => { grass.visible = false; orig(...a); grass.visible = true; }; }
+
+// ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
+const rock = new THREE.MeshStandardMaterial({ color: 0x4a4540, roughness: 0.9, flatShading: true });
+const skyRock = new THREE.MeshStandardMaterial({ color: 0x6b5a55, roughness: 0.9, flatShading: true, fog: false, emissive: 0x3a2a38, emissiveIntensity: 0.6 });
+function rockGeo(r, detail = 2, seed = 0) {
+  const g = new THREE.IcosahedronGeometry(r, detail), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(p, i);
+    const n = fbm(v.x * 0.6 / r * 3 + seed, v.y * 0.6 / r * 3 + v.z * 0.4 / r * 3, 4);
+    v.multiplyScalar(0.7 + n * 0.7); p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals(); return g;
+}
+{ // torii gate on the loop path, facing the sea
+  const a = 0.35, r = 27 + 5 * Math.sin(a * 3 + 0.6) + 2.5 * Math.sin(a * 5 + 1.7);
+  const tx = Math.cos(a) * r, tz = Math.sin(a) * r, ty = terrainH(tx, tz);
+  const red = new THREE.MeshStandardMaterial({ color: 0x9c1a10, roughness: 0.55 });
+  const blk = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
+  const torii = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.21, 4.4, 20), red); p.position.set(s * 1.7, 2.1, 0); torii.add(p);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 20), blk); base.position.set(s * 1.7, 0.1, 0); torii.add(base);
+  }
+  const kasagi = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.3, 0.45), blk); kasagi.position.y = 4.45; torii.add(kasagi);
+  const kasagi2 = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.22, 0.4), red); kasagi2.position.y = 4.2; torii.add(kasagi2);
+  const nuki = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.2, 0.2), red); nuki.position.y = 3.4; torii.add(nuki);
+  torii.position.set(tx, ty - 0.1, tz);
+  torii.rotation.y = -a;
+  torii.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
+  scene.add(torii);
+}
+for (let i = 0; i < 14; i++) { // weathered stones in the grass
+  const a = Math.random() * 6.28, d = 8 + Math.random() * 34, x = Math.cos(a) * d, z = Math.sin(a) * d;
+  if (pathMask(x, z) > 0.1) continue;
+  const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 1, i * 3.1), rock);
+  m.position.set(x, terrainH(x, z) - s * 0.25, z); m.rotation.set(Math.random(), Math.random() * 6, Math.random());
+  m.castShadow = m.receiveShadow = true; scene.add(m);
+}
+const floaters = [];
+for (let i = 0; i < 9; i++) { // surreal floating islands over the sea
+  const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 260 + Math.random() * 420, s = 10 + Math.random() * 26;
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(rockGeo(s, 3, i * 7.7), skyRock); body.scale.set(1, 1.4, 1); g.add(body);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.95, s * 0.8, s * 0.25, 24),
+    new THREE.MeshStandardMaterial({ color: 0x4d6a2c, roughness: 1, fog: false, emissive: 0x1a2a10 }));
+  cap.position.y = s * 0.55; g.add(cap);
+  body.position.y = -s * 0.5;
+  g.position.set(Math.cos(a) * d, 40 + Math.random() * 110, Math.sin(a) * d);
+  g.userData = { base: g.position.y, ph: Math.random() * 6 };
+  scene.add(g); floaters.push(g);
+}
+
+// Drifting glowing motes / pollen
+const motes = (() => {
+  const N = LOW ? 700 : 1600, pos = new Float32Array(N * 3), c = document.createElement('canvas');
+  c.width = c.height = 64; const x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,240,200,1)'); gr.addColorStop(0.3, 'rgba(255,200,120,0.5)'); gr.addColorStop(1, 'rgba(255,180,90,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 60; pos[i * 3 + 1] = Math.random() * 8; pos[i * 3 + 2] = (Math.random() - 0.5) * 60; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.12, map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(3, 2.2, 1.4) }));
+  m.frustumCulled = false; scene.add(m); return m;
+})();
+
+// ─────────────────────────── Samurai ───────────────────────────
+function M(color, rough = 0.7, metal = 0) { return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal }); }
+const mats = {
+  skin: M(0xb58466, 0.6), cloth: M(0x1d2233, 0.85), hakama: M(0x2a2a2e, 0.9),
+  armor: M(0x5c0f0c, 0.35, 0.2), trim: M(0xb08a3a, 0.35, 0.8), black: M(0x0c0c0e, 0.4, 0.3),
+  straw: M(0x8a6a3a, 0.95), hair: M(0x0a0806, 0.8), steel: M(0xcfd6dc, 0.2, 1.0), cape: M(0x6e1812, 0.8),
+};
+mats.cape.side = THREE.DoubleSide;
+function part(geo, mat, parent, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz);
+  m.castShadow = true; m.receiveShadow = true; parent.add(m); return m;
+}
+function pivot(parent, x, y, z) { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; }
+
+function buildSamurai() {
+  const root = new THREE.Group(), body = pivot(root, 0, 0, 0), hips = pivot(body, 0, 0.94, 0);
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const thigh = pivot(hips, s * 0.1, 0, 0);
+    part(new THREE.CylinderGeometry(0.075, 0.06, 0.44, 12), mats.hakama, thigh, 0, -0.22, 0);
+    part(new THREE.CylinderGeometry(0.13, 0.2, 0.62, 16, 1, true), mats.hakama, thigh, s * 0.02, -0.3, 0); // wide hakama leg
+    const knee = pivot(thigh, 0, -0.44, 0);
+    part(new THREE.CylinderGeometry(0.055, 0.045, 0.44, 12), mats.cloth, knee, 0, -0.22, 0);
+    part(new THREE.CylinderGeometry(0.06, 0.065, 0.2, 12), mats.black, knee, 0, -0.3, 0); // suneate greaves
+    const foot = part(new THREE.BoxGeometry(0.09, 0.05, 0.24), mats.black, knee, 0, -0.45, 0.05);
+    legs.push({ thigh, knee, foot });
+  }
+  const torso = pivot(hips, 0, 0, 0);
+  part(new THREE.CylinderGeometry(0.17, 0.15, 0.3, 16), mats.cloth, torso, 0, 0.15, 0);
+  part(new THREE.CylinderGeometry(0.2, 0.17, 0.34, 16), mats.armor, torso, 0, 0.44, 0, 0, 0, 0); // do (chest armor)
+  for (let i = 0; i < 3; i++) part(new THREE.CylinderGeometry(0.205 - i * 0.004, 0.2, 0.012, 16), mats.trim, torso, 0, 0.3 + i * 0.1, 0);
+  part(new THREE.TorusGeometry(0.165, 0.025, 8, 24), mats.trim, torso, 0, 0.1, 0, Math.PI / 2); // obi
+  for (let i = 0; i < 6; i++) { // kusazuri: armor skirt plates
+    const a = i / 6 * Math.PI * 2 + 0.3;
+    part(new THREE.BoxGeometry(0.14, 0.26, 0.03), mats.armor, torso, Math.sin(a) * 0.2, -0.05, Math.cos(a) * 0.2, 0.18 * Math.cos(a) * -1 + 0, a, 0).rotation.order = 'YXZ';
+  }
+  const chest = pivot(torso, 0, 0.62, 0);
+  part(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 12), mats.skin, chest, 0, 0.04, 0);
+  const head = pivot(chest, 0, 0.18, 0.01);
+  const skull = part(new THREE.SphereGeometry(0.105, 24, 18), mats.skin, head, 0, 0, 0); skull.scale.set(0.9, 1.12, 1);
+  part(new THREE.SphereGeometry(0.108, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), mats.hair, head, 0, 0.012, -0.012);
+  part(new THREE.SphereGeometry(0.04, 12, 10), mats.hair, head, 0, 0.08, -0.08); // topknot
+  part(new THREE.BoxGeometry(0.1, 0.035, 0.03), mats.hair, head, 0, -0.06, 0.085); // beard
+  part(new THREE.ConeGeometry(0.34, 0.14, 32, 1, true), mats.straw, head, 0, 0.14, 0); // kasa hat
+  part(new THREE.ConeGeometry(0.34, 0.14, 32, 1, true), mats.straw, head, 0, 0.138, 0).scale.set(-1, 1, 1);
+  const arms = [];
+  for (const s of [-1, 1]) {
+    part(new THREE.BoxGeometry(0.18, 0.2, 0.2), mats.armor, chest, s * 0.27, -0.1, 0, 0, 0, s * 0.35); // sode shoulder guard
+    const sh = pivot(chest, s * 0.23, -0.02, 0);
+    part(new THREE.CylinderGeometry(0.055, 0.05, 0.3, 12), mats.cloth, sh, 0, -0.15, 0);
+    const el = pivot(sh, 0, -0.3, 0);
+    part(new THREE.CylinderGeometry(0.048, 0.04, 0.27, 12), mats.black, el, 0, -0.13, 0);
+    part(new THREE.SphereGeometry(0.045, 10, 8), mats.skin, el, 0, -0.29, 0.01);
+    arms.push({ sh, el });
+  }
+  // katana on the left hip
+  const sword = pivot(hips, -0.2, 0.08, 0);
+  sword.rotation.set(-1.25, 0, 0.12);
+  part(new THREE.CylinderGeometry(0.018, 0.016, 0.78, 8), mats.black, sword, 0, -0.1, 0);
+  part(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 8), mats.cloth, sword, 0, 0.42, 0);
+  part(new THREE.CylinderGeometry(0.045, 0.045, 0.01, 16), mats.trim, sword, 0, 0.29, 0);
+  // flowing cape
+  const capeGeo = new THREE.PlaneGeometry(0.34, 0.7, 6, 12); capeGeo.translate(0, -0.35, 0);
+  const cape = part(capeGeo, mats.cape, chest, 0, 0.02, -0.19);
+  cape.userData.base = capeGeo.attributes.position.array.slice();
+  root.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return { root, body, hips, torso, chest, head, legs, arms, cape, phase: 0 };
+}
+
+// ─────────────────────────── Horse ───────────────────────────
+function buildHorse() {
+  const coat = M(0x4a2a18, 0.55), dark = M(0x120c08, 0.7), hoof = M(0x1a1612, 0.5), saddle = M(0x5a1510, 0.5), blanket = M(0x1d2a44, 0.9);
+  const root = new THREE.Group(), body = pivot(root, 0, 1.28, 0);
+  const trunk = part(new THREE.CapsuleGeometry(0.34, 0.95, 8, 20), coat, body, 0, 0, 0, Math.PI / 2); trunk.scale.set(1, 1, 1.12);
+  part(new THREE.SphereGeometry(0.38, 20, 16), coat, body, 0, 0.02, 0.55).scale.set(0.95, 1.05, 0.9);   // chest
+  part(new THREE.SphereGeometry(0.4, 20, 16), coat, body, 0, 0.04, -0.52).scale.set(1, 1, 0.95);        // rump
+  const neck = pivot(body, 0, 0.18, 0.72); neck.rotation.x = -0.65;
+  part(new THREE.CylinderGeometry(0.15, 0.26, 0.85, 16), coat, neck, 0, 0.36, 0);
+  for (let i = 0; i < 9; i++) part(new THREE.BoxGeometry(0.05, 0.14, 0.1), dark, neck, 0, 0.05 + i * 0.09, -0.16 - i * 0.004 + 0.02, 0.2);
+  const head = pivot(neck, 0, 0.78, 0.02); head.rotation.x = 1.75;
+  part(new THREE.CylinderGeometry(0.085, 0.15, 0.58, 14), coat, head, 0, 0.27, 0);
+  part(new THREE.SphereGeometry(0.095, 12, 10), dark, head, 0, 0.56, 0.0);
+  for (const s of [-1, 1]) {
+    part(new THREE.ConeGeometry(0.04, 0.15, 8), coat, head, s * 0.07, -0.02, -0.12, -0.9, 0, s * 0.2);
+    part(new THREE.SphereGeometry(0.025, 8, 6), dark, head, s * 0.11, 0.12, 0.06);
+  }
+  const legs = [];
+  for (const [x, z, front] of [[-0.2, 0.55, 1], [0.2, 0.55, 1], [-0.2, -0.55, 0], [0.2, -0.55, 0]]) {
+    const up = pivot(body, x, -0.1, z);
+    part(new THREE.CylinderGeometry(front ? 0.1 : 0.13, 0.07, 0.6, 12), coat, up, 0, -0.3, 0);
+    const lo = pivot(up, 0, -0.6, 0);
+    part(new THREE.CylinderGeometry(0.05, 0.045, 0.5, 10), coat, lo, 0, -0.25, 0);
+    part(new THREE.CylinderGeometry(0.065, 0.075, 0.1, 12), hoof, lo, 0, -0.53, 0.01);
+    legs.push({ up, lo, front });
+  }
+  const tail = pivot(body, 0, 0.18, -0.95); tail.rotation.x = 0.5;
+  part(new THREE.ConeGeometry(0.11, 0.85, 10), dark, tail, 0, -0.4, 0, Math.PI);
+  part(new THREE.BoxGeometry(0.62, 0.05, 0.75), blanket, body, 0, 0.33, 0.02);
+  part(new THREE.BoxGeometry(0.46, 0.12, 0.55), saddle, body, 0, 0.4, 0.02);
+  part(new THREE.BoxGeometry(0.3, 0.12, 0.08), saddle, body, 0, 0.48, 0.28);
+  root.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return { root, body, neck, head, legs, tail, phase: 0 };
+}
+
+const hero = buildSamurai(); scene.add(hero.root);
+const horse = buildHorse(); scene.add(horse.root);
+
+// ─────────────────────────── State / input ───────────────────────────
+const spawnA = 2.6, spawnR = 27 + 5 * Math.sin(spawnA * 3 + 0.6) + 2.5 * Math.sin(spawnA * 5 + 1.7);
+const player = { pos: new THREE.Vector3(Math.cos(spawnA) * spawnR, 0, Math.sin(spawnA) * spawnR), yaw: 0, speed: 0, mounted: false };
+const hs = { pos: player.pos.clone().add(new THREE.Vector3(2.5, 0, 1.5)), yaw: 1.2, speed: 0, called: false };
+let camYaw = Math.atan2(-player.pos.x, -player.pos.z) + Math.PI, camPitch = 0.18;
+player.yaw = camYaw + Math.PI;
+
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true;
+  if (e.code === 'KeyE') toggleMount();
+  if (e.code === 'KeyH' && !player.mounted) hs.called = true; });
+addEventListener('keyup', e => keys[e.code] = false);
+const startEl = document.getElementById('start');
+startEl.addEventListener('click', () => { renderer.domElement.requestPointerLock?.(); startEl.style.opacity = 0; setTimeout(() => startEl.style.display = 'none', 600); });
+renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock?.());
+let dragging = false;
+addEventListener('mousedown', () => dragging = true); addEventListener('mouseup', () => dragging = false);
+addEventListener('mousemove', e => {
+  if (document.pointerLockElement || dragging) {
+    camYaw -= e.movementX * 0.0025;
+    camPitch = Math.max(-0.35, Math.min(1.1, camPitch + e.movementY * 0.002));
+  }
+});
+function toggleMount() {
+  if (player.mounted) {
+    player.mounted = false;
+    const side = new THREE.Vector3(Math.cos(hs.yaw), 0, -Math.sin(hs.yaw)).multiplyScalar(-1.1);
+    player.pos.copy(hs.pos).add(side); player.speed = 0; hs.speed = 0; player.yaw = hs.yaw;
+  } else if (player.pos.distanceTo(hs.pos) < 3.2) {
+    player.mounted = true; hs.called = false; hs.speed = 0;
+  }
+}
+const promptEl = document.getElementById('prompt');
+function setPrompt(html) { if (promptEl.innerHTML !== html) promptEl.innerHTML = html; promptEl.style.opacity = html ? 1 : 0; }
+
+const angDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+function walkable(x, z) { return terrainH(x, z) > 0.35; }
+function tryMove(p, dx, dz) {
+  if (walkable(p.x + dx, p.z + dz)) { p.x += dx; p.z += dz; return true; }
+  if (walkable(p.x + dx, p.z)) { p.x += dx; return true; }
+  if (walkable(p.x, p.z + dz)) { p.z += dz; return true; }
+  return false;
+}
+
+// ─────────────────────────── Animation ───────────────────────────
+function animateSamurai(dt, t) {
+  const s = hero, spd = player.speed;
+  if (player.mounted) {
+    s.legs.forEach((l, i) => { l.thigh.rotation.set(-1.25, 0, (i ? 1 : -1) * 0.45); l.knee.rotation.x = 1.55; });
+    s.arms.forEach((a, i) => { a.sh.rotation.set(-0.7, 0, (i ? -1 : 1) * 0.15); a.el.rotation.x = -0.6; });
+    s.body.position.y = 0; s.torso.rotation.x = 0.05 + Math.sin(horse.phase * 2) * 0.03 * Math.min(1, hs.speed / 6);
+  } else {
+    const run = Math.min(1, spd / 6.5);
+    s.phase += dt * (2.2 + spd * 1.45);
+    const amp = Math.min(1, spd / 1.5) * (0.5 + 0.25 * run);
+    let maxA = 0;
+    s.legs.forEach((l, i) => {
+      const ph = s.phase + i * Math.PI, a = Math.sin(ph) * amp;
+      l.thigh.rotation.set(-a, 0, 0);
+      l.knee.rotation.x = Math.max(0, -Math.cos(ph)) * amp * (1.4 + run) + 0.05;
+      maxA = Math.max(maxA, Math.abs(a));
+    });
+    s.arms.forEach((a, i) => { a.sh.rotation.set(Math.sin(s.phase + i * Math.PI) * amp * 0.9, 0, (i ? -1 : 1) * 0.12); a.el.rotation.x = -0.3 - run * 0.9; });
+    // keep the planted foot on the ground: hip drops as the legs swing
+    s.body.position.y = -(1 - Math.cos(maxA)) * 0.88 + Math.abs(Math.cos(s.phase)) * 0.03 * run;
+    s.torso.rotation.x = run * 0.22;
+    s.head.rotation.y = Math.sin(t * 0.3) * 0.15 * (1 - Math.min(1, spd));
+    s.chest.rotation.x = Math.sin(t * 1.6) * 0.012; // breathing
+  }
+  // cape ripples in the wind and with speed
+  const arr = s.cape.geometry.attributes.position.array, base = s.cape.userData.base;
+  const flow = 0.15 + Math.min(1, (player.mounted ? hs.speed : spd) / 8) * 0.9;
+  for (let i = 0; i < arr.length; i += 3) {
+    const bx = base[i], by = base[i + 1], k = -by / 0.7;
+    arr[i + 2] = base[i + 2] - k * k * flow * 0.6 + Math.sin(t * 6 + by * 7 + bx * 4) * 0.05 * k * (0.4 + flow);
+    arr[i + 1] = by * (1 - flow * 0.35 * k);
+  }
+  s.cape.geometry.attributes.position.needsUpdate = true; s.cape.geometry.computeVertexNormals();
+}
+
+function animateHorse(dt, t) {
+  const h = horse, spd = hs.speed, gallop = smooth(4, 8, spd);
+  h.phase += dt * (spd < 0.1 ? 0 : 3.2 + spd * 0.9 - gallop * 1.5);
+  const amp = Math.min(1, spd / 1.2) * (0.35 + gallop * 0.4);
+  const walkOff = [0, 0.5, 0.75, 0.25], galOff = [0.1, 0.0, 0.6, 0.5];
+  h.legs.forEach((l, i) => {
+    const ph = h.phase + 6.2832 * lerp(walkOff[i], galOff[i], gallop), a = Math.sin(ph) * amp;
+    l.up.rotation.x = -a;
+    const bend = Math.max(0, Math.cos(ph)) * amp * 1.6;
+    l.lo.rotation.x = l.front ? bend : -bend * 0.8;
+  });
+  // idle: graze with head down in the grass
+  const graze = spd < 0.2 && !player.mounted ? (Math.sin(t * 0.25) > 0 ? 1 : 0) : 0;
+  h.grazeT = lerp(h.grazeT || 0, graze, dt * 1.2);
+  h.neck.rotation.x = lerp(-0.65, 0.55, h.grazeT) + Math.sin(h.phase * 2) * 0.06 * amp - gallop * 0.2;
+  h.body.position.y = 1.28 + Math.abs(Math.sin(h.phase)) * 0.06 * gallop - (1 - Math.cos(amp)) * 0.55;
+  h.body.rotation.x = Math.sin(h.phase * 2) * 0.03 * gallop;
+  h.tail.rotation.x = 0.5 + gallop * 0.6 + Math.sin(t * 2) * 0.08;
+  h.tail.rotation.z = Math.sin(t * 1.3) * 0.15;
+}
+
+// ─────────────────────────── Post-processing ───────────────────────────
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.7, 0.9);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+
+// ─────────────────────────── Main loop ───────────────────────────
+const clock = new THREE.Clock();
+const camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
+let first = true;
+document.getElementById('loading').remove();
+setTimeout(() => document.getElementById('title').style.opacity = 0.55, 6000);
+
+function update(dt, t) {
+  // Input → desired direction relative to camera
+  const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  const r = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  const moving = f !== 0 || r !== 0, sprint = keys.ShiftLeft || keys.ShiftRight;
+  const wantYaw = Math.atan2(-r, -f) + camYaw + Math.PI; // direction in world, relative to camera
+
+  if (player.mounted) {
+    const top = moving ? (sprint ? 13 : 5.5) : 0;
+    hs.speed = lerp(hs.speed, top, dt * (top > hs.speed ? 1.2 : 2.2));
+    if (moving) hs.yaw += angDiff(hs.yaw, wantYaw) * Math.min(1, dt * 2.6);
+    const dx = Math.sin(hs.yaw) * hs.speed * dt, dz = Math.cos(hs.yaw) * hs.speed * dt;
+    if (!tryMove(hs.pos, dx, dz)) hs.speed *= 0.5;
+    player.pos.copy(hs.pos);
+  } else {
+    const top = moving ? (sprint ? 6.5 : 1.9) : 0;
+    player.speed = lerp(player.speed, top, dt * (top > player.speed ? 4 : 7));
+    if (moving) player.yaw += angDiff(player.yaw, wantYaw) * Math.min(1, dt * 9);
+    tryMove(player.pos, Math.sin(player.yaw) * player.speed * dt, Math.cos(player.yaw) * player.speed * dt);
+    // horse: comes when called, otherwise wanders slowly
+    const toP = new THREE.Vector3().subVectors(player.pos, hs.pos); toP.y = 0;
+    const d = toP.length();
+    if (hs.called && d > 2.6) {
+      const want = Math.atan2(toP.x, toP.z);
+      hs.yaw += angDiff(hs.yaw, want) * Math.min(1, dt * 3);
+      hs.speed = lerp(hs.speed, d > 12 ? 11 : 3.5, dt * 1.5);
+    } else { if (hs.called) hs.called = false; hs.speed = lerp(hs.speed, 0, dt * 2.5); }
+    tryMove(hs.pos, Math.sin(hs.yaw) * hs.speed * dt, Math.cos(hs.yaw) * hs.speed * dt);
+    setPrompt(d < 3.2 ? '<b>E</b>MOUNT' : '');
+  }
+  if (player.mounted) setPrompt('');
+
+  // Ground contact: horse pitched to the slope under its hooves, samurai feet on the terrain
+  const hx = Math.sin(hs.yaw), hz = Math.cos(hs.yaw);
+  const hFront = terrainH(hs.pos.x + hx * 0.75, hs.pos.z + hz * 0.75), hBack = terrainH(hs.pos.x - hx * 0.75, hs.pos.z - hz * 0.75);
+  hs.pos.y = (hFront + hBack) / 2;
+  horse.root.position.copy(hs.pos);
+  horse.root.rotation.set(0, 0, 0); horse.root.rotateY(hs.yaw); horse.root.rotateX(-Math.atan2(hFront - hBack, 1.5));
+
+  if (player.mounted) {
+    hero.root.position.set(0, 0, 0); hero.root.rotation.set(0, 0, 0);
+    horse.body.add(hero.root); hero.root.position.set(0, -0.48, 0.02);
+  } else {
+    if (hero.root.parent !== scene) scene.add(hero.root);
+    player.pos.y = terrainH(player.pos.x, player.pos.z);
+    hero.root.position.copy(player.pos); hero.root.rotation.set(0, player.yaw, 0);
+  }
+  animateSamurai(dt, t); animateHorse(dt, t);
+
+  // Grass parts around feet and hooves
+  const u = grassMat.uniforms;
+  u.uTime.value = t;
+  u.uPush0.value.set(player.pos.x, player.pos.z, 0.7, player.mounted ? 0 : 1);
+  u.uPush1.value.set(hs.pos.x, hs.pos.z, 1.4, 1);
+
+  // Third-person camera
+  const dist = player.mounted ? 6.2 : 4.2, lift = player.mounted ? 2.5 : 1.55;
+  camTarget.set(player.pos.x, player.pos.y + lift, player.pos.z);
+  const want = new THREE.Vector3(
+    camTarget.x + Math.sin(camYaw) * Math.cos(camPitch) * dist,
+    camTarget.y + Math.sin(camPitch) * dist,
+    camTarget.z + Math.cos(camYaw) * Math.cos(camPitch) * dist);
+  want.y = Math.max(want.y, terrainH(want.x, want.z) + 0.45, 0.6);
+  if (first) { camPos.copy(want); first = false; } else camPos.lerp(want, 1 - Math.exp(-dt * 10));
+  camera.position.copy(camPos); camera.lookAt(camTarget);
+
+  // Shadows follow the player
+  sun.position.copy(player.pos).addScaledVector(sunDir, 60); sun.target.position.copy(player.pos);
+
+  water.material.uniforms.time.value = t * 0.45;
+  foamMat.uniforms.uTime.value = t;
+  floaters.forEach(g => { g.position.y = g.userData.base + Math.sin(t * 0.2 + g.userData.ph) * 3; g.rotation.y += dt * 0.01; });
+
+  const mp = motes.geometry.attributes.position, a = mp.array;
+  for (let i = 0; i < a.length; i += 3) {
+    a[i] += Math.sin(t * 0.5 + i) * dt * 0.3 + dt * 0.4; a[i + 1] += dt * 0.12 * (1 + Math.sin(i)); a[i + 2] += Math.cos(t * 0.4 + i) * dt * 0.3;
+    if (a[i + 1] > 9 || Math.abs(a[i] - player.pos.x) > 30 || Math.abs(a[i + 2] - player.pos.z) > 30) {
+      a[i] = player.pos.x + (Math.random() - 0.5) * 60; a[i + 2] = player.pos.z + (Math.random() - 0.5) * 60;
+      a[i + 1] = terrainH(a[i], a[i + 2]) + Math.random() * 1.5;
+    }
+  }
+  mp.needsUpdate = true;
+}
+
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  update(dt, t);
+  composer.render();
+  requestAnimationFrame(loop);
+}
+window.__game = { player, hs, setCam: (y, p) => { camYaw = y; camPitch = p; } };
+loop();
+</script>
+</body>
+</html>
