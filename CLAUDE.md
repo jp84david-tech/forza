@@ -15,6 +15,7 @@
   - `app/` is the hosted build (installable: web manifest, icons, offline service worker). Share links point at `app/index.html`.
   - `balls.html` is the same app as a single file for downloading and sending.
   - Both are refreshed by `npm run build`. Commit them with the source change.
+- Hosting: GitHub Pages, "Deploy from a branch", this branch, root folder. The root `index.html` forwards to `app/`, and `.nojekyll` stops GitHub processing the files. Link: https://jp84david-tech.github.io/forza/ (only live once the owner turns Pages on in the repo settings).
 - `forzagame.html` is a separate older file, not part of BALLS.
 - The sample data is North London: 12 made-up tennis and padel venues, 14 open games, 6 coaches, 30 players. The map is a hand-drawn SVG, not a real map service.
 - The full sport catalogue still exists in `data/sports.ts` for types; what the app shows comes from `PLAYABLE` (padel, tennis).
