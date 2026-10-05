@@ -1,0 +1,37 @@
+{
+  "name": "BALLS",
+  "short_name": "BALLS",
+  "description": "Find somewhere to play, book it, split the cost, fill your game and track your season.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#9ef01a",
+  "theme_color": "#0b1410",
+  "categories": [
+    "sports",
+    "lifestyle",
+    "social"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
