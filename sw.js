@@ -1,5 +1,5 @@
 // Offline support: cache every game file on first visit, then serve from cache.
-const CACHE = 'kaze-no-shima-v5';
+const CACHE = 'kaze-no-shima-v6';
 const FILES = [
   './',
   './kaze-no-shima.html',
@@ -24,6 +24,7 @@ const FILES = [
   './vendor/three/examples/jsm/shaders/LuminosityHighPassShader.js',
   './vendor/three/examples/jsm/shaders/OutputShader.js',
   './vendor/three/examples/jsm/utils/BufferGeometryUtils.js',
+  './vendor/three/examples/jsm/utils/SkeletonUtils.js',
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

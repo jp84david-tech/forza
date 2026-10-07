@@ -39,7 +39,12 @@
     opacity: 0; transition: opacity 1.2s; pointer-events: none; text-shadow: 0 4px 24px rgba(0,0,0,0.7); white-space: nowrap; }
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; transition: opacity 0.6s; pointer-events: none; }
   #hint { position: fixed; bottom: 22px; left: 30px; color: #f4e9d8; font-size: 11px; letter-spacing: 2px; opacity: 0.45; font-family: 'Segoe UI', sans-serif; pointer-events: none; }
-  body.photo #title, body.photo #prompt, body.photo #hint { display: none; }
+  body.photo #title, body.photo #prompt, body.photo #hint, body.photo #hp, body.photo .ebar { display: none !important; }
+  #hp { position: fixed; left: 36px; bottom: 48px; width: 220px; height: 6px; background: rgba(0,0,0,0.45); border: 1px solid rgba(244,233,216,0.35); transition: opacity 0.6s; opacity: 0.25; pointer-events: none; }
+  #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg, #6e120e, #c8321e); transition: width 0.15s; }
+  #hurt { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,0.65) 100%); opacity: 0; transition: opacity 0.35s; }
+  .ebar { position: fixed; width: 60px; height: 4px; background: rgba(0,0,0,0.55); display: none; pointer-events: none; border: 1px solid rgba(0,0,0,0.6); }
+  .ebar div { height: 100%; width: 100%; background: #c8321e; }
   #loading { position: fixed; bottom: 24px; right: 30px; color: #f4e9d8; font-size: 12px; letter-spacing: 3px; opacity: 0.6; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
@@ -64,6 +69,8 @@
 <div id="title"><h1>KAZE NO SHIMA</h1><p>風の島 · ISLAND OF WIND</p></div>
 <div id="prompt"></div>
 <div id="toast"></div>
+<div id="hurt"></div>
+<div id="hp"><div id="hpfill"></div></div>
 <div id="fade"></div>
 <div id="hint">Space jump · F katana · Click slash · T time of day · P photo mode · M sound</div>
 <div id="loading">GROWING GRASS…</div>
@@ -89,6 +96,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const params = new URLSearchParams(location.search);
 const LOW = params.get('q') === 'low', ULTRA = params.get('q') === 'ultra';
@@ -96,7 +105,7 @@ const LOW = params.get('q') === 'low', ULTRA = params.get('q') === 'ultra';
 // ─────────────────────────── Renderer / scene ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, LOW ? 1 : 1.5));
+renderer.setPixelRatio(Math.min(devicePixelRatio, LOW ? 1 : ULTRA ? 2 : 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.42;
 renderer.shadowMap.enabled = true;
@@ -245,56 +254,100 @@ const texCape = makeTex(512, (u, v) => {
 const texWood = makeTex(256, (u, v) => { const g = fract(u * 30 + pfbm(u, v, 4, 3) * 3), k = 0.7 + 0.3 * g; return [0.5 * k, 0.1 * k, 0.07 * k, g * 0.4]; }, [1, 1], 3);
 
 // ─────────────────────────── Dirt paths ───────────────────────────
-// A winding loop around the island plus a crossing trail, baked into a distance grid.
-const pathPts = [];
-for (let i = 0; i <= 360; i++) {
-  const a = i / 360 * Math.PI * 2;
-  const r = 27 + 5 * Math.sin(a * 3 + 0.6) + 2.5 * Math.sin(a * 5 + 1.7);
-  pathPts.push([Math.cos(a) * r, Math.sin(a) * r]);
-}
-for (let i = 0; i <= 200; i++) {
-  const t = i / 200, x = lerp(-50, 48, t);
-  pathPts.push([x, 10 * Math.sin(t * Math.PI * 1.6) - 6 + t * 12]);
-}
-const PG = 1, PMIN = -90, PN = 181;
-const pathGrid = new Float32Array(PN * PN);
-for (let j = 0; j < PN; j++) for (let i = 0; i < PN; i++) {
-  const x = PMIN + i * PG, z = PMIN + j * PG; let best = 1e9;
-  for (let k = 0; k < pathPts.length; k++) { const dx = x - pathPts[k][0], dz = z - pathPts[k][1]; const d = dx * dx + dz * dz; if (d < best) best = d; }
-  pathGrid[j * PN + i] = Math.sqrt(best);
-}
-function pathDist(x, z) {
+// Hand-placed routes, resampled and pushed sideways by noise so they meander. Width, wear and grassy
+// two-track medians change along each path. Baked into distance / width / median grids.
+const ROUTES = [
+  { pts: Array.from({ length: 24 }, (_, i) => { const a = i / 24 * Math.PI * 2; const r = 52 + 9 * Math.sin(2 * a + 0.6) + 5 * Math.sin(5 * a + 1.7); return [Math.cos(a) * r, Math.sin(a) * r]; }), closed: true, wander: 4 },
+  { pts: [[-96, -8], [-72, -4], [-50, 6], [-28, 2], [-8, -6], [12, 2], [30, 14], [52, 18], [74, 26], [98, 30]], wander: 6 },  // west–east trail
+  { pts: [[10, -2], [13, -20], [22, -36], [32, -50], [38, -64]], wander: 5 },    // up to the shrine
+  { pts: [[-28, 2], [-35, -18], [-42, -34], [-47, -52], [-50, -66]], wander: 5 },  // into the bamboo grove
+  { pts: [[22, 50], [30, 64], [42, 76], [50, 90]], wander: 4 },                 // down to the south cove
+];
+const pathPts = []; // [x, z, width]
+const PG = 1, PMIN = -170, PN = 341;
+const pathGrid = new Float32Array(PN * PN).fill(99), pathW = new Float32Array(PN * PN).fill(1), pathMed = new Float32Array(PN * PN);
+ROUTES.forEach((rt, ri) => {
+  const curve = new THREE.CatmullRomCurve3(rt.pts.map(([x, z]) => new THREE.Vector3(x, 0, z)), !!rt.closed, 'centripetal');
+  const n = Math.ceil(curve.getLength() / 0.5), pts = curve.getSpacedPoints(n);
+  for (let k = 0; k < pts.length; k++) {
+    const sDist = k * 0.5, p = pts[k], q = pts[Math.min(pts.length - 1, k + 1)], o = pts[Math.max(0, k - 1)];
+    let tx = q.x - o.x, tz = q.z - o.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    const off = (fbm(sDist * 0.025 + ri * 13.1, ri * 3.7) - 0.5) * 2 * rt.wander;
+    const x = p.x - tz * off, z = p.z + tx * off;
+    const w = 0.75 + 0.75 * fbm(sDist * 0.035 + ri * 7.3, 3.3);
+    const med = smooth(0.56, 0.64, fbm(sDist * 0.02 + ri * 5.1, 9.1));
+    pathPts.push([x, z, w, ri, sDist]);
+    const ci = Math.round((x - PMIN) / PG), cj = Math.round((z - PMIN) / PG);
+    for (let j = cj - 7; j <= cj + 7; j++) for (let i = ci - 7; i <= ci + 7; i++) {
+      if (i < 0 || j < 0 || i >= PN || j >= PN) continue;
+      const d = Math.hypot(PMIN + i * PG - x, PMIN + j * PG - z), g = j * PN + i;
+      if (d < pathGrid[g]) { pathGrid[g] = d; pathW[g] = w; pathMed[g] = med; }
+    }
+  }
+});
+let _pd = 0, _pw = 1, _pm = 0;
+function pathInfo(x, z) { // bilinear distance, width and median at (x, z)
   const fx = (x - PMIN) / PG, fz = (z - PMIN) / PG;
   const i = Math.max(0, Math.min(PN - 2, Math.floor(fx))), j = Math.max(0, Math.min(PN - 2, Math.floor(fz)));
   const u = Math.min(1, Math.max(0, fx - i)), v = Math.min(1, Math.max(0, fz - j));
-  const a = pathGrid[j * PN + i], b = pathGrid[j * PN + i + 1], c = pathGrid[(j + 1) * PN + i], d = pathGrid[(j + 1) * PN + i + 1];
-  return lerp(lerp(a, b, u), lerp(c, d, u), v) + (vnoise(x * 0.9, z * 0.9) - 0.5) * 0.5;
+  const g00 = j * PN + i, g10 = g00 + 1, g01 = g00 + PN, g11 = g01 + 1;
+  const bl = (A) => lerp(lerp(A[g00], A[g10], u), lerp(A[g01], A[g11], u), v);
+  _pd = bl(pathGrid); _pw = bl(pathW); _pm = bl(pathMed);
 }
-const pathMask = (x, z) => 1 - smooth(0.8, 1.9, pathDist(x, z));
+function pathDist(x, z) { pathInfo(x, z); return _pd / _pw; }
+function pathMask(x, z) {
+  pathInfo(x, z);
+  if (_pd > 8) return 0;
+  const ragged = (vnoise(x * 1.1, z * 1.1) - 0.5) * 0.6 + (vnoise(x * 3.7, z * 3.7) - 0.5) * 0.28;
+  const d = _pd / _pw + ragged;
+  let m = 1 - smooth(0.7, 1.5, d);
+  m *= 1 - _pm * 0.9 * (1 - smooth(0.12, 0.34, _pd / _pw + ragged * 0.25));   // grassy strip down the middle of two-track sections
+  return Math.max(0, m);
+}
 
 // ─────────────────────────── Island height ───────────────────────────
-// ~2 acres of walkable grass: island radius ≈ 50 m.
+// ~6 acres: island radius ≈ 88 m, rolling hills up to ~10 m.
 function islandRadius(x, z) {
   const r = Math.hypot(x, z) + 1e-5, dx = x / r, dz = z / r;
-  return 50 + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 18;
+  return 88 + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 30;
 }
-function terrainH(x, z) {
+function terrainHp(x, z, pm) {
   const t = Math.hypot(x, z) / islandRadius(x, z);
-  const land = 1 - smooth(0.55, 1.0, t);
-  let h = lerp(-5, 0.35, 1 - smooth(0.92, 1.4, t));
-  h += land * (1.2 + 5.5 * fbm(x * 0.022 + 3, z * 0.022 - 5) + 0.6 * fbm(x * 0.12, z * 0.12));
-  h -= pathMask(x, z) * 0.18 * land;
+  const land = 1 - smooth(0.6, 1.0, t);
+  let h = lerp(-6, 0.35, 1 - smooth(0.93, 1.35, t));
+  h += land * (1.2 + 9 * fbm(x * 0.012 + 3, z * 0.012 - 5) + 1.3 * fbm(x * 0.05, z * 0.05) + 0.35 * fbm(x * 0.17, z * 0.17));
+  if (pm > 0) {
+    h -= land * pm * (0.08 + 0.14 * vnoise(x * 0.2, z * 0.2));                  // worn into the ground, deeper in places
+    h += land * pm * (fbm(x * 0.8, z * 0.8) - 0.5) * 0.16;                     // lumpy, never flat
+    const rut = Math.abs(_pd / _pw - 0.5);
+    h -= land * pm * (1 - smooth(0.04, 0.16, rut)) * 0.05 * (0.4 + _pm);      // cart ruts
+  }
   return h;
+}
+function terrainH(x, z) { return terrainHp(x, z, pathMask(x, z)); }
+
+// Terrain sampled once on a grid shared by the terrain mesh, the GPU grass and placement code
+const HM = LOW ? 385 : 641, HM_MIN = -170, HM_SIZE = 340;
+const HMF = new Float32Array(HM * HM * 4); // height, path, shore, meadow patch
+for (let j = 0; j < HM; j++) for (let i = 0; i < HM; i++) {
+  const x = HM_MIN + i / (HM - 1) * HM_SIZE, z = HM_MIN + j / (HM - 1) * HM_SIZE, pm = pathMask(x, z), h = terrainHp(x, z, pm), o = (j * HM + i) * 4;
+  HMF[o] = h; HMF[o + 1] = pm; HMF[o + 2] = smooth(0.5, 1.3, h); HMF[o + 3] = fbm(x * 0.05 + 40, z * 0.05);
+}
+function sampleHM(x, z, ch) {
+  const fx = (x - HM_MIN) / HM_SIZE * (HM - 1), fz = (z - HM_MIN) / HM_SIZE * (HM - 1);
+  const i = Math.max(0, Math.min(HM - 2, Math.floor(fx))), j = Math.max(0, Math.min(HM - 2, Math.floor(fz)));
+  const u = Math.min(1, Math.max(0, fx - i)), v = Math.min(1, Math.max(0, fz - j)), o = (j * HM + i) * 4 + ch;
+  return lerp(lerp(HMF[o], HMF[o + 4], u), lerp(HMF[o + HM * 4], HMF[o + HM * 4 + 4], u), v);
 }
 
 // ─────────────────────────── Sky ───────────────────────────
 const sky = new Sky();
 sky.scale.setScalar(15000);
 const su = sky.material.uniforms;
-su.turbidity.value = 4.5;
+su.turbidity.value = 3.2;
 su.rayleigh.value = 3.2;
-su.mieCoefficient.value = 0.005;
-su.mieDirectionalG.value = 0.86;
+su.mieCoefficient.value = 0.003;
+su.mieDirectionalG.value = 0.78;
 su.sunPosition.value.copy(sunDir);
 scene.add(sky);
 
@@ -305,7 +358,7 @@ Object.keys(su).forEach(k => skyClone.material.uniforms[k].value = su[k].value);
 envScene.add(skyClone);
 scene.environment = pmrem.fromScene(envScene).texture;
 
-scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0055);
+scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0036);
 
 // Surreal: a colossal pale moon rising opposite the sun
 const moonDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 11), THREE.MathUtils.degToRad(SUN_AZ + 150));
@@ -344,8 +397,52 @@ const SH = {
   uFogCol: { value: scene.fog.color }, uFogDen: { value: scene.fog.density },
   uShadowMap: { value: null }, uShadowMatrix: { value: sun.shadow.matrix }, uHasShadow: { value: 0 },
   uCloudAmt: { value: 1 },
-  uCuts: { value: Array.from({ length: 16 }, () => new THREE.Vector4(0, 0, 0, -1)) },
 };
+
+// ─────────────────────────── Grass physics: trample + cut map ───────────────────────────
+// A 24 m window of 12.5 cm cells that wraps around the player. Feet and hooves stamp a bend direction
+// into it (blades fold the way you stepped, then spring back over a few seconds); sword strokes stamp
+// cuts (blades stay short and slowly regrow). The grass shaders read it per blade.
+const TR_N = 192, TR_SIZE = 24, TR_CS = TR_SIZE / TR_N;
+const trF = new Float32Array(TR_N * TR_N * 3), trData = new Uint8Array(TR_N * TR_N * 4);
+const trTex = new THREE.DataTexture(trData, TR_N, TR_N);
+trTex.wrapS = trTex.wrapT = THREE.RepeatWrapping; trTex.magFilter = trTex.minFilter = THREE.LinearFilter; trTex.needsUpdate = true;
+Object.assign(SH, { uTrample: { value: trTex }, uTrSize: { value: TR_SIZE } });
+const trWrap = i => ((i % TR_N) + TR_N) % TR_N;
+function trForEach(x, z, r, fn) {
+  const i0 = Math.floor((x - r) / TR_CS), i1 = Math.floor((x + r) / TR_CS), j0 = Math.floor((z - r) / TR_CS), j1 = Math.floor((z + r) / TR_CS);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const cx = (i + 0.5) * TR_CS, cz = (j + 0.5) * TR_CS, d = Math.hypot(cx - x, cz - z);
+    if (d <= r) fn((trWrap(j) * TR_N + trWrap(i)) * 3, cx - x, cz - z, d);
+  }
+}
+function trample(x, z, dirX, dirZ, radius, strength = 1) {
+  const r = radius * 1.7;
+  trForEach(x, z, r, (o, ox, oz, d) => {
+    let w = 1 - d / r; w = w * w * (3 - 2 * w) * strength;
+    const inv = 1 / (d + 1e-4); let bx = dirX * 0.85 + ox * inv * 0.6, bz = dirZ * 0.85 + oz * inv * 0.6;
+    const bl = Math.hypot(bx, bz) || 1; bx = bx / bl * w; bz = bz / bl * w;
+    if (w > Math.hypot(trF[o], trF[o + 1])) { trF[o] = lerp(trF[o], bx, 0.75); trF[o + 1] = lerp(trF[o + 1], bz, 0.75); }
+  });
+}
+function cutGrass(x, z, radius) { trForEach(x, z, radius, (o, ox, oz, d) => { trF[o + 2] = 1; }); }
+let trCI = null, trCJ = null;
+function updateTrample(dt, px, pz) {
+  // cells that wrap round to the far side of the window are cleared, so old marks never reappear ahead of you
+  const ci = Math.floor(px / TR_CS), cj = Math.floor(pz / TR_CS), H = TR_N >> 1;
+  if (trCI !== null) {
+    for (let k = Math.min(trCI, ci) + 1; k <= Math.max(trCI, ci) && Math.abs(ci - trCI) < TR_N; k++) { const col = trWrap(k + H); for (let j = 0; j < TR_N; j++) trF.fill(0, (j * TR_N + col) * 3, (j * TR_N + col) * 3 + 3); }
+    for (let k = Math.min(trCJ, cj) + 1; k <= Math.max(trCJ, cj) && Math.abs(cj - trCJ) < TR_N; k++) { const row = trWrap(k + H); trF.fill(0, row * TR_N * 3, (row + 1) * TR_N * 3); }
+  }
+  trCI = ci; trCJ = cj;
+  const bendDecay = Math.exp(-dt * 0.35), cutDecay = dt * 0.015;
+  for (let c = 0, o = 0; c < TR_N * TR_N; c++, o += 3) {
+    trF[o] *= bendDecay; trF[o + 1] *= bendDecay; if (trF[o + 2] > 0) trF[o + 2] = Math.max(0, trF[o + 2] - cutDecay);
+    const p = c * 4;
+    trData[p] = 128 + trF[o] * 127; trData[p + 1] = 128 + trF[o + 1] * 127; trData[p + 2] = trF[o + 2] * 255;
+  }
+  trTex.needsUpdate = true;
+}
 const NOISE_GLSL = /* glsl */`
   float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float vnoise2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -368,13 +465,13 @@ const SHADOW_GLSL = `#define SHADOW_RES ${SHADOW_RES}
 `;
 
 // ─────────────────────────── Terrain ───────────────────────────
-const TS = 190, TSEG = LOW ? 200 : 340;
+const TS = HM_SIZE, TSEG = HM - 1;
 const tGeo = new THREE.PlaneGeometry(TS, TS, TSEG, TSEG); tGeo.rotateX(-Math.PI / 2);
 {
   const p = tGeo.attributes.position, col = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), z = p.getZ(i), h = terrainH(x, z); p.setY(i, h);
-    const pm = pathMask(x, z), n = vnoise(x * 1.7, z * 1.7), n2 = fbm(x * 0.3, z * 0.3);
+    const x = p.getX(i), z = p.getZ(i), h = HMF[i * 4]; p.setY(i, h);
+    const pm = HMF[i * 4 + 1], n = vnoise(x * 1.7, z * 1.7), n2 = fbm(x * 0.3, z * 0.3);
     let r = 0.032 + 0.02 * n2, g = 0.058 + 0.03 * n2, b = 0.014;                // mossy soil under grass
     const dr = (0.15 + 0.06 * n) , dg = (0.095 + 0.04 * n), db = 0.055 + 0.02 * n;  // packed dirt
     r = lerp(r, dr, pm); g = lerp(g, dg, pm); b = lerp(b, db, pm);
@@ -386,7 +483,7 @@ const tGeo = new THREE.PlaneGeometry(TS, TS, TSEG, TSEG); tGeo.rotateX(-Math.PI 
   }
   tGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const gr = new Float32Array(p.count);
-  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); gr[i] = (1 - pathMask(x, z)) * smooth(0.55, 1.3, p.getY(i)); }
+  for (let i = 0; i < p.count; i++) gr[i] = (1 - HMF[i * 4 + 1]) * smooth(0.55, 1.3, HMF[i * 4]);
   tGeo.setAttribute('aGrassy', new THREE.BufferAttribute(gr, 1));
   tGeo.computeVertexNormals();
 }
@@ -421,13 +518,13 @@ function makeWaterNormals(size = 512) {
   return t;
 }
 const water = new Water(new THREE.PlaneGeometry(20000, 20000), {
-  textureWidth: LOW ? 512 : 1024, textureHeight: LOW ? 512 : 1024,
+  textureWidth: LOW ? 512 : ULTRA ? 2048 : 1536, textureHeight: LOW ? 512 : ULTRA ? 2048 : 1536,
   waterNormals: makeWaterNormals(),
   sunDirection: sunDir.clone(), sunColor: 0xffc890, waterColor: 0x042a33,
-  distortionScale: 2.2, fog: true,
+  distortionScale: 1.0, fog: true,
 });
 water.rotation.x = -Math.PI / 2;
-water.material.uniforms.size.value = 2.5;
+water.material.uniforms.size.value = 1.6;
 scene.add(water);
 
 // Shore foam: a soft band hugging the coastline
@@ -435,7 +532,7 @@ scene.add(water);
   const N = 512, inner = [], geo = new THREE.BufferGeometry(), pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const a = i / N * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
-    let lo = 20, hi = 90; // binary search coastline (h = 0)
+    let lo = 40, hi = 170; // binary search coastline (h = 0)
     for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
     pos.push(dx * (lo - 1.2), 0.03, dz * (lo - 1.2), dx * (lo + 2.8), 0.03, dz * (lo + 2.8));
     uv.push(i / N * 60, 0, i / N * 60, 1);
@@ -481,7 +578,7 @@ const shallowMat = new THREE.ShaderMaterial({
   const N = 512, pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const a = i / N * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
-    let lo = 20, hi = 90; for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
+    let lo = 40, hi = 170; for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
     pos.push(dx * (lo - 1.5), 0.012, dz * (lo - 1.5), dx * (lo + 16), 0.012, dz * (lo + 16)); uv.push(i / N, 0, i / N, 1);
     if (i < N) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
   }
@@ -512,14 +609,14 @@ const grassGeo = new THREE.InstancedBufferGeometry();
 grassGeo.index = blade3.index; grassGeo.attributes.position = blade3.attributes.position;
 const offsets = [], prm = [];
 {
-  const CAND = LOW ? 450000 : ULTRA ? 1800000 : 1300000;
+  const CAND = LOW ? 700000 : ULTRA ? 2600000 : 1700000;
   for (let i = 0; i < CAND; i++) {
-    const x = (Math.random() - 0.5) * 124, z = (Math.random() - 0.5) * 124;
-    const h = terrainH(x, z); if (h < 0.5) continue;
-    const pm = pathMask(x, z); if (Math.random() < pm * 1.4) continue;
+    const x = (Math.random() - 0.5) * 230, z = (Math.random() - 0.5) * 230;
+    const h = sampleHM(x, z, 0); if (h < 0.5) continue;
+    const pm = sampleHM(x, z, 1); if (Math.random() < pm * 1.4) continue;
     const shore = smooth(0.5, 1.3, h);
     if (Math.random() > shore) continue;
-    const patch = fbm(x * 0.05 + 40, z * 0.05);
+    const patch = sampleHM(x, z, 3);
     const tall = (0.55 + 0.7 * patch) * (0.55 + 0.45 * shore) * (1 - pm * 0.6) * (0.7 + Math.random() * 0.6);
     offsets.push(x, h - 0.02, z);
     prm.push(Math.random() * Math.PI * 2, tall, 0.045 + Math.random() * 0.035, Math.random());
@@ -529,17 +626,13 @@ const offsets = [], prm = [];
   grassGeo.instanceCount = offsets.length / 3;
 }
 // Terrain baked into a texture (height, path, shore, meadow patch) so the GPU can place grass anywhere
-const HM = LOW ? 256 : 512, HM_MIN = -90, HM_SIZE = 180;
 const hmTex = (() => {
   const d = new Uint16Array(HM * HM * 4), th = THREE.DataUtils.toHalfFloat;
-  for (let j = 0; j < HM; j++) for (let i = 0; i < HM; i++) {
-    const x = HM_MIN + (i + 0.5) / HM * HM_SIZE, z = HM_MIN + (j + 0.5) / HM * HM_SIZE, h = terrainH(x, z), o = (j * HM + i) * 4;
-    d[o] = th(h); d[o + 1] = th(pathMask(x, z)); d[o + 2] = th(smooth(0.5, 1.3, h)); d[o + 3] = th(fbm(x * 0.05 + 40, z * 0.05));
-  }
+  for (let k = 0; k < d.length; k++) d[k] = th(HMF[k]);
   const t = new THREE.DataTexture(d, HM, HM, THREE.RGBAFormat, THREE.HalfFloatType);
   t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t;
 })();
-Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector2(HM_MIN, HM_SIZE) }, uCenter: { value: new THREE.Vector2() } });
+Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector3(HM_MIN, HM_SIZE, HM) }, uCenter: { value: new THREE.Vector2() } });
 
 function makeGrassMaterial(near, patch) {
   return new THREE.ShaderMaterial({
@@ -547,9 +640,9 @@ function makeGrassMaterial(near, patch) {
   defines: near ? { NEAR: '' } : {},
   uniforms: near ? { ...SH, uPatch: { value: patch } } : SH,
   vertexShader: /* glsl */`
-    uniform float uTime; uniform vec4 uPush0; uniform vec4 uPush1; uniform vec4 uCuts[16]; uniform mat4 uShadowMatrix;
+    uniform float uTime; uniform vec4 uPush0; uniform vec4 uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample; uniform float uTrSize;
     #ifdef NEAR
-    uniform sampler2D uHeightMap; uniform vec2 uHm; uniform vec2 uCenter; uniform float uPatch;
+    uniform sampler2D uHeightMap; uniform vec3 uHm; uniform vec2 uCenter; uniform float uPatch;
     #endif
     attribute vec3 aOffset; attribute vec4 aParams;
     varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch; varying vec4 vShadowCoord; varying float vCut;
@@ -566,7 +659,7 @@ function makeGrassMaterial(near, patch) {
       // blades wrap around a carpet centred on the player; each one stays put in the world
       vec2 L = aOffset.xz;
       vec2 wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
-      vec4 hm = texture2D(uHeightMap, (wxz - uHm.x) / uHm.y);
+      vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
       float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r)
                  * (1.0 - smoothstep(uPatch * 0.3, uPatch * 0.47, distance(wxz, uCenter)));
       vec3 root = vec3(wxz.x, hm.r - 0.02, wxz.y);
@@ -576,14 +669,15 @@ function makeGrassMaterial(near, patch) {
       #endif
       vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
       if (h < 0.004 || dot(root - cameraPosition, camF) < -1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-      vCut = 0.0;
-      for (int i = 0; i < 16; i++) { vec4 c = uCuts[i]; if (c.w > 0.0 && distance(root.xz, c.xy) < c.z * (0.85 + 0.3 * r)) vCut = 1.0; }
-      h *= mix(1.0, 0.16 + 0.08 * r, vCut);
+      vec3 trm = texture2D(uTrample, root.xz / uTrSize).xyz;
+      vec2 tv = (trm.xy - 0.5) * 2.0; float ta = length(tv);           // footstep bend vector
+      vCut = smoothstep(0.15, 0.35, trm.z);
+      h *= 1.0 - (1.0 - (0.18 + 0.08 * r)) * smoothstep(0.02, 0.6, trm.z); // cut short, growing back as the mark fades
       float camD = distance(root.xz, cameraPosition.xz);                    // part around a low camera
       if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
       vec3 tng = vec3(cos(rot), 0.0, sin(rot));
       vec3 nrm = vec3(-tng.z, 0.0, tng.x);
-      vec3 wp = root + tng * position.x * w * (1.0 - t * 0.85 * (1.0 - vCut * 0.8)) + vec3(0.0, t * h, 0.0);
+      vec3 wp = root + tng * position.x * w * (1.0 + clamp(camD / 45.0, 0.0, 1.0) * 0.9) * (1.0 - t * 0.85 * (1.0 - vCut * 0.8)) + vec3(0.0, t * h, 0.0);
       wp += nrm * t * t * h * (0.18 + 0.35 * r);                    // natural curl
       vec2 wdir = normalize(vec2(1.0, 0.35));
       float g = sin(dot(root.xz, wdir) * 0.09 - uTime * 1.25) * 0.5 + 0.5;
@@ -591,10 +685,12 @@ function makeGrassMaterial(near, patch) {
       g = g * g * 0.8 + g2 * 0.2;
       float flutter = sin(uTime * 4.0 + r * 30.0 + root.x * 0.9) * 0.06;
       vec2 disp = wdir * (0.12 + g * 0.6 + flutter) * t * t * h;
+      disp *= 1.0 - ta * 0.8;                                           // trampled blades stop swaying
       disp += pushFrom(uPush0, root.xz, t, h) + pushFrom(uPush1, root.xz, t, h);
+      disp += tv * (t * 0.55 + t * t * 0.5) * h * 1.25;                // folded over where feet and hooves stepped
       float dl = length(disp);
       wp.xz += disp;
-      wp.y -= min(dl * dl / max(h, 0.05) * 0.6, t * h * 0.8);       // preserve blade length when bent
+      wp.y -= min(dl * dl / max(h, 0.05) * 0.6 + ta * t * h * 0.35, t * h * 0.93);   // keep blade length as it bends
       vT = t; vRand = r; vWorld = wp; vSide = position.x; vTng = tng;
       vPatch = smoothstep(0.35, 0.75, sin(root.x * 0.07) * sin(root.z * 0.06 + 1.3) * 0.5 + 0.5 + r * 0.15);
       vN = normalize(nrm + vec3(disp.x, 0.0, disp.y) * 0.5);
@@ -606,26 +702,30 @@ function makeGrassMaterial(near, patch) {
     varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch; varying vec4 vShadowCoord; varying float vCut;
     varying float vSide; varying vec3 vTng;
     void main(){
-      vec3 N = normalize(vN); if (!gl_FrontFacing) N = -N;
-      N = normalize(N + vTng * vSide * 1.4 + vec3(0.0, 1.1, 0.0));          // rounded blade cross-section
-      vec3 V = normalize(cameraPosition - vWorld);
+      vec3 Nf = normalize(vN); if (!gl_FrontFacing) Nf = -Nf;
+      vec3 N = normalize(Nf + vTng * vSide * 1.6 + vec3(0.0, 0.9, 0.0));     // rounded blade cross-section
+      vec3 V = normalize(cameraPosition - vWorld), L = uSunDir;
       float big = vnoise2(vWorld.xz * 0.035), mid = vnoise2(vWorld.xz * 0.19 + 7.0);
       vec3 root = vec3(0.012, 0.025, 0.006);
-      vec3 tipG = mix(vec3(0.12, 0.27, 0.04), vec3(0.21, 0.34, 0.05), mid);
-      vec3 tipD = mix(vec3(0.52, 0.40, 0.12), vec3(0.42, 0.43, 0.12), mid);
+      vec3 tipG = mix(vec3(0.11, 0.25, 0.04), vec3(0.2, 0.32, 0.05), mid);
+      vec3 tipD = mix(vec3(0.48, 0.38, 0.12), vec3(0.4, 0.41, 0.12), mid);
       vec3 col = mix(root, mix(tipG, tipD, clamp(vPatch * 0.8 + (big - 0.5) * 0.7, 0.0, 1.0)), smoothstep(0.0, 1.0, vT));
       col = mix(col, vec3(0.32, 0.42, 0.16), vCut * smoothstep(0.6, 1.0, vT));   // fresh-cut ends
-      col *= 0.9 + 0.2 * (1.0 - abs(vSide) * 2.0);                              // lighter midrib
-      col *= 0.78 + 0.44 * vRand;
+      // blade surface: fine parallel veins, a paler midrib, darker edges
+      float ax = abs(vSide) * 2.0;
+      col *= 0.9 + 0.08 * cos(vSide * 6.2832 * 3.5) + 0.07 * (1.0 - smoothstep(0.0, 0.16, ax));
+      col *= 1.0 - 0.3 * pow(ax, 6.0);
+      col *= 0.8 + 0.4 * vRand;
       float vis = sunVisibility(vShadowCoord) * cloudShadowAt(vWorld.xz, uTime, uCloudAmt);
-      float ndl = max(dot(N, uSunDir), 0.0);
-      float back = pow(max(dot(-V, uSunDir), 0.0), 5.0) * vT * vT;
-      float ao = mix(0.2, 1.0, vT);
-      vec3 H = normalize(V + uSunDir);
-      float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.12 * vT;
-      float sheen = pow(max(dot(reflect(-uSunDir, N), V), 0.0), 16.0) * 0.22 * vT;   // waxy blade sheen
-      vec3 lit = col * (uSunCol * (ndl * 0.8 + 0.12) * vis + uAmb * 0.9) * ao
-               + (col * uSunCol * back * 3.5 + uSunCol * (spec + sheen * vec3(0.9, 1.0, 0.8))) * vis;
+      float ndl = max(dot(N, L), 0.0);
+      float trans = pow(max(dot(-V, L), 0.0), 6.0) * (dot(-Nf, L) * 0.5 + 0.5) * vT;  // light passing through the blade
+      float ao = mix(0.15, 1.0, smoothstep(0.0, 0.85, vT));
+      vec3 H = normalize(V + L);
+      float ndh = max(dot(N, H), 0.0), fres = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      float spec = (pow(ndh, 90.0) * 1.2 + pow(ndh, 14.0) * 0.1) * (0.35 + fres) * smoothstep(0.1, 0.7, vT);  // waxy glints
+      vec3 lit = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
+               + col * uSunCol * trans * 0.9 * vis
+               + uSunCol * spec * vec3(1.0, 0.97, 0.88) * vis;
       float d = length(cameraPosition - vWorld);
       float fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
       gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
@@ -686,9 +786,11 @@ function rockGeo(r, detail = 2, seed = 0, island = false) {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return g;
 }
-{ // torii gate on the loop path, facing the sea
-  const a = 0.35, r = 27 + 5 * Math.sin(a * 3 + 0.6) + 2.5 * Math.sin(a * 5 + 1.7);
-  const tx = Math.cos(a) * r, tz = Math.sin(a) * r, ty = terrainH(tx, tz);
+const routePts = ri => pathPts.filter(p => p[3] === ri);
+{ // torii gate straddling the path that climbs to the shrine
+  const rp = routePts(2), k = Math.floor(rp.length * 0.72), p0 = rp[k - 2], p1 = rp[k + 2];
+  const a = -Math.atan2(p1[0] - p0[0], p1[1] - p0[1]);
+  const tx = rp[k][0], tz = rp[k][1], ty = terrainH(tx, tz);
   const red = TM(texWood, 0.55);
   const blk = TM(texLeather, 0.6);
   const torii = new THREE.Group();
@@ -700,13 +802,14 @@ function rockGeo(r, detail = 2, seed = 0, island = false) {
   const kasagi2 = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.22, 0.4), red); kasagi2.position.y = 4.2; torii.add(kasagi2);
   const nuki = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.2, 0.2), red); nuki.position.y = 3.4; torii.add(nuki);
   torii.position.set(tx, ty - 0.1, tz);
-  for (const sx of [-1, 1]) COLLIDERS_INIT.push({ x: tx + Math.cos(a) * sx * 1.7, z: tz - Math.sin(a) * sx * 1.7, r: 0.3 });
   torii.rotation.y = -a;
+  for (const sx of [-1, 1]) COLLIDERS_INIT.push({ x: tx + Math.cos(-a) * sx * 1.7, z: tz - Math.sin(-a) * sx * 1.7, r: 0.3 });
   torii.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
   scene.add(torii);
 }
-for (let i = 0; i < 14; i++) { // weathered stones in the grass
-  const a = Math.random() * 6.28, d = 8 + Math.random() * 34, x = Math.cos(a) * d, z = Math.sin(a) * d;
+for (let i = 0; i < 45; i++) { // weathered stones in the grass
+  const a = Math.random() * 6.28, d = 8 + Math.random() * 72, x = Math.cos(a) * d, z = Math.sin(a) * d;
+  if (terrainH(x, z) < 0.6) continue;
   if (pathMask(x, z) > 0.1) continue;
   const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 3, i * 3.1), rock);
   m.position.set(x, terrainH(x, z) - s * 0.25, z); m.rotation.set(Math.random(), Math.random() * 6, Math.random());
@@ -714,7 +817,7 @@ for (let i = 0; i < 14; i++) { // weathered stones in the grass
   COLLIDERS_INIT.push({ x, z, r: s * 0.85 });
 }
 { // loose pebbles and gravel scattered along the dirt roads
-  const N = LOW ? 1500 : 4000, g = rockGeo(0.06, 0, 1.3);
+  const N = LOW ? 3000 : 9000, g = rockGeo(0.06, 0, 1.3);
   const im = new THREE.InstancedMesh(g, TM(texRock, 0.85), N);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   let n = 0;
@@ -730,7 +833,7 @@ for (let i = 0; i < 14; i++) { // weathered stones in the grass
 }
 const floaters = [];
 for (let i = 0; i < 9; i++) { // surreal floating islands over the sea
-  const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 260 + Math.random() * 420, s = 10 + Math.random() * 26;
+  const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 420 + Math.random() * 500, s = 12 + Math.random() * 30;
   const g = new THREE.Group();
   const body = new THREE.Mesh(rockGeo(s, 4, i * 7.7, true), skyRock); g.add(body);
   g.position.set(Math.cos(a) * d, 40 + Math.random() * 110, Math.sin(a) * d);
@@ -991,7 +1094,7 @@ function buildHorse() {
     mesh(upSDF, [x - 0.14, front ? 0.42 : 0.5, front ? 0.34 : -0.86], [x + 0.14, 1.3, front ? 0.66 : -0.32], P, coat, upG);
     const loG = pivot(upG, K[0] - P[0], K[1] - P[1], K[2] - P[2]);
     mesh(loSDF, [x - 0.09, -0.02, zc - 0.12], [x + 0.09, K[1] + 0.06, zc + 0.14], K, points, loG);
-    legs.push({ up: upG, lo: loG, front, name, lastPh: 0 });
+    legs.push({ up: upG, lo: loG, front, name, lastPh: 0, hoof: new THREE.Vector3(0, 0.03 - K[1], zt - K[2] - 0.02) });
   }
 
   // ── tail ──
@@ -1070,8 +1173,8 @@ const hero = buildSamurai(); scene.add(hero.root);
 const horse = buildHorse(); scene.add(horse.root);
 
 // ─────────────────────────── State / input ───────────────────────────
-const spawnA = 2.6, spawnR = 27 + 5 * Math.sin(spawnA * 3 + 0.6) + 2.5 * Math.sin(spawnA * 5 + 1.7);
-const player = { pos: new THREE.Vector3(Math.cos(spawnA) * spawnR, 0, Math.sin(spawnA) * spawnR), yaw: 0, speed: 0, mounted: false };
+const spawnPt = pathPts.filter(p => p[3] === 0).reduce((b, p) => Math.abs(Math.atan2(p[1], p[0]) - 2.4) < Math.abs(Math.atan2(b[1], b[0]) - 2.4) ? p : b);
+const player = { pos: new THREE.Vector3(spawnPt[0], 0, spawnPt[1]), yaw: 0, speed: 0, mounted: false };
 const hs = { pos: player.pos.clone().add(new THREE.Vector3(2.5, 0, 1.5)), yaw: 1.2, speed: 0, called: false };
 let camYaw = Math.atan2(-player.pos.x, -player.pos.z) + Math.PI, camPitch = 0.18;
 let lookYaw = camYaw, lookPitch = camPitch; // raw mouse targets; camera eases toward them
@@ -1146,6 +1249,7 @@ function animateSamurai(dt, t) {
     s.chest.rotation.x = Math.sin(t * 1.6) * 0.012; // breathing
   }
   // cape ripples in the wind and with speed
+  if (!s.cape) return;
   const arr = s.cape.geometry.attributes.position.array, base = s.cape.userData.base;
   const flow = 0.15 + Math.min(1, (player.mounted ? hs.speed : spd) / 8) * 0.9;
   for (let i = 0; i < arr.length; i += 3) {
@@ -1238,10 +1342,10 @@ const flowers = (() => {
   g.setIndex(idx);
   const ig = new THREE.InstancedBufferGeometry();
   ig.index = g.index; for (const k of ['position', 'color', 'aH']) ig.setAttribute(k, g.attributes[k]);
-  const off = [], prm = [], MAX = LOW ? 2000 : 6500;
-  for (let i = 0; i < 400000 && off.length / 3 < MAX; i++) {
-    const x = (Math.random() - 0.5) * 110, z = (Math.random() - 0.5) * 110, h = terrainH(x, z);
-    if (h < 0.9 || pathMask(x, z) > 0.05) continue;
+  const off = [], prm = [], MAX = LOW ? 4000 : 14000;
+  for (let i = 0; i < 1200000 && off.length / 3 < MAX; i++) {
+    const x = (Math.random() - 0.5) * 200, z = (Math.random() - 0.5) * 200, h = sampleHM(x, z, 0);
+    if (h < 0.9 || sampleHM(x, z, 1) > 0.05) continue;
     const n = fbm(x * 0.045 + 100, z * 0.045 - 30);
     const dens = smooth(0.6, 0.72, n) + (Math.random() < 0.004 ? 1 : 0);
     if (Math.random() > dens * 0.5) continue;
@@ -1255,12 +1359,13 @@ const flowers = (() => {
     side: THREE.DoubleSide, vertexColors: true,
     uniforms: SH,
     vertexShader: /* glsl */`
-      uniform float uTime; uniform vec4 uPush0, uPush1; uniform vec4 uCuts[16]; uniform mat4 uShadowMatrix;
+      uniform float uTime; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample; uniform float uTrSize;
       attribute vec3 aOffset; attribute vec4 aParams; attribute float aH;
       varying vec3 vCol; varying vec3 vWorld; varying float vH; varying float vWhite; varying vec4 vShadowCoord;
       void main(){
         float sc = aParams.y;
-        for (int i = 0; i < 16; i++) { vec4 c = uCuts[i]; if (c.w > 0.0 && distance(aOffset.xz, c.xy) < c.z) sc = 0.0; }
+        vec3 trm = texture2D(uTrample, aOffset.xz / uTrSize).xyz; vec2 tv = (trm.xy - 0.5) * 2.0;
+        sc *= 1.0 - smoothstep(0.1, 0.3, trm.z);
         float c = cos(aParams.x), s = sin(aParams.x);
         vec3 p = position * sc; p = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c);
         vec2 wdir = normalize(vec2(1.0, 0.35));
@@ -1270,7 +1375,8 @@ const flowers = (() => {
         disp += dp / lp * (1.0 - smoothstep(0.2, 0.8, lp)) * uPush0.w * 0.3 * aH;
         vec2 dh = aOffset.xz - uPush1.xy; float lh = length(dh) + 1e-4;
         disp += dh / lh * (1.0 - smoothstep(0.4, 1.4, lh)) * uPush1.w * 0.3 * aH;
-        vec3 wp = aOffset + p; wp.xz += disp * (p.y / 0.45);
+        disp += tv * 0.35 * aH;
+        vec3 wp = aOffset + p; wp.xz += disp * (p.y / 0.45); wp.y -= length(tv) * 0.25 * aH;
         vCol = color; vH = aH; vWhite = aParams.w; vWorld = wp;
         vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
         gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
@@ -1333,7 +1439,7 @@ function emit(p, vel, color, size, life, grav = 0, grow = 1, opacity = 0.5, drag
   s.position.copy(p); s.material.color.copy(color); s.material.opacity = opacity; s.visible = true;
   Object.assign(s.userData, { age: 0, life, grav, grow, size, op: opacity, drag }); s.userData.vel.copy(vel); s.scale.setScalar(size);
 }
-const DUST = new THREE.Color(0.55, 0.42, 0.3), CLIP = new THREE.Color(0.18, 0.32, 0.06), RED = new THREE.Color(0.8, 0.05, 0.03);
+const SPARK = new THREE.Color(3, 2.2, 1.0), DUST = new THREE.Color(0.55, 0.42, 0.3), CLIP = new THREE.Color(0.18, 0.32, 0.06), RED = new THREE.Color(0.8, 0.05, 0.03);
 function dustAt(x, z, strength) {
   const y = terrainH(x, z);
   const onPath = pathMask(x, z);
@@ -1379,8 +1485,11 @@ const audio = (() => {
   }
   A.step = (dirt, run) => burst(dirt ? 500 + Math.random() * 200 : 1800 + Math.random() * 900, dirt ? 'lowpass' : 'bandpass', dirt ? 1 : 0.8, (dirt ? 0.35 : 0.12) * (run ? 1.4 : 1), dirt ? 0.12 : 0.16);
   A.hoof = (dirt, hard) => { tone(140 + Math.random() * 30, 55, (dirt ? 0.5 : 0.25) * hard, 0.12); burst(dirt ? 900 : 1600, 'bandpass', 1.2, (dirt ? 0.25 : 0.1) * hard, 0.07); };
-  A.draw = () => { burst(2500, 'bandpass', 2, 0.25, 0.45, 7000); tone(2200, 2150, 0.05, 1.4, 'sine', 0.35); tone(3310, 3290, 0.03, 1.1, 'sine', 0.35); };
-  A.slash = () => { burst(500, 'bandpass', 1.5, 0.5, 0.32, 3000); };
+  A.draw = (p = 1) => { burst(2500 * p, 'bandpass', 2, 0.25 * p, 0.45, 7000 * p); tone(2200 * p, 2150 * p, 0.05, 1.4, 'sine', 0.35); tone(3310 * p, 3290 * p, 0.03, 1.1, 'sine', 0.35); };
+  A.slash = (p = 1) => { burst(500 * p, 'bandpass', 1.5, 0.5, 0.32, 3000 * p); };
+  A.hit = () => { tone(1900, 1450, 0.12, 0.28, 'triangle'); burst(1300, 'bandpass', 1, 0.45, 0.12); tone(130, 55, 0.45, 0.16); };
+  A.hurt = () => { tone(170, 70, 0.35, 0.25, 'sawtooth'); burst(650, 'lowpass', 1, 0.4, 0.2); };
+  A.fall = () => { burst(320, 'lowpass', 1, 0.5, 0.6); tone(95, 40, 0.45, 0.5); };
   A.jump = () => burst(700, 'bandpass', 1, 0.12, 0.25, 250);
   A.land = (s = 1) => { tone(95, 38, Math.min(0.7, 0.3 + s * 0.3), 0.28); burst(380, 'lowpass', 1, Math.min(0.5, 0.2 + s * 0.2), 0.22); };
   A.cut = () => { for (let i = 0; i < 4; i++) setTimeout(() => burst(3000 + Math.random() * 2000, 'highpass', 0.7, 0.15, 0.08), i * 25); };
@@ -1403,17 +1512,17 @@ const audio = (() => {
 // ─────────────────────────── Time of day ───────────────────────────
 const deg = THREE.MathUtils.degToRad;
 const PRESETS = [
-  { name: 'GOLDEN HOUR', elev: 5.5, az: 205, turb: 4.5, ray: 3.2, mie: 0.005, mieG: 0.86, exp: 0.42, sun: [1, 0.72, 0.45], sunI: 5.5, grassSun: 5,
-    hemi: [0xa9b8e0, 0x3a2a14, 0.9], fog: 0xd6a883, fogD: 0.0055, amb: [0.55, 0.6, 0.85], cLit: [3.2, 2.0, 1.2], cShade: [0.35, 0.22, 0.3], cover: 0.45,
-    stars: 0, moon: [1.6, 1.45, 1.35], ff: 0, petals: 1, water: 0x042a33, waterSun: 0xffc890, rays: 0.9, motes: 1 },
-  { name: 'MISTY DAWN', elev: 13, az: 100, turb: 2.5, ray: 1.6, mie: 0.004, mieG: 0.8, exp: 0.5, sun: [1, 0.88, 0.74], sunI: 4.2, grassSun: 4,
-    hemi: [0xbfd0e8, 0x2f3a2a, 1.1], fog: 0xaebfc9, fogD: 0.012, amb: [0.65, 0.75, 0.95], cLit: [3.0, 2.8, 2.6], cShade: [0.55, 0.6, 0.7], cover: 0.55,
-    stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 0.6, water: 0x0a3440, waterSun: 0xfff0dd, rays: 0.7, motes: 0.5 },
+  { name: 'GOLDEN HOUR', elev: 5.5, az: 205, turb: 3.2, ray: 3.2, mie: 0.003, mieG: 0.78, exp: 0.42, sun: [1, 0.72, 0.45], sunI: 5.5, grassSun: 5,
+    hemi: [0xa9b8e0, 0x3a2a14, 0.9], fog: 0xd6a883, fogD: 0.0036, amb: [0.55, 0.6, 0.85], cLit: [3.2, 2.0, 1.2], cShade: [0.35, 0.22, 0.3], cover: 0.45,
+    stars: 0, moon: [1.6, 1.45, 1.35], ff: 0, petals: 1, water: 0x042a33, waterSun: 0xffc890, rays: 0.3, motes: 1 },
+  { name: 'MISTY DAWN', elev: 13, az: 100, turb: 2.2, ray: 1.6, mie: 0.0025, mieG: 0.76, exp: 0.5, sun: [1, 0.88, 0.74], sunI: 4.2, grassSun: 4,
+    hemi: [0xbfd0e8, 0x2f3a2a, 1.1], fog: 0xaebfc9, fogD: 0.008, amb: [0.65, 0.75, 0.95], cLit: [3.0, 2.8, 2.6], cShade: [0.55, 0.6, 0.7], cover: 0.55,
+    stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 0.6, water: 0x0a3440, waterSun: 0xfff0dd, rays: 0.35, motes: 0.5 },
   { name: 'BLOOD MOON', fromMoon: true, elev: -14, az: 205, turb: 1, ray: 0.3, mie: 0.002, mieG: 0.8, exp: 0.8, sun: [1.0, 0.4, 0.33], sunI: 1.8, grassSun: 1.7,
-    hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.0065, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
-    stars: 1, moon: [3.4, 0.5, 0.3], ff: 1, petals: 0, water: 0x020b10, waterSun: 0xff5a40, rays: 0.6, motes: 0 },
+    hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.0045, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
+    stars: 1, moon: [3.4, 0.5, 0.3], ff: 1, petals: 0, water: 0x020b10, waterSun: 0xff5a40, rays: 0.3, motes: 0 },
 ];
-let presetIdx = 0, godRayAmt = 0.9;
+let presetIdx = 0, godRayAmt = 0.3;
 const toastEl = document.getElementById('toast'), fadeEl = document.getElementById('fade');
 function applyPreset(p) {
   const sd = new THREE.Vector3().setFromSphericalCoords(1, deg(90 - p.elev), deg(p.az));
@@ -1453,7 +1562,6 @@ function cyclePreset() {
 const gltfLoader = new GLTFLoader();
 const MODEL_BASE = window.__MODEL_BASE || './models/';
 const soldier = { ready: false };
-const sword = { drawn: false, slashT: -1, cutDone: false };
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _ax = new THREE.Vector3();
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
 function rotBoneWorld(b, axisW, ang) {
@@ -1489,6 +1597,120 @@ function footIK() {
   }
   soldier.feet = { minY: Math.max(minY, player.pos.y - 0.25) };
 }
+
+// ─────────────────────────── Swordplay: two-handed katana, 3-hit combo (shared by player and enemies) ───────────────────────────
+// Poses are hand positions + blade directions in the character's own frame (+z forward, +x to its left).
+const P3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const pose = (hand, dir, twist = 0, lean = 0) => ({ hand: P3(...hand), dir: P3(...dir).normalize(), twist, lean });
+const GUARD = pose([-0.07, 1.08, 0.33], [0.04, 0.55, 0.83]);
+const SLASHES = [
+  { dur: 0.42, lunge: 4.4, dmg: 1, k: [ // 1 · wide horizontal cut, right → left
+    pose([-0.42, 1.4, 0.1], [-0.72, 0.4, -0.55], 0.6, 0.0),
+    pose([-0.04, 1.22, 0.58], [0.05, 0.02, 1.0], 0.0, 0.12),
+    pose([0.44, 1.12, 0.2], [0.92, -0.12, -0.3], -0.6, 0.08)] },
+  { dur: 0.42, lunge: 4.4, dmg: 1, k: [ // 2 · rising diagonal, low left → high right
+    pose([0.3, 0.9, 0.24], [0.62, -0.55, 0.45], -0.5, 0.18),
+    pose([0.0, 1.24, 0.56], [-0.12, 0.45, 0.9], 0.0, 0.06),
+    pose([-0.4, 1.64, 0.16], [-0.6, 0.76, -0.1], 0.5, -0.05)] },
+  { dur: 0.5, lunge: 5.6, dmg: 2, k: [   // 3 · overhead strike straight down
+    pose([-0.05, 1.8, 0.04], [0.0, 0.62, -0.78], 0.0, -0.12),
+    pose([-0.02, 1.44, 0.56], [0.0, 0.32, 0.95], 0.0, 0.12),
+    pose([0.0, 0.94, 0.5], [0.0, -0.68, 0.72], 0.0, 0.35)] },
+];
+const copyPose = (o, a) => { o.hand.copy(a.hand); o.dir.copy(a.dir); o.twist = a.twist; o.lean = a.lean; return o; };
+const newPose = () => copyPose(pose([0, 0, 0], [0, 0, 1]), GUARD);
+function lerpPose(a, b, k, out) {
+  out.hand.lerpVectors(a.hand, b.hand, k); out.dir.copy(a.dir).lerp(b.dir, k).normalize();
+  out.twist = lerp(a.twist, b.twist, k); out.lean = lerp(a.lean, b.lean, k); return out;
+}
+const _midPose = newPose();
+function slashPose(sl, s, from, out) {
+  const W = 0.3, S = 0.7;                                           // wind-up | strike | follow-through
+  if (s < W) return lerpPose(from, sl.k[0], smooth(0, 1, s / W), out);
+  if (s < S) { const u = Math.pow(smooth(0, 1, (s - W) / (S - W)), 0.85); return u < 0.5 ? lerpPose(sl.k[0], sl.k[1], u * 2, out) : lerpPose(sl.k[1], sl.k[2], u * 2 - 1, out); }
+  return lerpPose(sl.k[2], GUARD, smooth(S, 1.3, s), out);
+}
+function newSword() { return { drawn: false, drawT: 0, combo: -1, t: 0, queued: false, from: newPose(), last: newPose(), hit: new Set() }; }
+const isStriking = sw => sw.combo >= 0 && sw.t > 0.27 && sw.t < 0.74;
+function beginSlash(ch, k) {
+  const sw = ch.sw; copyPose(sw.from, sw.last);
+  sw.combo = k; sw.t = 0; sw.queued = false; sw.hit.clear();
+  ch.onSlash?.(k, SLASHES[k]);
+}
+function tickSword(ch, dt) {
+  const sw = ch.sw;
+  sw.drawT = Math.max(0, Math.min(1, sw.drawT + (sw.drawn ? dt : -dt) * 5));
+  if (sw.combo >= 0) {
+    const sl = SLASHES[sw.combo]; sw.t += dt / sl.dur;
+    slashPose(sl, Math.min(sw.t, 1), sw.from, sw.last);
+    if (sw.t >= 1) { if (sw.queued && sw.combo < 2) beginSlash(ch, sw.combo + 1); else { sw.combo = -1; sw.cool = 0.25; } }
+  } else {
+    lerpPose(sw.last, GUARD, 1 - Math.exp(-dt * 9), sw.last);
+    sw.cool = Math.max(0, (sw.cool || 0) - dt);
+  }
+}
+
+// Two-bone IK with an elbow/knee pole, in world space
+const _i1 = new THREE.Vector3(), _i2 = new THREE.Vector3(), _i3 = new THREE.Vector3(), _i4 = new THREE.Vector3(), _i5 = new THREE.Vector3(), _i6 = new THREE.Vector3(), _i7 = new THREE.Vector3(), _i8 = new THREE.Vector3();
+function ik3(up, low, end, T, pole) {
+  const A = up.getWorldPosition(_i1), K = low.getWorldPosition(_i2), C = end.getWorldPosition(_i3);
+  const l1 = A.distanceTo(K), l2 = K.distanceTo(C);
+  const d = Math.max(Math.abs(l1 - l2) + 1e-3, Math.min(l1 + l2 - 1e-3, A.distanceTo(T)));
+  const u = _i4.subVectors(A, K), w = _i5.subVectors(C, K);
+  const cur = u.angleTo(w), want = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2))));
+  const n = _i6.crossVectors(u, w);
+  if (n.lengthSq() < 1e-10) n.crossVectors(_i7.subVectors(pole, A), _i8.subVectors(T, A)).negate();
+  if (n.lengthSq() < 1e-10) return;
+  rotBoneWorld(low, n.normalize(), want - cur);
+  const C2 = end.getWorldPosition(_i3), from = _i4.subVectors(C2, A).normalize(), to = _i5.subVectors(T, A).normalize();
+  const ax = _i6.crossVectors(from, to), sn = ax.length();
+  if (sn > 1e-6) rotBoneWorld(up, ax.normalize(), Math.atan2(sn, from.dot(to)));
+  const axis = _i7.subVectors(T, A).normalize(), Bp = low.getWorldPosition(_i2).sub(A), Pp = _i8.subVectors(pole, A);
+  Bp.addScaledVector(axis, -Bp.dot(axis)); Pp.addScaledVector(axis, -Pp.dot(axis));
+  if (Bp.lengthSq() > 1e-8 && Pp.lengthSq() > 1e-8) rotBoneWorld(up, axis, Math.atan2(_i6.crossVectors(Bp, Pp).dot(axis), Bp.dot(Pp)));
+}
+const _q4 = new THREE.Quaternion();
+function rotBoneRig(rig, b, axisRig, ang) { if (b && ang) rotBoneWorld(b, _ax.copy(axisRig).applyQuaternion(rig.getWorldQuaternion(_q4)).normalize(), ang); }
+const _s1 = new THREE.Vector3(), _s2 = new THREE.Vector3(), _s3 = new THREE.Vector3(), _s4 = new THREE.Vector3(), _s5 = new THREE.Vector3();
+// Drive both arms so the katana follows the pose: right hand to the target, blade turned to the pose
+// direction, left hand closing on the end of the grip.
+function applySwordPose(ch, p, w) {
+  if (w <= 0.001) return;
+  const B = ch.B, rig = ch.rig;
+  rotBoneRig(rig, B.Spine1, AY, p.twist * w); rotBoneRig(rig, B.Spine, AX, p.lean * w);
+  const T = rig.localToWorld(_s1.copy(p.hand));
+  if (w < 1) T.lerpVectors(B.RightHand.getWorldPosition(_s2), T, w);
+  ik3(B.RightArm, B.RightForeArm, B.RightHand, T, rig.localToWorld(_s3.set(-0.55, 0.8, -0.2)));
+  const want = _s4.copy(p.dir).transformDirection(rig.matrixWorld), cur = ch.drawn.getWorldDirection(_s5);
+  if (w < 1) want.lerp(cur, 1 - w).normalize();
+  const ax = _s2.crossVectors(cur, want), sn = ax.length();
+  if (sn > 1e-5) rotBoneWorld(B.RightHand, ax.normalize(), Math.atan2(sn, cur.dot(want)));
+  const L = ch.drawn.localToWorld(_s1.set(0, -0.02, -0.25));
+  if (w < 1) L.lerpVectors(B.LeftHand.getWorldPosition(_s2), L, w);
+  ik3(B.LeftArm, B.LeftForeArm, B.LeftHand, L, rig.localToWorld(_s3.set(0.55, 0.8, -0.2)));
+}
+// Stepping lunge for the legs while a cut lands (right foot forward, back leg extended, hips lowered)
+function lungeLegs(ch, sw) {
+  if (sw.combo < 0) return 0;
+  const env = smooth(0.12, 0.42, sw.t) * (1 - smooth(0.72, 1.0, sw.t)), B = ch.B, rig = ch.rig;
+  rotBoneRig(rig, B.RightUpLeg, AX, -0.6 * env); rotBoneRig(rig, B.RightLeg, AX, 0.55 * env);
+  rotBoneRig(rig, B.LeftUpLeg, AX, 0.35 * env); rotBoneRig(rig, B.LeftLeg, AX, 0.3 * env);
+  return env;
+}
+// Blade contact: sample along the blade against each target's body column
+function swordHits(ch, targets, onHit) {
+  const sw = ch.sw; if (!isStriking(sw)) return;
+  const h = ch.drawn.userData.hilt.getWorldPosition(_s1), e = ch.drawn.userData.end.getWorldPosition(_s2);
+  for (const tg of targets) {
+    if (!tg.alive || sw.hit.has(tg)) continue;
+    for (let k = 1; k <= 4; k++) {
+      const p = _s3.lerpVectors(h, e, k / 4), dxz = Math.hypot(p.x - tg.pos.x, p.z - tg.pos.z);
+      if (dxz < 0.5 && p.y > tg.pos.y + 0.15 && p.y < tg.pos.y + 1.95) { sw.hit.add(tg); onHit(tg, SLASHES[sw.combo].dmg, p); break; }
+    }
+  }
+}
+
+const sword = newSword();
 function reskinArmor(mat) {
   // The source model is a weathered sci-fi trooper; recolour its texture regions into lacquered samurai armour.
   mat.onBeforeCompile = sh => {
@@ -1536,41 +1758,242 @@ function buildKatana(withSheath) {
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
-gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
-  const model = g.scene, rig = new THREE.Group(), B = {};
+// ─────────────────────────── Samurai armour (ō-yoroi style), fitted to the skeleton ───────────────────────────
+// Every piece is built from rows of lacquered plates (lames) laced with silk cords, sized from the
+// character's own mesh and attached to the bone it rides on.
+function makeLameTex(plate, cord, knot) {
+  return makeTex(256, (u, v) => {
+    const fu = fract(u * 4), lac = pfbm(u, v, 4, 3);
+    let [r, g, b] = plate, h = 0.5;
+    const k = 0.72 + 0.34 * smooth(0.0, 0.35, v) * (1 - smooth(0.75, 1.0, v)) + 0.1 * lac;
+    r *= k; g *= k; b *= k;
+    if (v > 0.88) { r = Math.min(1, r * 1.7 + 0.03); g = Math.min(1, g * 1.6 + 0.02); b = Math.min(1, b * 1.5 + 0.02); h = 0.75; }   // polished upper edge
+    if (v < 0.07) { r *= 0.15; g *= 0.15; b *= 0.15; h = 0; }                                    // shadow under the lame above
+    if (Math.abs(fu - 0.5) < 0.16 && v > 0.08) {                                               // silk lacing (odoshi)
+      const br = 0.6 + 0.4 * Math.sin((v * 16 + (fu - 0.5) * 6) * Math.PI);
+      [r, g, b] = cord.map(c => c * br); h = 0.95;
+    }
+    if (Math.abs(fu - 0.5) < 0.12 && Math.abs(v - 0.2) < 0.05) { [r, g, b] = knot; h = 1; }       // cord knots
+    return [r, g, b, h];
+  }, [1, 1], 4);
+}
+const texKabuto = makeTex(256, (u, v) => {   // black lacquer bowl with raised ridges and gilt rivets
+  const ridge = Math.pow(Math.abs(Math.sin(u * Math.PI * 32)), 6), n = pfbm(u, v, 6, 3);
+  const rivet = (Math.abs(fract(u * 32) - 0.5) < 0.12 && Math.abs(fract(v * 9) - 0.5) < 0.12) ? 1 : 0;
+  const k = 0.05 + 0.03 * n + ridge * 0.04;
+  return rivet ? [0.7, 0.52, 0.2, 1] : [k * 1.05, k, k * 0.95, ridge * 0.8 + n * 0.1];
+}, [1, 1], 5);
+const texIron = makeTex(256, (u, v) => {     // dark iron splints with a lacquer sheen
+  const sp = fract(u * 5), edge = smooth(0.0, 0.08, sp) * (1 - smooth(0.92, 1.0, sp)), n = pfbm(u, v, 6, 4);
+  const k = (0.07 + 0.04 * n) * (0.5 + 0.5 * edge);
+  return [k, k * 0.98, k * 0.95, edge * 0.7 + n * 0.15];
+}, [1, 1], 4);
+const ARMOUR_PALETTES = {
+  hero:   { plate: [0.42, 0.04, 0.03], cord: [0.06, 0.09, 0.3], knot: [0.85, 0.65, 0.25], under: [0.022, 0.026, 0.045], sash: 0x1b2340, trim: 0xb08a3a },
+  bandit: { plate: [0.12, 0.09, 0.06], cord: [0.16, 0.2, 0.12], knot: [0.35, 0.3, 0.2], under: [0.05, 0.045, 0.04], sash: 0x3a3428, trim: 0x6a5a40, hat: 'kasa' },
+};
+const lacquer = (tex, rough = 0.38) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: rough, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2, side: THREE.DoubleSide, envMapIntensity: 0.8 });
+
+// A panel of `rows` curved lames hanging down from its origin (top edge), facing +z, curving around a centre at -z.
+function lamePanel(width, height, rows, radius, mat, flare = 0.01, fullRing = false) {
+  const g = new THREE.Group(), lh = height / rows;
+  for (let k = 0; k < rows; k++) {
+    const r = radius + k * flare, arc = fullRing ? Math.PI * 2 : Math.min(Math.PI * 2, width / r);
+    const geo = new THREE.CylinderGeometry(r, r + flare * 1.2, lh * 1.3, Math.max(8, Math.ceil(arc * 12)), 1, true, -arc / 2, arc);
+    const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * (arc * r) / 0.13);
+    geo.translate(0, -(k + 0.5) * lh, fullRing ? 0 : -radius);
+    const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; g.add(m);
+  }
+  return g;
+}
+// Orient an object so its local -y runs along `down` and local +z faces `out` (both in rig space).
+function orientDownOut(obj, down, out) {
+  const Y = down.clone().negate().normalize(), Z = out.clone().sub(Y.clone().multiplyScalar(out.dot(Y))).normalize(), X = new THREE.Vector3().crossVectors(Y, Z);
+  obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+}
+
+function buildArmour(model, rig, B, paletteName) {
+  const P = ARMOUR_PALETTES[paletteName];
+  const lame = lacquer(makeLameTex(P.plate, P.cord, P.knot));
+  const kabutoM = lacquer(texKabuto, 0.3), ironM = lacquer(texIron, 0.45);
+  const trimM = M(P.trim, 0.3, 0.85), sashM = new THREE.MeshStandardMaterial({ color: P.sash, roughness: 0.9 });
+  const wp = b => rig.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
+  // rig-space copy of the bind-pose surface, to size each piece to the body under it
+  const V = [], tmp = new THREE.Vector3();
+  model.updateMatrixWorld(true);
+  model.traverse(o => { if (o.isMesh) { const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 2) { tmp.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); rig.worldToLocal(tmp); V.push(tmp.x, tmp.y, tmp.z); } } });
+  const pct = (arr, q) => { if (!arr.length) return 0.1; arr.sort((a, b) => a - b); return arr[Math.min(arr.length - 1, Math.floor(arr.length * q))]; };
+  function girth(c, a, half, maxR, q = 0.93) {
+    const ds = [];
+    for (let i = 0; i < V.length; i += 3) {
+      const dx = V[i] - c.x, dy = V[i + 1] - c.y, dz = V[i + 2] - c.z, t = dx * a.x + dy * a.y + dz * a.z;
+      if (Math.abs(t) > half) continue;
+      const px = dx - a.x * t, py = dy - a.y * t, pz = dz - a.z * t, d = Math.hypot(px, py, pz);
+      if (d < maxR) ds.push(d);
+    }
+    return pct(ds, q);
+  }
+  function torso(y0, y1, cx) { // half-width and front/back extents of the trunk between two heights
+    const xs = [], zs = [];
+    for (let i = 0; i < V.length; i += 3) if (V[i + 1] > y0 && V[i + 1] < y1 && Math.abs(V[i] - cx) < 0.27) { xs.push(Math.abs(V[i] - cx)); zs.push(V[i + 2]); }
+    const z0 = pct(zs.slice(), 0.03), z1 = pct(zs, 0.97);
+    return { rx: pct(xs, 0.96), cz: (z0 + z1) / 2, rz: (z1 - z0) / 2 };
+  }
+  const attach = (bone, obj) => { rig.add(obj); bone.attach(obj); return obj; };
+  const up = new THREE.Vector3(0, 1, 0), fwd = new THREE.Vector3(0, 0, 1);
+  const hips = wp(B.Hips), sp1 = wp(B.Spine1), sp2 = wp(B.Spine2), neck = wp(B.Neck), head = wp(B.Head), top = wp(B.HeadTop_End);
+  const out = { kusazuri: [] };
+
+  // ── dō: laced cuirass around the trunk ──
+  const chest = torso(sp1.y, neck.y - 0.02, sp2.x), waist = torso(hips.y + 0.05, sp1.y, hips.x);
+  const doTop = neck.y - 0.06, doBot = hips.y + 0.04, doR = 0.2;
+  const doG = new THREE.Group();
+  const ring = lamePanel(0, doTop - doBot, 6, doR, lame, 0.004, true);
+  doG.add(ring); doG.position.set(sp2.x, doTop, chest.cz);
+  doG.scale.set((Math.max(chest.rx, waist.rx) + 0.035) / doR, 1, (Math.max(chest.rz, waist.rz) + 0.03) / doR);
+  const muna = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.02), kabutoM); muna.position.set(0, 0.0, doR + 0.005); doG.add(muna); // breast plate
+  for (const s of [-1, 1]) { const strap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.3), kabutoM); strap.position.set(s * 0.12, 0.02, 0); doG.add(strap); }
+  attach(B.Spine1, doG);
+  // obi sash at the waist
+  const obi = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 8, 36), sashM); obi.rotation.x = Math.PI / 2;
+  obi.position.set(hips.x, hips.y + 0.05, waist.cz); obi.scale.set(waist.rx + 0.055, waist.rz + 0.05, 1);
+  attach(B.Hips, obi);
+
+  // ── kusazuri: hanging tassets that swing clear of the legs ──
+  const hipT = torso(hips.y - 0.12, hips.y + 0.04, hips.x);
+  for (const deg of [-150, -95, -38, 38, 95, 150]) {
+    const a = THREE.MathUtils.degToRad(deg), piv = new THREE.Group();
+    const rx = hipT.rx + 0.045, rz = hipT.rz + 0.045;
+    piv.position.set(hips.x + Math.sin(a) * rx, hips.y + 0.03, hipT.cz + Math.cos(a) * rz);
+    piv.rotation.y = a;
+    const panel = lamePanel(0.19, 0.27, 5, 0.32, lame, 0.006); panel.rotation.x = -0.12; piv.add(panel);
+    piv.userData = { side: Math.sin(a) > 0 ? 1 : -1, front: Math.cos(a), panel };
+    attach(B.Hips, piv); out.kusazuri.push(piv);
+  }
+
+  // ── sode: large shoulder plates over the upper arms ──
+  for (const [shoulder, arm, fore] of [[B.LeftShoulder, B.LeftArm, B.LeftForeArm], [B.RightShoulder, B.RightArm, B.RightForeArm]]) {
+    // hung from the collarbone so they drape over the arm instead of swinging with it
+    const s0 = wp(arm), s1 = wp(fore), a = s1.clone().sub(s0).normalize(), sx = Math.sign(s0.x - sp2.x) || 1;
+    const r = girth(s0.clone().lerp(s1, 0.3), a, 0.07, 0.16);
+    const sode = lamePanel(0.27, 0.31, 6, 0.42, lame, 0.007);
+    orientDownOut(sode, new THREE.Vector3(sx * 0.12, -1, 0), new THREE.Vector3(sx, 0.12, 0));
+    sode.position.copy(s0).add(new THREE.Vector3(sx * (r + 0.035), 0.05, -0.01));
+    attach(shoulder, sode);
+  }
+
+  // ── kote: armoured sleeves on the forearms ──
+  for (const [fore, hand] of [[B.LeftForeArm, B.LeftHand], [B.RightForeArm, B.RightHand]]) {
+    const f0 = wp(fore), f1 = wp(hand), a = f1.clone().sub(f0).normalize(), len = f0.distanceTo(f1);
+    const o = up.clone().sub(a.clone().multiplyScalar(a.dot(up))).normalize();
+    const r = girth(f0.clone().lerp(f1, 0.5), a, len * 0.3, 0.12);
+    const kote = lamePanel(Math.PI * (r + 0.02) * 1.2, len * 0.85, 1, r + 0.02, ironM, 0);
+    orientDownOut(kote, a, o); kote.position.copy(f0).addScaledVector(a, len * 0.08).addScaledVector(o, r + 0.02);
+    attach(fore, kote);
+  }
+
+  // ── haidate (thigh aprons) and suneate (shin guards) ──
+  for (const [ul, l, ft] of [[B.LeftUpLeg, B.LeftLeg, B.LeftFoot], [B.RightUpLeg, B.RightLeg, B.RightFoot]]) {
+    const t0 = wp(ul), t1 = wp(l), t2 = wp(ft), a = t1.clone().sub(t0).normalize(), a2 = t2.clone().sub(t1).normalize();
+    const o = fwd.clone().sub(a.clone().multiplyScalar(a.dot(fwd))).normalize(), o2 = fwd.clone().sub(a2.clone().multiplyScalar(a2.dot(fwd))).normalize();
+    const rt = girth(t0.clone().lerp(t1, 0.55), a, 0.1, 0.17), rs = girth(t1.clone().lerp(t2, 0.5), a2, 0.1, 0.13);
+    const hai = lamePanel(0.26, t0.distanceTo(t1) * 0.55, 6, rt + 0.06, lame, 0.004);
+    orientDownOut(hai, a, o); hai.position.copy(t0).addScaledVector(a, t0.distanceTo(t1) * 0.32).addScaledVector(o, rt + 0.025);
+    attach(ul, hai);
+    const sune = lamePanel(Math.PI * (rs + 0.02) * 1.05, t1.distanceTo(t2) * 0.78, 1, rs + 0.02, ironM, 0);
+    orientDownOut(sune, a2, o2); sune.position.copy(t1).addScaledVector(a2, 0.06).addScaledVector(o2, rs + 0.02);
+    attach(l, sune);
+    const knee = new THREE.Mesh(new THREE.SphereGeometry(rs + 0.03, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2), ironM);
+    orientDownOut(knee, o2.clone().negate(), a2.clone().negate()); knee.position.copy(t1).addScaledVector(o2, 0.01);
+    knee.scale.set(0.9, 0.55, 0.9); attach(l, knee);
+  }
+
+  // ── kabuto: ridged bowl, flared neck guard, turned-back flaps, visor, crest; menpō face mask ──
+  const hc = head.clone().lerp(top, 0.42), hr = girth(hc, up, 0.07, 0.22, 0.9) + 0.022;
+  if (P.hat === 'kasa') { // ronin: wide straw hat over a dark head cloth
+    const hat = new THREE.Group(); hat.position.copy(hc);
+    const strawM = TM(texStraw, 0.95, 0, { side: THREE.DoubleSide });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.17, 36, 1, true), strawM); cone.position.y = hr * 0.95 + 0.06; hat.add(cone);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(hr * 0.95, hr * 0.98, 0.05, 24, 1, true), sashM); band.position.y = hr * 0.75; hat.add(band);
+    const wrap = new THREE.Mesh(new THREE.SphereGeometry(hr * 0.98, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.62), sashM); hat.add(wrap);
+    for (const s of [-1, 1]) { const tie = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.26, 4), sashM); tie.position.set(s * hr * 0.8, -0.02, 0.02); tie.rotation.z = s * 0.15; hat.add(tie); }
+    hat.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    attach(B.Head, hat); out.kabuto = hat;
+    return out;
+  }
+  const kab = new THREE.Group(); kab.position.copy(hc);
+  const bowl = new THREE.Mesh(new THREE.SphereGeometry(hr, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.52), kabutoM); bowl.scale.set(1, 1.08, 1.06); bowl.castShadow = true; kab.add(bowl);
+  const tehen = new THREE.Mesh(new THREE.TorusGeometry(hr * 0.16, 0.007, 6, 20), trimM); tehen.rotation.x = Math.PI / 2; tehen.position.y = hr * 1.07; kab.add(tehen);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(hr * 1.01, 0.008, 6, 48), trimM); rim.rotation.x = Math.PI / 2; rim.scale.set(1, 1.06, 1); rim.position.y = -0.005; kab.add(rim);
+  const shikoro = lamePanel(Math.PI * 1.35 * (hr + 0.02), 0.17, 4, hr + 0.02, lame, 0.03);
+  shikoro.rotation.y = Math.PI; shikoro.position.set(0, -0.008, 0); kab.add(shikoro);   // centred at the back, open at the face
+  shikoro.children.forEach(m => m.position.z += hr + 0.02);
+  for (const s of [-1, 1]) {
+    const fk = lamePanel(0.07, 0.09, 2, 0.2, lame, 0.0); fk.position.set(s * (hr + 0.01), -0.01, hr * 0.45); fk.rotation.set(0, s * 1.15, s * 0.25); kab.add(fk);
+  }
+  const visor = new THREE.Mesh(new THREE.CylinderGeometry(hr * 1.08, hr * 1.18, 0.03, 30, 1, true, -0.9, 1.8), kabutoM); visor.position.y = 0.0; kab.add(visor);
+  for (const s of [-1, 1]) {   // gilt kuwagata horns
+    const horn = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.26, 0.005), trimM);
+    horn.geometry.translate(0, 0.13, 0); horn.position.set(s * 0.025, hr * 0.15, hr * 1.04); horn.rotation.set(-0.25, 0, -s * 0.42); kab.add(horn);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.005), trimM); tip.position.set(s * 0.14, hr * 0.15 + 0.235, hr * 1.04 - 0.06); tip.rotation.set(-0.25, 0, -s * 0.9); kab.add(tip);
+  }
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.01, 20), trimM); disc.rotation.x = Math.PI / 2 - 0.25; disc.position.set(0, hr * 0.15, hr * 1.05); kab.add(disc);
+  const menpo = new THREE.Mesh(new THREE.SphereGeometry(hr * 0.98, 30, 16, Math.PI / 2 - 1.15, 2.3, Math.PI * 0.56, Math.PI * 0.32), kabutoM);
+  menpo.scale.set(1, 1.1, 1.1); kab.add(menpo);
+  const stache = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.008, 0.01), trimM); stache.position.set(0, -hr * 0.42, hr * 0.98); kab.add(stache);
+  const yodare = lamePanel(0.16, 0.08, 3, 0.18, lame, 0.006); yodare.position.set(0, -hr * 0.82, hr * 0.62); kab.add(yodare);
+  kab.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  attach(B.Head, kab);
+  out.kabuto = kab;
+  return out;
+}
+// Tassets swing out of the way when a thigh lifts
+const _ka = new THREE.Vector3(), _kb = new THREE.Vector3();
+function updateArmour(ch) {
+  if (!ch.armour) return;
+  const legDir = side => {
+    const [u, l] = side > 0 ? [ch.B.LeftUpLeg, ch.B.LeftLeg] : [ch.B.RightUpLeg, ch.B.RightLeg];
+    ch.rig.worldToLocal(u.getWorldPosition(_ka)); ch.rig.worldToLocal(l.getWorldPosition(_kb));
+    return Math.max(0, (_kb.z - _ka.z) / (_ka.distanceTo(_kb) || 1));
+  };
+  const lift = { 1: legDir(1), [-1]: legDir(-1) };
+  for (const k of ch.armour.kusazuri) {
+    const u = k.userData, swing = lift[u.side] * Math.max(0, u.front * 0.9 + 0.35);
+    u.panel.rotation.x = lerp(u.panel.rotation.x, -0.12 - swing * 1.3, 0.5);
+  }
+}
+
+function reskinUnder(mat, c) { // the base body becomes the dark cloth layer worn under the armour
+  mat.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      float lum0 = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+      diffuseColor.rgb = vec3(${c[0]}, ${c[1]}, ${c[2]}) * (0.55 + lum0 * 2.2);`);
+  };
+  mat.needsUpdate = true;
+}
+function makeWarrior(model, animations, palette) {
+  const rig = new THREE.Group(), B = {};
   model.traverse(o => {
     if (/^mixamorig/.test(o.name)) B[o.name.replace(/^mixamorig:?/, '')] = o;
     if (o.isMesh) {
       const m0 = o.material;
-      o.material = new THREE.MeshPhysicalMaterial({ map: m0.map, normalMap: m0.normalMap, roughness: m0.roughness, metalness: m0.metalness, clearcoat: 1, clearcoatRoughness: 0.18, envMapIntensity: 0.7 });
-      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; reskinArmor(o.material);
+      o.material = new THREE.MeshStandardMaterial({ map: m0.map, normalMap: m0.normalMap, roughness: 0.85, metalness: 0 });
+      reskinUnder(o.material, ARMOUR_PALETTES[palette].under);
+      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
     }
   });
-  rig.add(model); hero.root.add(rig); hero.root.updateMatrixWorld(true);
+  rig.add(model); rig.updateMatrixWorld(true);
   const wp = b => rig.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
   const f = wp(B.LeftToeBase).sub(wp(B.LeftFoot));
   model.rotation.y -= Math.atan2(f.x, f.z); model.updateMatrixWorld(true);
   const height = wp(B.HeadTop_End).y - wp(B.LeftToe_End).y;
   model.scale.multiplyScalar(1.8 / height); model.updateMatrixWorld(true);
   model.position.y -= wp(B.LeftToe_End).y - 0.01; model.updateMatrixWorld(true);
-  soldier.hipsY = wp(B.Hips).y;
-
-  // Horned kabuto crest (kuwagata) on the helmet
-  const head = wp(B.Head), top = wp(B.HeadTop_End), crest = new THREE.Group();
-  for (const s of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.26, 0.006), mats.trim);
-    horn.geometry.translate(0, 0.13, 0); horn.rotation.z = -s * 0.42; horn.position.x = s * 0.02; crest.add(horn);
-    const tipb = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.006), mats.trim); tipb.position.set(s * 0.13, 0.24, 0); tipb.rotation.z = -s * 0.9; crest.add(tipb);
-  }
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.012, 20), mats.trim); disc.rotation.x = Math.PI / 2; crest.add(disc);
-  crest.position.copy(head.clone().lerp(top, 0.55)).add(new THREE.Vector3(0, 0, 0.12)); crest.rotation.x = -0.2;
-  crest.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  rig.add(crest); B.Head.attach(crest);
+  const hipsY = wp(B.Hips).y;
 
   // Sheathed katana on the left hip, drawn blade in the right hand
   const hips = wp(B.Hips);
-  const sheath = buildKatana(true); sheath.position.copy(hips).add(new THREE.Vector3(0.17, -0.02, 0.12)); sheath.rotation.set(-0.35, Math.PI, 0);
-  const sheathBlade = buildKatana(false); sheathBlade.visible = false;
+  const sheath = buildKatana(true); sheath.position.copy(hips).add(new THREE.Vector3(0.22, -0.02, 0.1)); sheath.rotation.set(-0.35, Math.PI, 0);
   rig.add(sheath); B.Hips.attach(sheath);
   const hand = wp(B.RightHand), fore = wp(B.RightForeArm), out = hand.clone().sub(fore).normalize();
   const drawn = buildKatana(false); drawn.position.copy(hand).addScaledVector(out, 0.07);
@@ -1579,27 +2002,37 @@ gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
   const handle = buildKatana(false); handle.children.forEach(c => { if (c.geometry?.type === 'BoxGeometry' || c.geometry?.type === 'ConeGeometry') c.visible = false; });
   handle.position.copy(sheath.position); handle.quaternion.copy(sheath.quaternion); rig.add(handle); B.Hips.attach(handle);
 
-  // Cape hung from the upper back
-  const capeGeo = new THREE.PlaneGeometry(0.44, 0.85, 6, 12); capeGeo.translate(0, -0.425, 0);
-  const capeMat = mats.cloth.clone(); capeMat.side = THREE.DoubleSide;
-  const cape = new THREE.Mesh(capeGeo, capeMat); cape.castShadow = true;
-  cape.position.copy(wp(B.Spine2)).add(new THREE.Vector3(0, 0.14, -0.16)); cape.userData.base = capeGeo.attributes.position.array.slice();
-  rig.add(cape); B.Spine2.attach(cape);
-
+  const armour = buildArmour(model, rig, B, palette);
   const mixer = new THREE.AnimationMixer(model), act = {};
-  for (const c of g.animations) act[c.name] = mixer.clipAction(c);
+  for (const c of animations) act[c.name] = mixer.clipAction(c);
   for (const n of ['Idle', 'Walk', 'Run']) { act[n].play(); act[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
-  Object.assign(soldier, { ready: true, model, rig, B, mixer, act, drawn, handle, cape, crest });
-  hero.body.visible = false; hero.cape = cape; hero.capeLen = 0.85;
+  return { model, rig, B, mixer, act, drawn, handle, armour, hipsY, sw: newSword() };
+}
+let soldierGLTF = null, pristineSoldier = null;
+gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
+  soldierGLTF = g; pristineSoldier = SkeletonUtils.clone(g.scene);
+  const w = makeWarrior(g.scene, g.animations, 'hero');
+  hero.root.add(w.rig);
+  Object.assign(soldier, w, { ready: true, sw: sword });
+  soldier.onSlash = (k, sl) => {
+    trail.n = 0; sword.cutPlayed = false; audio.slash();
+    if (!player.mounted) { // face where the camera looks and step into the cut
+      player.yaw = camYaw + Math.PI;
+      player.vel.x = Math.sin(player.yaw) * sl.lunge; player.vel.z = Math.cos(player.yaw) * sl.lunge;
+    }
+  };
+  hero.body.visible = false; hero.cape = null;
+  if (typeof spawnEnemies === 'function') spawnEnemies();
 }, undefined, e => console.warn('Soldier model failed to load, using built-in samurai', e));
 
 function animateSoldier(dt, t) {
-  const S = soldier, spd = player.mounted ? 0 : player.speed;
-  const walkW = smooth(0.15, 1.2, spd) * (1 - smooth(2.4, 4.5, spd)), runW = smooth(2.4, 4.5, spd);
+  const S = soldier, sw = S.sw, spd = player.mounted ? 0 : player.speed;
+  const atk = !player.mounted && sw.combo >= 0 ? smooth(0, 0.15, sw.t) * (1 - smooth(0.85, 1, sw.t)) : 0;
+  const walkW = smooth(0.15, 1.2, spd) * (1 - smooth(2.4, 4.5, spd)) * (1 - atk), runW = smooth(2.4, 4.5, spd) * (1 - atk);
   S.act.Idle.setEffectiveWeight(1 - walkW - runW); S.act.Walk.setEffectiveWeight(walkW); S.act.Run.setEffectiveWeight(runW);
   S.act.Walk.timeScale = Math.max(0.6, spd / 1.6); S.act.Run.timeScale = player.onGround ? Math.max(0.7, spd / 5.0) : 0.15;
   S.mixer.update(dt);
-  S.rig.position.y = player.mounted ? 0.94 + 0.07 - S.hipsY : 0;
+  S.rig.position.y = player.mounted ? 0.94 + 0.07 - S.hipsY : -0.08 * atk;
   if (player.mounted) S.rig.rotation.set(0, 0, 0); else S.rig.rotation.set(player.pitchLean, 0, player.lean);
   (player.mounted ? horse.root : hero.root).updateMatrixWorld(true);
   const B = S.B;
@@ -1609,24 +2042,17 @@ function animateSoldier(dt, t) {
     rotBone(B.LeftUpLeg, AX, -1.3); rotBone(B.RightUpLeg, AX, -1.3);
     rotBone(B.LeftLeg, AX, 1.45); rotBone(B.RightLeg, AX, 1.45);
     rotBone(B.Spine, AX, 0.08 + bob);
-    if (sword.slashT < 0) { rotBone(B.LeftArm, AX, -0.55); rotBone(B.LeftForeArm, AX, -0.8); rotBone(B.RightArm, AX, -0.55); rotBone(B.RightForeArm, AX, -0.8); }
+    if (sw.drawT < 1) { const k = 1 - sw.drawT; rotBone(B.LeftArm, AX, -0.55 * k); rotBone(B.LeftForeArm, AX, -0.8 * k); rotBone(B.RightArm, AX, -0.55 * k); rotBone(B.RightForeArm, AX, -0.8 * k); }
   }
-  if (sword.slashT >= 0) {
-    const s = sword.slashT, env = smooth(0, 0.18, s) * (1 - smooth(0.72, 1, s));
-    const sweep = lerp(-1.4, 1.2, smooth(0.18, 0.55, s));
-    rotBone(B.Spine1, AY, sweep * 0.35 * env);
-    rotBone(B.RightArm, AX, -1.35 * env); rotBone(B.RightArm, AY, sweep * env);
-    rotBone(B.RightForeArm, AX, -0.25 * env);
-  } else if (sword.drawn && !player.mounted) {
-    rotBone(B.RightArm, AX, -0.35); rotBone(B.RightForeArm, AX, -0.5); // ready stance, blade low and forward
-  }
+  applySwordPose(S, sw.last, sw.drawT);   // guard stance or the current cut, both hands on the grip
   if (!player.mounted) {
     if (!player.onGround) { // airborne: knees up, arms out
       rotBone(B.LeftUpLeg, AX, -0.75); rotBone(B.RightUpLeg, AX, -0.3); rotBone(B.LeftLeg, AX, 1.25); rotBone(B.RightLeg, AX, 0.7);
-      rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45);
-    } else footIK();
+      if (sw.drawT < 0.5) { rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45); }
+    } else { lungeLegs(S, sw); footIK(); }
   }
-  S.drawn.visible = sword.drawn; S.handle.visible = !sword.drawn;
+  updateArmour(S);
+  S.drawn.visible = sw.drawT > 0.25; S.handle.visible = !S.drawn.visible;
 }
 
 // ─────────────────────────── Sword slash: trail + grass cutting ───────────────────────────
@@ -1642,45 +2068,39 @@ const trail = (() => {
   }));
   m.frustumCulled = false; scene.add(m); return { m, pos, al, n: 0 };
 })();
-let cutIdx = 0;
 function startSlash() {
-  if (!soldier.ready || sword.slashT >= 0) return;
+  if (!soldier.ready) return;
   if (!sword.drawn) { sword.drawn = true; audio.draw(); }
-  sword.slashT = 0; sword.cutDone = false; trail.n = 0; audio.slash();
+  if (sword.combo < 0) { if ((sword.cool || 0) <= 0) beginSlash(soldier, 0); }
+  else if (sword.t > 0.3 && sword.combo < 2) sword.queued = true;   // chain the next cut
 }
+const _cv = new THREE.Vector3(), _ch = new THREE.Vector3(), _ce = new THREE.Vector3();
 function updateSword(dt) {
-  const tp = trail.pos, ta = trail.al;
-  if (sword.slashT >= 0) {
-    sword.slashT += dt / 0.55;
-    if (soldier.ready && sword.slashT > 0.12 && sword.slashT < 0.75) {
-      const h = soldier.drawn.userData.hilt.getWorldPosition(new THREE.Vector3()), e = soldier.drawn.userData.end.getWorldPosition(new THREE.Vector3());
-      tp.copyWithin(6, 0, (TRAIL_N - 1) * 6); tp.set([h.x, h.y, h.z, e.x, e.y, e.z], 0); trail.n = Math.min(TRAIL_N, trail.n + 1);
+  if (!soldier.ready) return;
+  tickSword(soldier, dt);
+  const tp = trail.pos, ta = trail.al, striking = isStriking(sword);
+  if (striking) {
+    const h = soldier.drawn.userData.hilt.getWorldPosition(_ch), e = soldier.drawn.userData.end.getWorldPosition(_ce);
+    const hb = _cv.lerpVectors(h, e, 0.45);
+    tp.copyWithin(6, 0, (TRAIL_N - 1) * 6); tp.set([hb.x, hb.y, hb.z, e.x, e.y, e.z], 0); trail.n = Math.min(TRAIL_N, trail.n + 1);
+    // grass is cut wherever the blade actually passes through it
+    for (const f of [0.5, 0.75, 1.0]) {
+      const q = _cv.lerpVectors(h, e, f), gy = terrainH(q.x, q.z);
+      if (q.y > gy + 0.9 || q.y < gy - 0.3) continue;
+      cutGrass(q.x, q.z, 0.3);
+      if (!sword.cutPlayed) { sword.cutPlayed = true; audio.cut(); }
+      if (Math.random() < 0.7) emit(new THREE.Vector3(q.x, gy + 0.3 + Math.random() * 0.3, q.z),
+        new THREE.Vector3((e.x - h.x) * 3 + (Math.random() - 0.5) * 1.5, 1.2 + Math.random() * 2, (e.z - h.z) * 3 + (Math.random() - 0.5) * 1.5), CLIP, 0.05 + Math.random() * 0.05, 1.3, 6, 0, 1, 0.85);
+      for (let i = 0; i < flowerPos.length; i += 2) if (Math.abs(flowerPos[i] - q.x) < 0.35 && Math.abs(flowerPos[i + 1] - q.z) < 0.35)
+        emit(new THREE.Vector3(flowerPos[i], gy + 0.45, flowerPos[i + 1]), new THREE.Vector3((Math.random() - 0.5) * 2.5, 1 + Math.random() * 2, (Math.random() - 0.5) * 2.5), RED, 0.05, 2.2, 2.5, 0, 1, 0.6);
     }
-    if (!sword.cutDone && sword.slashT > 0.42) {
-      sword.cutDone = true;
-      const yaw = player.mounted ? hs.yaw : player.yaw, cx = player.pos.x + Math.sin(yaw) * 1.3, cz = player.pos.z + Math.cos(yaw) * 1.3;
-      SH.uCuts.value[cutIdx++ % 16].set(cx, cz, 1.45, 1);
-      audio.cut();
-      for (let i = 0; i < 26; i++) {
-        const a = Math.random() * 6.28, r = Math.random() * 1.3, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-        emit(new THREE.Vector3(x, terrainH(x, z) + 0.3 + Math.random() * 0.4, z),
-          new THREE.Vector3(Math.sin(yaw + 1.6) * 2 + (Math.random() - 0.5) * 2, 1.5 + Math.random() * 2.5, Math.cos(yaw + 1.6) * 2 + (Math.random() - 0.5) * 2),
-          CLIP, 0.06 + Math.random() * 0.05, 1.4, 6, 0, 1, 0.8);
-      }
-      for (let i = 0; i < flowerPos.length; i += 2) {
-        if (Math.hypot(flowerPos[i] - cx, flowerPos[i + 1] - cz) < 1.45)
-          for (let k = 0; k < 4; k++) emit(new THREE.Vector3(flowerPos[i], terrainH(flowerPos[i], flowerPos[i + 1]) + 0.45, flowerPos[i + 1]),
-            new THREE.Vector3((Math.random() - 0.5) * 2.5, 1 + Math.random() * 2, (Math.random() - 0.5) * 2.5), RED, 0.05, 2.2, 2.5, 0, 1, 0.6);
-      }
-    }
-    if (sword.slashT >= 1) sword.slashT = -1;
+    if (typeof enemies !== 'undefined') swordHits(soldier, enemies, hitEnemy);
   }
   for (let i = 0; i < TRAIL_N; i++) {
     const fresh = i < trail.n ? Math.pow(1 - i / TRAIL_N, 1.5) : 0;
-    ta[i * 2] = ta[i * 2 + 1] = Math.max(0, Math.min(ta[i * 2] - dt * 3.5, fresh * 0.85));
-    if (sword.slashT >= 0 && i < trail.n) { ta[i * 2] = fresh * 0.1; ta[i * 2 + 1] = fresh * 0.85; }
+    if (striking && i < trail.n) { ta[i * 2] = fresh * 0.04; ta[i * 2 + 1] = fresh * 0.5; }
+    else { ta[i * 2] = Math.max(0, ta[i * 2] - dt * 4); ta[i * 2 + 1] = Math.max(0, ta[i * 2 + 1] - dt * 4); }
   }
-  if (sword.slashT < 0) for (let i = 0; i < ta.length; i++) ta[i] = Math.max(0, ta[i] - dt * 4);
   trail.m.geometry.attributes.position.needsUpdate = true; trail.m.geometry.attributes.aA.needsUpdate = true;
 }
 
@@ -1695,14 +2115,427 @@ gltfLoader.load(MODEL_BASE + 'Stork.glb', g => {
     const mixer = new THREE.AnimationMixer(m);
     mixer.clipAction(g.animations[0]).setDuration(1.1 + Math.random() * 0.3).startAt(-Math.random()).play();
     scene.add(m);
-    cranes.push({ m, mixer, r: 50 + Math.random() * 70, h: 20 + Math.random() * 22, a: Math.random() * 6.28, sp: (6 + Math.random() * 3) * (i % 3 === 0 ? -1 : 1), ph: Math.random() * 6 });
+    cranes.push({ m, mixer, r: 90 + Math.random() * 110, h: 30 + Math.random() * 25, a: Math.random() * 6.28, sp: (6 + Math.random() * 3) * (i % 3 === 0 ? -1 : 1), ph: Math.random() * 6 });
   }
 }, undefined, e => console.warn('Stork model failed to load', e));
+
+// ─────────────────────────── Enemies: ronin bandits ───────────────────────────
+// Same motion-captured warrior, dark lacquer armour and straw hats. They wander near their camp, draw and close
+// in when you come near, telegraph a slower cut, stagger when hit and fall after three blows.
+const enemies = [];
+let hitStop = 0, lastHurt = -99;
+Object.assign(player, { hp: 100, maxHp: 100, invuln: 0, dead: false });
+const playerTarget = { get alive() { return !player.dead; }, pos: player.pos };
+const hpEl = document.getElementById('hpfill'), hpBox = document.getElementById('hp'), hurtEl = document.getElementById('hurt');
+function campSpots() {
+  const at = (ri, f, side) => { const rp = pathPts.filter(p => p[3] === ri), p = rp[Math.floor(rp.length * f)], q = rp[Math.min(rp.length - 1, Math.floor(rp.length * f) + 4)];
+    const tx = q[0] - p[0], tz = q[1] - p[1], tl = Math.hypot(tx, tz) || 1; return { x: p[0] - tz / tl * side, z: p[1] + tx / tl * side }; };
+  return [at(1, 0.16, 5), at(1, 0.2, -4), at(4, 0.55, 5), at(4, 0.6, -4), at(3, 0.88, 4)];
+}
+function spawnEnemies() {
+  if (!soldierGLTF || enemies.length) return;
+  campSpots().forEach((home, i) => {
+    const w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, 'bandit');
+    const root = new THREE.Group(); root.add(w.rig); scene.add(root);
+    const mats = []; w.rig.traverse(o => { if (o.isMesh && o.material && !mats.includes(o.material)) mats.push(o.material); });
+    const bar = document.createElement('div'); bar.className = 'ebar'; bar.innerHTML = '<div></div>'; document.body.appendChild(bar);
+    const e = Object.assign(w, { root, mats, bar, home: new THREE.Vector3(home.x, 0, home.z), pos: new THREE.Vector3(home.x, terrainH(home.x, home.z), home.z),
+      vel: new THREE.Vector3(), yaw: Math.random() * 6.28, hp: 3, maxHp: 3, alive: true, state: 'idle', wander: null, wait: Math.random() * 3,
+      atkCool: 1 + Math.random(), stagger: 0, flash: 0, deathT: 0, idx: i });
+    e.onSlash = (k, sl) => { audio.slash(0.75); e.vel.x += Math.sin(e.yaw) * sl.lunge * 0.45; e.vel.z += Math.cos(e.yaw) * sl.lunge * 0.45; };
+    e.stamp = () => { if (e.alive) stampFeet(e.B, e.vel.x, e.vel.z); };
+    enemies.push(e);
+  });
+  window.__enemies = enemies;
+}
+function resetEnemy(e) {
+  Object.assign(e, { hp: e.maxHp, alive: true, state: 'idle', stagger: 0, deathT: 0, wander: null, atkCool: 1.5 });
+  e.pos.set(e.home.x, terrainH(e.home.x, e.home.z), e.home.z); e.vel.set(0, 0, 0);
+  e.rig.rotation.set(0, 0, 0); e.rig.position.set(0, 0, 0); e.root.visible = true; e.sw.combo = -1; e.sw.drawn = false;
+}
+function hitEnemy(e, dmg, p) {
+  e.hp -= dmg; e.flash = 1; e.stagger = 0.5; e.sw.combo = -1; e.state = 'chase';
+  const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, dl = Math.hypot(dx, dz) || 1;
+  e.vel.x = dx / dl * 4.5; e.vel.z = dz / dl * 4.5;
+  hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.hit();
+  for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
+  for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
+  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast('RONIN DEFEATED', 1600); }
+}
+function hitPlayer(tg, dmg, p) {
+  if (player.invuln > 0 || player.dead) return;
+  player.hp -= 16 * dmg; player.invuln = 0.6; lastHurt = clock.elapsedTime;
+  shake = Math.min(1.2, shake + 0.5); audio.hurt(); hurtEl.style.opacity = 0.9; setTimeout(() => hurtEl.style.opacity = 0, 160);
+  if (!player.mounted) { const dx = player.pos.x - p.x, dz = player.pos.z - p.z, dl = Math.hypot(dx, dz) || 1; player.vel.x += dx / dl * 4; player.vel.z += dz / dl * 4; }
+  if (player.hp <= 0) playerDown();
+}
+function playerDown() {
+  player.dead = true; player.hp = 0; toast('YOU HAVE FALLEN', 2200); fadeEl.style.opacity = 1;
+  setTimeout(() => {
+    if (player.mounted) toggleMount();
+    player.pos.set(spawnPt[0], terrainH(spawnPt[0], spawnPt[1]), spawnPt[1]); player.vel.set(0, 0, 0);
+    hs.pos.set(spawnPt[0] + 2.5, 0, spawnPt[1] + 1.5); hs.speed = 0;
+    player.hp = player.maxHp; player.dead = false; enemies.forEach(resetEnemy);
+    fadeEl.style.opacity = 0;
+  }, 1800);
+}
+function moveEnemy(e, dt, dirX, dirZ, speed) {
+  const accel = e.stagger > 0 ? 0 : 9, tx = dirX * speed, tz = dirZ * speed;
+  const ax = tx - e.vel.x, az = tz - e.vel.z, al = Math.hypot(ax, az), st = Math.min(al, accel * dt);
+  if (al > 1e-5) { e.vel.x += ax / al * st; e.vel.z += az / al * st; }
+  if (e.stagger > 0 || speed === 0) { const k = Math.exp(-dt * 6); e.vel.x *= k; e.vel.z *= k; }
+  const nx = e.pos.x + e.vel.x * dt, nz = e.pos.z + e.vel.z * dt;
+  if (walkable(nx, e.pos.z)) e.pos.x = nx; else e.vel.x = 0;
+  if (walkable(e.pos.x, nz)) e.pos.z = nz; else e.vel.z = 0;
+  const others = enemies.filter(o => o !== e && o.alive).map(o => ({ x: o.pos.x, z: o.pos.z, r: 0.4 }));
+  if (!player.mounted) others.push({ x: player.pos.x, z: player.pos.z, r: 0.4 });
+  collideCircles(e.pos, 0.38, e.vel, others);
+  e.pos.y = terrainH(e.pos.x, e.pos.z);
+}
+function updateEnemy(e, dt, t) {
+  const dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, dP = Math.hypot(dx, dz);
+  if (!e.alive) {
+    e.deathT += dt; e.vel.multiplyScalar(Math.exp(-dt * 4)); moveEnemy(e, dt, 0, 0, 0);
+    if (e.deathT > 25) resetEnemy(e);
+  } else if (e.stagger > 0) {
+    e.stagger -= dt; moveEnemy(e, dt, 0, 0, 0);
+  } else {
+    const fromHome = Math.hypot(player.pos.x - e.home.x, player.pos.z - e.home.z);
+    const engaged = !player.dead && dP < (e.state === 'chase' ? 24 : 15) && fromHome < 48;
+    if (engaged) {
+      if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); }
+      e.sw.drawn = true;
+      const want = Math.atan2(dx, dz); e.yaw += angDiff(e.yaw, want) * Math.min(1, dt * (e.sw.combo >= 0 ? 2 : 7));
+      if (e.sw.combo >= 0) moveEnemy(e, dt, 0, 0, 0);
+      else if (dP > 2.0) moveEnemy(e, dt, dx / dP, dz / dP, dP > 6 ? 3.7 : 1.8);
+      else {
+        const side = Math.sin(t * 0.7 + e.idx) > 0 ? 1 : -1;            // circle while waiting to strike
+        moveEnemy(e, dt, -dz / dP * side, dx / dP * side, 0.7);
+        e.atkCool -= dt;
+        if (e.atkCool <= 0 && Math.abs(angDiff(e.yaw, want)) < 0.4) { beginSlash(e, Math.floor(Math.random() * 3)); e.atkCool = 1.5 + Math.random() * 1.3; }
+      }
+    } else {
+      if (e.state === 'chase') { e.state = 'idle'; e.sw.drawn = false; e.wander = null; }
+      e.wait -= dt;
+      if (!e.wander && e.wait <= 0) { const a = Math.random() * 6.28, r = Math.random() * 6; e.wander = { x: e.home.x + Math.cos(a) * r, z: e.home.z + Math.sin(a) * r }; }
+      if (e.wander) {
+        const wx = e.wander.x - e.pos.x, wz = e.wander.z - e.pos.z, wd = Math.hypot(wx, wz);
+        if (wd < 0.6) { e.wander = null; e.wait = 2 + Math.random() * 4; moveEnemy(e, dt, 0, 0, 0); }
+        else { e.yaw += angDiff(e.yaw, Math.atan2(wx, wz)) * Math.min(1, dt * 4); moveEnemy(e, dt, wx / wd, wz / wd, 1.1); }
+      } else moveEnemy(e, dt, 0, 0, 0);
+    }
+  }
+  tickSword(e, dt * 0.62);                                              // bandits cut slower: you can see it coming
+  if (e.alive && e.stagger <= 0) swordHits(e, [playerTarget], hitPlayer);
+}
+function animateEnemy(e, dt) {
+  const spd = Math.hypot(e.vel.x, e.vel.z), sw = e.sw, atk = sw.combo >= 0 ? smooth(0, 0.15, sw.t) * (1 - smooth(0.85, 1, sw.t)) : 0;
+  if (e.alive) {
+    const walkW = smooth(0.15, 1.2, spd) * (1 - smooth(2.4, 4.5, spd)) * (1 - atk), runW = smooth(2.4, 4.5, spd) * (1 - atk);
+    e.act.Idle.setEffectiveWeight(1 - walkW - runW); e.act.Walk.setEffectiveWeight(walkW); e.act.Run.setEffectiveWeight(runW);
+    e.act.Walk.timeScale = Math.max(0.6, spd / 1.6); e.act.Run.timeScale = Math.max(0.7, spd / 5);
+    e.mixer.update(dt);
+  }
+  e.root.position.copy(e.pos); e.root.rotation.set(0, e.yaw, 0);
+  if (!e.alive) { // topple backwards, then sink away
+    const k = smooth(0, 0.7, e.deathT);
+    e.rig.rotation.x = -1.45 * k; e.rig.position.y = 0.12 * k - smooth(8, 12, e.deathT) * 0.8;
+    e.root.visible = e.deathT < 12;
+  } else { e.rig.rotation.set(e.stagger > 0 ? -0.18 * smooth(0, 0.5, e.stagger) : 0, 0, 0); e.rig.position.y = -0.07 * atk; }
+  e.root.updateMatrixWorld(true);
+  if (e.alive) { applySwordPose(e, sw.last, sw.drawT); lungeLegs(e, sw); }
+  updateArmour(e);
+  e.drawn.visible = sw.drawT > 0.25; e.handle.visible = !e.drawn.visible;
+  e.flash = Math.max(0, e.flash - dt * 5);
+  for (const m of e.mats) { if (m.emissive) { m.emissive.setRGB(0.9 * e.flash, 0.08 * e.flash, 0.02 * e.flash); } }
+}
+const _eb = new THREE.Vector3();
+function updateEnemies(dt, t) {
+  if (!enemies.length) return;
+  player.invuln = Math.max(0, player.invuln - dt);
+  if (!player.dead && player.hp < player.maxHp && clock.elapsedTime - lastHurt > 5) player.hp = Math.min(player.maxHp, player.hp + 7 * dt);
+  for (const e of enemies) {
+    const near = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z) < 70;
+    if (near || e.state === 'chase') { updateEnemy(e, dt, t); animateEnemy(e, dt); }
+    // floating health bar once hurt
+    const show = e.alive && e.hp < e.maxHp && near && e.root.visible;
+    if (show) {
+      _eb.set(e.pos.x, e.pos.y + 2.15, e.pos.z).project(camera);
+      if (_eb.z < 1) { e.bar.style.display = 'block'; e.bar.style.left = ((_eb.x * 0.5 + 0.5) * innerWidth - 30) + 'px'; e.bar.style.top = ((-_eb.y * 0.5 + 0.5) * innerHeight) + 'px'; e.bar.firstChild.style.width = (e.hp / e.maxHp * 100) + '%'; }
+      else e.bar.style.display = 'none';
+    } else e.bar.style.display = 'none';
+  }
+  hpEl.style.width = (player.hp / player.maxHp * 100) + '%';
+  hpBox.style.opacity = player.hp < player.maxHp - 0.5 ? 1 : 0.25;
+}
+function toast(text, ms = 2000) { toastEl.textContent = text; toastEl.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.style.opacity = 0, ms); }
+
+// ─────────────────────────── Flora & props: red maples, bamboo grove, lanterns, shrine, campfires ───────────────────────────
+const FLORA = { uTime: SH.uTime, uSunView: { value: new THREE.Vector3() }, uSunCol: SH.uSunCol };
+function rng32(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function canvasTex(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO; return t; }
+const mapleLeafTex = canvasTex(128, (x, S) => {   // seven-lobed momiji leaf with veins
+  x.translate(S / 2, S * 0.56); x.fillStyle = '#fff'; x.beginPath();
+  for (let i = 0; i <= 280; i++) {
+    const a = i / 280 * Math.PI * 2 - Math.PI / 2, lobe = Math.pow(Math.abs(Math.cos(a * 3.5)), 0.7), back = a > 0.6 && a < 2.55 ? 0.35 : 1;
+    const r = S * 0.46 * (0.32 + 0.68 * lobe) * back * (1 - 0.12 * Math.sin(a * 21) * lobe);
+    i ? x.lineTo(Math.cos(a) * r, Math.sin(a) * r) : x.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  x.fill(); x.strokeStyle = 'rgba(120,120,120,0.55)'; x.lineWidth = 1.4;
+  for (let k = 0; k < 7; k++) { const a = -Math.PI / 2 + (k - 3) * 0.9; x.beginPath(); x.moveTo(0, 0); x.lineTo(Math.cos(a) * S * 0.4, Math.sin(a) * S * 0.4); x.stroke(); }
+  x.beginPath(); x.moveTo(0, 0); x.lineTo(0, S * 0.36); x.stroke();
+});
+const bambooLeafTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); x.ellipse(S / 2, S / 2, S * 0.1, S * 0.48, 0, 0, Math.PI * 2); x.fill(); x.strokeStyle = 'rgba(140,140,140,0.6)'; x.beginPath(); x.moveTo(S / 2, 2); x.lineTo(S / 2, S - 2); x.stroke(); });
+const texBark = makeTex(256, (u, v) => {
+  const fiss = Math.pow(Math.abs(Math.sin((u * 9 + pfbm(u, v, 4, 3) * 1.5) * Math.PI)), 3), n = pfbm(u, v, 8, 4);
+  const k = 0.12 + 0.1 * n - fiss * 0.07; return [k * 1.0, k * 0.85, k * 0.75, n * 0.5 - fiss * 0.6];
+}, [1, 2], 5);
+const texBamboo = makeTex(256, (u, v) => {
+  const node = fract(v * 6), ring = 1 - smooth(0.0, 0.05, node) * smooth(0.0, 0.05, 1 - node), str = pnoise(u * 60, v * 4, 60, 4), n = pfbm(u, v, 4, 3);
+  const g = 0.32 + 0.1 * n + 0.04 * str - ring * 0.12;
+  return [g * 0.62 + ring * 0.08, g * 0.78, g * 0.3, ring * 0.9 + str * 0.15];
+}, [1, 3], 4);
+// Foliage shader bits: sway in the wind (world space, from the plant's base) and glow when the sun is behind it
+function foliageMaterial(map, extra = {}) {
+  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, ...extra });
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, FLORA);
+    sh.vertexShader = 'uniform float uTime; attribute vec4 aSway;\n' + sh.vertexShader.replace('#include <project_vertex>', `
+      vec4 wpos = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+      float hgt = clamp((wpos.y - aSway.z) / aSway.w, 0.0, 1.3);
+      vec2 ph = aSway.xy * 0.13;
+      vec2 sway = vec2(sin(uTime * 0.9 + ph.x) + 0.5 * sin(uTime * 2.3 + ph.y), cos(uTime * 0.75 + ph.y) * 0.6) * 0.22 * hgt * hgt;
+      sway += vec2(sin(uTime * 5.0 + wpos.x * 3.0 + wpos.y * 2.0), cos(uTime * 4.3 + wpos.z * 3.0)) * 0.025 * hgt;  // leaf flutter
+      wpos.xz += sway;
+      vec4 mvPosition = viewMatrix * wpos;
+      gl_Position = projectionMatrix * mvPosition;`);
+    sh.fragmentShader = 'uniform vec3 uSunView; uniform vec3 uSunCol;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
+      float backlit = pow(max(dot(normalize(-vViewPosition), uSunView), 0.0), 4.0);
+      outgoingLight += diffuseColor.rgb * uSunCol * backlit * 0.55;
+      #include <opaque_fragment>`);
+  };
+  return m;
+}
+const leafDepth = map => new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.45 });
+const swayAttr = (arr) => new THREE.InstancedBufferAttribute(new Float32Array(arr), 4);
+
+// ── Red Japanese maples ──
+const mapleSpots = [];
+{
+  const okSpot = (x, z, gap) => sampleHM(x, z, 0) > 1.1 && pathMask(x, z) < 0.05 && Math.hypot(x, z) < 78 && mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
+  const tryAround = (cx, cz, r, n, gap, seed) => { const R = rng32(seed); for (let i = 0; i < 400 && n > 0; i++) { const a = R() * 6.28, d = Math.sqrt(R()) * r, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d; if (okSpot(x, z, gap)) { mapleSpots.push([x, z]); n--; } } };
+  tryAround(52, 8, 22, 9, 6.5, 11);                                               // maple grove in the east
+  const sp = routePts(2), end = sp[sp.length - 1]; tryAround(end[0], end[1], 12, 3, 6, 22);  // around the shrine
+  tryAround(spawnPt[0], spawnPt[1], 20, 3, 8, 33);                    // a few near the start
+  tryAround(0, 0, 70, 6, 14, 44);                                                 // scattered singles
+}
+const mapleClusters = [];
+window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
+{
+  const barkM = TM(texBark, 0.9);
+  const leafGeo = new THREE.PlaneGeometry(1, 1); leafGeo.translate(0, 0.5, 0);
+  const leafMat = foliageMaterial(mapleLeafTex);
+  const leafM = [], leafC = [], sway = [];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), col = new THREE.Color();
+  mapleSpots.forEach(([tx, tz], ti) => {
+    const R = rng32(1000 + ti * 77), parts = [], clusters = [];
+    const tube = (a, b, c, r0, r1) => {
+      const curve = new THREE.QuadraticBezierCurve3(a, b, c), TS = 6, RS = 7, g = new THREE.TubeGeometry(curve, TS, 1, RS, false), pos = g.attributes.position, P = new THREE.Vector3(), V = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) { const t = Math.floor(i / (RS + 1)) / TS; curve.getPoint(t, P); V.fromBufferAttribute(pos, i).sub(P).multiplyScalar(lerp(r0, r1, t)).add(P); pos.setXYZ(i, V.x, V.y, V.z); }
+      g.deleteAttribute('uv'); const uv = new Float32Array(pos.count * 2); for (let i = 0; i < pos.count; i++) { uv[i * 2] = (i % (RS + 1)) / RS; uv[i * 2 + 1] = Math.floor(i / (RS + 1)) / TS * curve.getLength() * 0.6; }
+      g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.computeVertexNormals(); parts.push(g);
+    };
+    const rv = s => new THREE.Vector3((R() - 0.5) * s, (R() - 0.5) * s, (R() - 0.5) * s);
+    const branch = (p, dir, len, r, depth) => {
+      const end = p.clone().addScaledVector(dir, len), mid = p.clone().lerp(end, 0.5).add(rv(len * 0.25));
+      tube(p, mid, end, r, r * 0.68);
+      if (depth >= 3 || len < 0.45) { clusters.push(end); return; }
+      if (depth >= 2) clusters.push(mid.clone());
+      const n = depth === 0 ? 4 : 2 + (R() < 0.45 ? 1 : 0), perp0 = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
+      for (let k = 0; k < n; k++) {
+        const az = (k / n) * Math.PI * 2 + R() * 0.8, tilt = depth === 0 ? 0.75 + R() * 0.2 : 0.4 + R() * 0.4;
+        const perp = perp0.clone().applyAxisAngle(dir, az), nd = dir.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(perp, Math.sin(tilt));
+        nd.y = nd.y * 0.75 + 0.12; nd.normalize();
+        branch(end, nd, len * (0.66 + R() * 0.16), r * 0.6, depth + 1);
+      }
+    };
+    branch(new THREE.Vector3(0, -0.3, 0), new THREE.Vector3((R() - 0.5) * 0.3, 1, (R() - 0.5) * 0.3).normalize(), 2.3 + R() * 0.7, 0.26 + R() * 0.06, 0);
+    const ty = terrainH(tx, tz), trunk = new THREE.Mesh(mergeGeometries(parts), barkM);
+    trunk.position.set(tx, ty, tz); trunk.rotation.y = R() * 6.28; trunk.castShadow = trunk.receiveShadow = true; scene.add(trunk);
+    trunk.updateMatrixWorld(true);
+    COLLIDERS_INIT.push({ x: tx, z: tz, r: 0.32 });
+    const hue = R();
+    for (const c of clusters) {
+      const wc = c.clone().applyMatrix4(trunk.matrixWorld); mapleClusters.push(wc);
+      for (let k = 0; k < (LOW ? 90 : 170); k++) {
+        const o = new THREE.Vector3((R() - 0.5) * 2, (R() - 0.35) * 1.1, (R() - 0.5) * 2); if (o.length() > 1) o.normalize();
+        const p = wc.clone().add(o.multiply(sc.set(1.35, 0.75, 1.35)));
+        q.setFromEuler(e.set(-1.2 + R() * 0.9, R() * 6.28, (R() - 0.5) * 0.8)); const s = 0.21 + R() * 0.12;
+        leafM.push(m4.compose(p, q, sc.set(s, s, s)).clone());
+        col.setHSL((0.975 + R() * 0.05 + hue * 0.02) % 1, 0.82, 0.24 + R() * 0.16); if (R() < 0.1) col.setHSL(0.05, 0.9, 0.38); leafC.push(col.clone());
+        sway.push(tx, tz, ty, 6);
+      }
+    }
+  });
+  const im = new THREE.InstancedMesh(leafGeo, leafMat, leafM.length);
+  leafM.forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, leafC[i]); });
+  leafGeo.setAttribute('aSway', swayAttr(sway));
+  im.customDepthMaterial = leafDepth(mapleLeafTex); im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; scene.add(im);
+}
+// falling maple leaves drifting down under the canopies
+const fallingLeaves = (() => {
+  const N = 260, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), vel = [];
+  for (let i = 0; i < N; i++) { pos[i * 3 + 1] = -100; const c = new THREE.Color().setHSL(Math.random() * 0.05, 0.85, 0.35 + Math.random() * 0.15); col.set([c.r, c.g, c.b], i * 3); vel.push(Math.random() * 6.28); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.16, map: mapleLeafTex, alphaTest: 0.4, vertexColors: true }));
+  m.frustumCulled = false; scene.add(m); m.userData.ph = vel; return m;
+})();
+function updateFallingLeaves(dt, t) {
+  if (!mapleClusters.length) return;
+  const a = fallingLeaves.geometry.attributes.position.array, ph = fallingLeaves.userData.ph;
+  for (let i = 0; i < a.length; i += 3) {
+    const k = i / 3, gy = a[i + 1] > -50 ? terrainH(a[i], a[i + 2]) : 0;
+    if (a[i + 1] < gy + 0.03) {
+      if (Math.random() < 0.02) { const c = mapleClusters[Math.floor(Math.random() * mapleClusters.length)]; if (Math.hypot(c.x - player.pos.x, c.z - player.pos.z) < 60) { a[i] = c.x + (Math.random() - 0.5) * 2; a[i + 1] = c.y; a[i + 2] = c.z + (Math.random() - 0.5) * 2; } }
+      continue;
+    }
+    a[i] += (Math.sin(t * 1.7 + ph[k]) * 0.6 + 0.35) * dt; a[i + 2] += (Math.cos(t * 1.3 + ph[k]) * 0.6 + 0.12) * dt; a[i + 1] -= (0.55 + 0.25 * Math.sin(t * 3 + ph[k])) * dt;
+  }
+  fallingLeaves.geometry.attributes.position.needsUpdate = true;
+}
+
+// ── Bamboo grove along the north-western path ──
+{
+  const rp = routePts(3), c0 = rp[Math.floor(rp.length * 0.75)], gx = c0[0], gz = c0[1], R = rng32(5150);
+  const stalks = [];
+  window.__flora = Object.assign(window.__flora || {}, { bamboo: [gx, gz] });
+  for (let i = 0; i < 12000 && stalks.length < (LOW ? 220 : 440); i++) {
+    const a = R() * 6.28, d = Math.sqrt(R()) * 24, x = gx + Math.cos(a) * d * 1.2, z = gz + Math.sin(a) * d;
+    if (sampleHM(x, z, 0) < 0.9 || pathMask(x, z) > 0.15) continue;
+    if (fbm(x * 0.12, z * 0.12) < 0.42 && R() < 0.6) continue;                     // clumps and clearings
+    if (stalks.some(s => Math.hypot(s[0] - x, s[1] - z) < 0.4)) continue;
+    stalks.push([x, z, 0.05 + R() * 0.04, 8 + R() * 5, (R() - 0.5) * 0.1, (R() - 0.5) * 0.1]);
+  }
+  const sGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1); sGeo.translate(0, 0.5, 0);
+  const sMat = foliageMaterial(null, { alphaTest: 0, side: THREE.FrontSide, map: texBamboo.map, normalMap: texBamboo.normalMap, roughness: 0.45 });
+  const stalkIM = new THREE.InstancedMesh(sGeo, sMat, stalks.length), sway = [];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+  const lM = [], lSway = [], lC = [], col = new THREE.Color();
+  stalks.forEach(([x, z, r, h, lx, lz], i) => {
+    const y = terrainH(x, z) - 0.1;
+    stalkIM.setMatrixAt(i, m4.compose(p.set(x, y, z), q.setFromEuler(e.set(lx, 0, lz)), sc.set(r, h, r)));
+    sway.push(x, z, y, h); COLLIDERS_INIT.push({ x, z, r: r + 0.1 });
+    for (let k = 0; k < (LOW ? 40 : 75); k++) {   // leaves spray out from the upper half
+      const f = 0.45 + Math.pow(R(), 0.6) * 0.55, ly = y + h * f, a = R() * 6.28, out = 0.2 + R() * 0.9;
+      p.set(x - Math.sin(lz) * h * f + Math.cos(a) * out, ly - out * 0.3, z + Math.cos(lz) * Math.sin(lx) * h * f + Math.sin(a) * out);   // follow the stalk's lean
+      q.setFromEuler(e.set(1.1 + R() * 0.6, a + Math.PI / 2, (R() - 0.5) * 0.6)); const s = 0.32 + R() * 0.16;
+      lM.push(m4.compose(p, q, sc.set(s * 0.5, s, s)).clone()); lSway.push(x, z, y, h);
+      col.setHSL(0.2 + R() * 0.06, 0.55, 0.22 + R() * 0.1); lC.push(col.clone());
+    }
+  });
+  sGeo.setAttribute('aSway', swayAttr(sway));
+  stalkIM.castShadow = stalkIM.receiveShadow = true; stalkIM.frustumCulled = false; scene.add(stalkIM);
+  const lGeo = new THREE.PlaneGeometry(1, 1); lGeo.translate(0, 0.5, 0); lGeo.setAttribute('aSway', swayAttr(lSway));
+  const leafIM = new THREE.InstancedMesh(lGeo, foliageMaterial(bambooLeafTex), lM.length);
+  lM.forEach((m, i) => { leafIM.setMatrixAt(i, m); leafIM.setColorAt(i, lC[i]); });
+  leafIM.customDepthMaterial = leafDepth(bambooLeafTex); leafIM.castShadow = true; leafIM.frustumCulled = false; scene.add(leafIM);
+}
+
+// ── Stone lanterns (tōrō) beside the paths, a shrine above the torii, campfires at the bandit camps ──
+const lanternGlow = [];
+const stoneM = TM(texRock, 0.85);
+function stoneLantern(x, z, yaw) {
+  const g = new THREE.Group(), y = terrainH(x, z) - 0.05;
+  const add = (geo, py, mat = stoneM) => { const m = new THREE.Mesh(geo, mat); m.position.y = py; m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+  add(new THREE.CylinderGeometry(0.34, 0.4, 0.16, 6), 0.08);
+  add(new THREE.CylinderGeometry(0.11, 0.14, 0.75, 10), 0.53);
+  add(new THREE.CylinderGeometry(0.3, 0.22, 0.12, 6), 0.96);
+  const box = add(new THREE.CylinderGeometry(0.2, 0.2, 0.28, 6), 1.16);
+  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.05, 0.03, 0.01) });
+  add(new THREE.CylinderGeometry(0.15, 0.15, 0.2, 6), 1.16, glow).scale.set(1.02, 1, 1.02);
+  for (let k = 0; k < 2; k++) { const w = add(new THREE.BoxGeometry(0.42, 0.13, 0.08), 1.16, glow); w.rotation.y = k * Math.PI / 2; }
+  add(new THREE.ConeGeometry(0.46, 0.26, 6), 1.43);
+  add(new THREE.SphereGeometry(0.07, 10, 8), 1.6);
+  g.position.set(x, y, z); g.rotation.y = yaw; scene.add(g);
+  lanternGlow.push(glow); COLLIDERS_INIT.push({ x, z, r: 0.35 });
+}
+{
+  for (let ri = 0; ri < ROUTES.length; ri++) {
+    const rp = routePts(ri), step = ri === 2 ? 22 : 70;
+    for (let k = 30; k < rp.length - 10; k += step) {
+      const p = rp[k], q = rp[k + 4], tx = q[0] - p[0], tz = q[1] - p[1], tl = Math.hypot(tx, tz) || 1, side = (k / step) % 2 ? 1 : -1;
+      const x = p[0] - tz / tl * side * (p[2] * 1.6 + 1.0), z = p[1] + tx / tl * side * (p[2] * 1.6 + 1.0);
+      if (sampleHM(x, z, 0) > 0.8) stoneLantern(x, z, Math.atan2(tx, tz));
+    }
+  }
+}
+{ // shrine at the top of the torii path
+  const rp = routePts(2), p = rp[rp.length - 1], q = rp[rp.length - 8], yaw = Math.atan2(q[0] - p[0], q[1] - p[1]);
+  const fx = Math.sin(yaw), fz = Math.cos(yaw), cx = p[0] - fx * 2.5, cz = p[1] - fz * 2.5, y = terrainH(cx, cz);
+  const red = TM(texWood, 0.55), dark = TM(texLeather, 0.7), roofM = new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 0.6 });
+  const g = new THREE.Group(), add = (geo, mat, px, py, pz, rx = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(px, py, pz); m.rotation.set(rx, 0, rz); m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+  add(new THREE.BoxGeometry(3.6, 0.5, 3.2), stoneM, 0, 0.1, 0);
+  add(new THREE.BoxGeometry(2.6, 0.12, 2.2), dark, 0, 0.42, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(new THREE.CylinderGeometry(0.09, 0.1, 1.9, 10), red, sx * 1.15, 1.4, sz * 0.95);
+  add(new THREE.BoxGeometry(2.3, 1.5, 1.9), dark, 0, 1.25, -0.05);
+  add(new THREE.BoxGeometry(0.9, 1.2, 0.05), red, 0, 1.1, 0.92);
+  for (const s of [-1, 1]) add(new THREE.BoxGeometry(3.4, 0.08, 1.75), roofM, 0, 2.62, s * 0.78, s * 0.55);
+  add(new THREE.BoxGeometry(3.5, 0.12, 0.14), red, 0, 3.08, 0);
+  add(new THREE.BoxGeometry(0.8, 0.4, 0.5), red, 0, 0.66, 1.55);           // offering box
+  g.position.set(cx, y - 0.1, cz); g.rotation.y = yaw; scene.add(g);
+  COLLIDERS_INIT.push({ x: cx, z: cz, r: 1.8 });
+  window.__flora = Object.assign(window.__flora || {}, { shrine: [cx + fx * 9, y, cz + fz * 9, cx, cz] });
+  for (const s of [-1, 1]) stoneLantern(cx + fx * 3.2 + fz * s * 1.9, cz + fz * 3.2 - fx * s * 1.9, yaw);
+}
+const campfires = [];
+function campfire(x, z) {
+  const y = terrainH(x, z), g = new THREE.Group();
+  const logM = TM(texBark, 0.9);
+  for (let k = 0; k < 5; k++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.8, 7), logM); l.rotation.set(1.15, k * 1.26, 0); l.position.set(Math.sin(k * 1.26) * 0.18, 0.18, Math.cos(k * 1.26) * 0.18); l.castShadow = true; g.add(l); }
+  for (let k = 0; k < 9; k++) { const s = new THREE.Mesh(rockGeo(0.12, 1, k), stoneM); s.position.set(Math.cos(k / 9 * 6.28) * 0.5, 0.04, Math.sin(k / 9 * 6.28) * 0.5); g.add(s); }
+  const fireTex = canvasTex(64, (c, S) => { const gr = c.createRadialGradient(S / 2, S * 0.7, 0, S / 2, S * 0.6, S / 2); gr.addColorStop(0, 'rgba(255,240,200,1)'); gr.addColorStop(0.35, 'rgba(255,150,40,0.9)'); gr.addColorStop(1, 'rgba(255,60,0,0)'); c.fillStyle = gr; c.fillRect(0, 0, S, S); });
+  const flames = [];
+  for (let k = 0; k < 3; k++) { const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTex, color: new THREE.Color(3, 1.6, 0.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); f.position.y = 0.35; g.add(f); flames.push(f); }
+  const light = new THREE.PointLight(0xff8a3a, 10, 10, 1.6); light.position.y = 0.6; g.add(light);
+  g.position.set(x, y, z); scene.add(g); COLLIDERS_INIT.push({ x, z, r: 0.55 });
+  campfires.push({ g, flames, light, x, y, z });
+}
+campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c.x + Math.cos(a) * 2.6, c.z + Math.sin(a) * 2.6); } });
+function updateFlora(dt, t) {
+  FLORA.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
+  updateFallingLeaves(dt, t);
+  const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
+  for (const m of lanternGlow) m.color.setRGB(0.05 + night * 2.6, 0.03 + night * 1.5, 0.01 + night * 0.5);
+  for (const c of campfires) {
+    c.flames.forEach((f, k) => { const s = 0.55 + 0.25 * Math.sin(t * (9 + k * 3) + k) + 0.1 * Math.sin(t * 23 + k); f.scale.set(s * 0.8, s * 1.2, 1); f.position.set(Math.sin(t * 5 + k) * 0.05, 0.3 + s * 0.25, Math.cos(t * 4 + k) * 0.05); });
+    c.light.intensity = (4 + Math.sin(t * 13) * 0.8 + Math.sin(t * 29) * 0.5) * (0.6 + night * 1.2);
+    if (Math.random() < dt * 6 && Math.hypot(c.x - player.pos.x, c.z - player.pos.z) < 50) emit(new THREE.Vector3(c.x, c.y + 0.5, c.z), new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.2 + Math.random(), (Math.random() - 0.5) * 0.4), SPARK, 0.03, 1.4, -0.2, 0, 1, 0.5);
+  }
+}
 
 // ─────────────────────────── Per-frame world update ───────────────────────────
 let stepDist = 0, hoofDist = 0, lastPos = new THREE.Vector3(), lastHorse = new THREE.Vector3(), hoofBeat = 0;
 const _v = new THREE.Vector3();
+const _fa = new THREE.Vector3(), _fb = new THREE.Vector3();
+function stampFeet(B, vx, vz) { // planted feet press the grass down in the direction of travel
+  const sp = Math.hypot(vx, vz);
+  for (const [foot, toe] of [[B.LeftFoot, B.LeftToeBase], [B.RightFoot, B.RightToeBase]]) {
+    const a = foot.getWorldPosition(_fa), b = toe.getWorldPosition(_fb), g = terrainH(a.x, a.z);
+    if (a.y - g > 0.17) continue;
+    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1;
+    if (sp > 0.2) { dx = vx / sp; dz = vz / sp; } else { dx = dx / dl * 0.3; dz = dz / dl * 0.3; }
+    trample((a.x + b.x) / 2, (a.z + b.z) / 2, dx, dz, 0.15);
+  }
+}
 function updateWorld(dt, t) {
+  // grass physics: feet and hooves fold the blades
+  if (!player.mounted) { if (soldier.ready) stampFeet(soldier.B, player.vel.x, player.vel.z); else trample(player.pos.x, player.pos.z, player.vel.x, player.vel.z, 0.3); }
+  { const fx = Math.sin(hs.yaw) * Math.sign(hs.speed || 1), fz = Math.cos(hs.yaw) * Math.sign(hs.speed || 1);
+    for (const l of horse.legs) { const p = l.lo.localToWorld(_fa.copy(l.hoof)); if (p.y - terrainH(p.x, p.z) < 0.15) trample(p.x, p.z, fx, fz, 0.17); } }
+  for (const e of (window.__enemies || [])) e.stamp?.();
+  updateTrample(dt, player.pos.x, player.pos.z);
+  updateEnemies(dt, t);
+  updateFlora(dt, t);
   // shadows into grass + flowers
   if (sun.shadow.map) { SH.uShadowMap.value = sun.shadow.map.texture; SH.uHasShadow.value = 1; }
   clouds.position.copy(camera.position);
@@ -1772,7 +2605,8 @@ function updateWorld(dt, t) {
 
 // ─────────────────────────── Post-processing ───────────────────────────
 const PASS_VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-const composer = new EffectComposer(renderer);
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: LOW ? 0 : 4 }));
+composer.setPixelRatio(renderer.getPixelRatio());
 composer.addPass(new RenderPass(scene, camera));
 const godRays = new ShaderPass({ // screen-space light shafts streaming from the sun / moon
   uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAmt: { value: 0 } },
@@ -1795,7 +2629,7 @@ const godRays = new ShaderPass({ // screen-space light shafts streaming from the
     }`,
 });
 composer.addPass(godRays);
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.7, 0.9);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.45, 3.0);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const finalPass = new ShaderPass({ // film look: lens fringing, gentle S-curve, grain
@@ -1805,10 +2639,10 @@ const finalPass = new ShaderPass({ // film look: lens fringing, gentle S-curve, 
     uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
-      vec2 c = vUv - 0.5; vec2 off = c * dot(c, c) * 0.012;
+      vec2 c = vUv - 0.5; vec2 off = c * dot(c, c) * 0.005;
       vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
       col = mix(col, col * col * (3.0 - 2.0 * col), 0.22) * vec3(1.02, 1.0, 0.97);
-      col += (h(vUv * 1000.0 + fract(uTime * 7.0) * 100.0) - 0.5) * 0.028;
+      col += (h(vUv * 1000.0 + fract(uTime * 7.0) * 100.0) - 0.5) * 0.012;
       gl_FragColor = vec4(col, 1.0);
     }`,
 });
@@ -1861,7 +2695,7 @@ function updatePlayer(dt, moving, wantYaw, sprint) {
   if (walkable(nx, p.pos.z)) p.pos.x = nx; else v.x *= -0.2;
   if (walkable(p.pos.x, nz)) p.pos.z = nz; else v.z *= -0.2;
   const hx = Math.sin(hs.yaw), hz = Math.cos(hs.yaw);
-  collideCircles(p.pos, 0.32, v, [{ x: hs.pos.x + hx * 0.5, z: hs.pos.z + hz * 0.5, r: 0.42 }, { x: hs.pos.x - hx * 0.45, z: hs.pos.z - hz * 0.45, r: 0.42 }]);
+  collideCircles(p.pos, 0.32, v, [{ x: hs.pos.x + hx * 0.5, z: hs.pos.z + hz * 0.5, r: 0.42 }, { x: hs.pos.x - hx * 0.45, z: hs.pos.z - hz * 0.45, r: 0.42 }, ...enemies.filter(e => e.alive).map(e => ({ x: e.pos.x, z: e.pos.z, r: 0.38 }))]);
   // vertical: gravity, ground snapping on slopes, landing
   const g = terrainH(p.pos.x, p.pos.z);
   p.pos.y += v.y * dt;
@@ -1939,7 +2773,7 @@ function update(dt, t) {
   camYaw += (lookYaw - camYaw) * ease; camPitch += (lookPitch - camPitch) * ease;
   const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   const r = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
-  const moving = started && (f !== 0 || r !== 0), sprint = keys.ShiftLeft || keys.ShiftRight;
+  const moving = started && !player.dead && (f !== 0 || r !== 0), sprint = keys.ShiftLeft || keys.ShiftRight;
   const wantYaw = Math.atan2(-r, f) + camYaw + Math.PI;
 
   if (player.mounted) {
@@ -1984,8 +2818,8 @@ function update(dt, t) {
 
   // Grass parts around feet and hooves
   SH.uTime.value = t;
-  SH.uPush0.value.set(player.pos.x, player.pos.z, 0.7, player.mounted ? 0 : 1);
-  SH.uPush1.value.set(hs.pos.x, hs.pos.z, 1.4, 1);
+  SH.uPush0.value.set(player.pos.x, player.pos.z, 0.45, player.mounted ? 0 : 0.7);
+  SH.uPush1.value.set(hs.pos.x, hs.pos.z, 0.8, 0.6);
   SH.uCenter.value.set(player.pos.x - Math.sin(camYaw) * 5, player.pos.z - Math.cos(camYaw) * 5); // carpets sit ahead of the camera
 
   // Third-person camera: spring follow, speed-dependent distance and FOV, look-ahead, shake
@@ -2046,13 +2880,14 @@ function adaptQuality(rawDt) {
   if (grassScale !== prev) grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * grassScale));
 }
 function loop() {
-  const raw = clock.getDelta(), dt = Math.min(raw, 0.05), t = clock.elapsedTime;
+  const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
+  if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
   update(dt, t);
   composer.render();
   requestAnimationFrame(loop);
 }
-window.__game = { dbg: { clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
+window.__game = { enemies, hitEnemy, beginSlash: k => beginSlash(soldier, k), terrainH, dbg: { scene, camera, clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
 loop();
 </script>
 </body>
