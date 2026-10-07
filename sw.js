@@ -1,5 +1,5 @@
 // Offline support: cache every game file on first visit, then serve from cache.
-const CACHE = 'kaze-no-shima-v7';
+const CACHE = 'kaze-no-shima-v8';
 const FILES = [
   './',
   './kaze-no-shima.html',
@@ -21,6 +21,7 @@ const FILES = [
   './vendor/three/examples/jsm/postprocessing/ShaderPass.js',
   './vendor/three/examples/jsm/postprocessing/UnrealBloomPass.js',
   './vendor/three/examples/jsm/shaders/CopyShader.js',
+  './vendor/three/examples/jsm/shaders/FXAAShader.js',
   './vendor/three/examples/jsm/shaders/LuminosityHighPassShader.js',
   './vendor/three/examples/jsm/shaders/OutputShader.js',
   './vendor/three/examples/jsm/utils/BufferGeometryUtils.js',
