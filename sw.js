@@ -1,8 +1,16 @@
 // Offline support: cache every game file on first visit, then serve from cache.
-const CACHE = 'kaze-no-shima-v2';
+const CACHE = 'kaze-no-shima-v3';
 const FILES = [
-  './', './kaze-no-shima.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
+  './',
+  './kaze-no-shima.html',
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon.svg',
+  './models/Soldier.glb',
+  './models/Stork.glb',
   './vendor/three/build/three.module.js',
+  './vendor/three/examples/jsm/loaders/GLTFLoader.js',
   './vendor/three/examples/jsm/objects/Sky.js',
   './vendor/three/examples/jsm/objects/Water.js',
   './vendor/three/examples/jsm/postprocessing/EffectComposer.js',
@@ -15,6 +23,7 @@ const FILES = [
   './vendor/three/examples/jsm/shaders/CopyShader.js',
   './vendor/three/examples/jsm/shaders/LuminosityHighPassShader.js',
   './vendor/three/examples/jsm/shaders/OutputShader.js',
+  './vendor/three/examples/jsm/utils/BufferGeometryUtils.js',
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
