@@ -664,8 +664,9 @@ function makeGrassMaterial(near, patch) {
       vec2 L = aOffset.xz;
       vec2 wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
       vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
-      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r)
-                 * (1.0 - smoothstep(uPatch * 0.3, uPatch * 0.47, distance(wxz, uCenter)));
+      // thin out blade-by-blade (dithered) towards the carpet edge, so there is no visible ring
+      float edgeFade = 1.0 - smoothstep(uPatch * 0.16, uPatch * 0.49, distance(wxz, uCenter));
+      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * step(fract(r * 7.31 + aParams.y * 3.17), edgeFade);
       vec3 root = vec3(wxz.x, hm.r - 0.02, wxz.y);
       h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.65 + 0.5 * h) * keep;
       #else
@@ -757,7 +758,7 @@ function makeCarpet(N, side, geo, wMin, wMax) {
   const m = new THREE.Mesh(g, makeGrassMaterial(true, side)); m.frustumCulled = false; scene.add(m); return m;
 }
 const nearGrass = makeCarpet(LOW ? 110000 : ULTRA ? 1100000 : 300000, 24, blade, 0.035, 0.06);
-const midGrass = makeCarpet(LOW ? 90000 : ULTRA ? 900000 : 220000, 64, blade3, 0.045, 0.075);
+const midGrass = makeCarpet(LOW ? 110000 : ULTRA ? 900000 : 260000, 92, blade3, 0.045, 0.075);
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
