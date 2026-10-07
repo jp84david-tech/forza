@@ -180,12 +180,12 @@ const groundTex = makeTex(LOW ? 512 : 1024, (u, v) => {
 // Horse coat: fine directional hair, soft dappling
 function coatTex(r, g, b) {
   return makeTex(512, (u, v) => {
-    const hair = pnoise(u * 180, v * 12, 180, 12), fine = pnoise(u * 400, v * 30, 400, 30), dap = pfbm(u, v, 5, 3);
-    const k = (0.72 + 0.38 * hair + 0.12 * fine) * (0.85 + 0.3 * dap);
+    const hair = pnoise(u * 300, v * 18, 300, 18), fine = pnoise(u * 700, v * 40, 700, 40), dap = pfbm(u, v, 5, 3);
+    const k = (0.84 + 0.18 * hair + 0.08 * fine) * (0.88 + 0.22 * dap);
     return [r * k, g * k, b * k, hair * 0.6 + fine * 0.4];
   }, [2, 2], 2.5);
 }
-const texHorse = coatTex(0.42, 0.22, 0.11), texSock = coatTex(0.78, 0.72, 0.62);
+const texHorse = coatTex(0.3, 0.155, 0.075), texSock = coatTex(0.78, 0.72, 0.62);
 const texMane = makeTex(256, (u, v) => { const s = pnoise(u * 90, v * 4, 90, 4); const k = 0.5 + 0.8 * s; return [0.07 * k, 0.05 * k, 0.035 * k, s]; }, [1, 1], 4);
 
 // Woven indigo kimono cloth
@@ -322,8 +322,9 @@ scene.add(moon);
 const sunCol = new THREE.Color(1.0, 0.72, 0.45);
 const sun = new THREE.DirectionalLight(sunCol, 5.5);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 120 });
+const SHADOW_RES = LOW ? 2048 : 4096;
+sun.shadow.mapSize.set(SHADOW_RES, SHADOW_RES);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 120 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 const hemi = new THREE.HemisphereLight(0xa9b8e0, 0x3a2a14, 0.9);
@@ -348,13 +349,14 @@ const NOISE_GLSL = /* glsl */`
   float fbm5(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise2(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
   float cloudShadowAt(vec2 xz, float t, float amt){ float n = fbm5(xz * 0.011 + t * vec2(0.03, 0.011)); return mix(1.0, 0.4, smoothstep(0.5, 0.66, n) * amt); }
 `;
-const SHADOW_GLSL = /* glsl */`
+const SHADOW_GLSL = `#define SHADOW_RES ${SHADOW_RES}
+` + /* glsl */`
   uniform sampler2D uShadowMap; uniform float uHasShadow;
   float sunVisibility(vec4 sc4){
     if (uHasShadow < 0.5) return 1.0;
     vec3 sc = sc4.xyz / sc4.w;
     if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
-    float s = 0.0; vec2 tx = vec2(1.0 / 2048.0);
+    float s = 0.0; vec2 tx = vec2(1.0 / float(SHADOW_RES));
     for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++)
       s += step(sc.z - 0.003, unpackRGBAToDepth(texture2D(uShadowMap, sc.xy + vec2(i, j) * tx * 1.5)));
     return s / 9.0;
@@ -369,7 +371,7 @@ const tGeo = new THREE.PlaneGeometry(TS, TS, TSEG, TSEG); tGeo.rotateX(-Math.PI 
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), z = p.getZ(i), h = terrainH(x, z); p.setY(i, h);
     const pm = pathMask(x, z), n = vnoise(x * 1.7, z * 1.7), n2 = fbm(x * 0.3, z * 0.3);
-    let r = 0.030 + 0.02 * n2, g = 0.040 + 0.02 * n2, b = 0.012;                // soil under grass
+    let r = 0.032 + 0.02 * n2, g = 0.058 + 0.03 * n2, b = 0.014;                // mossy soil under grass
     const dr = (0.15 + 0.06 * n) , dg = (0.095 + 0.04 * n), db = 0.055 + 0.02 * n;  // packed dirt
     r = lerp(r, dr, pm); g = lerp(g, dg, pm); b = lerp(b, db, pm);
     const s = 1 - smooth(0.45, 1.0, h);                                           // beach sand
@@ -449,6 +451,33 @@ scene.add(water);
   const foam = new THREE.Mesh(geo, foamMat); foam.renderOrder = 2; scene.add(foam);
 }
 
+const shallowMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  uniforms: { uTime: SH.uTime, uCol: { value: new THREE.Color(0.03, 0.3, 0.28) }, uBright: { value: 1 } },
+  vertexShader: `varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: NOISE_GLSL + /* glsl */`
+    uniform float uTime, uBright; uniform vec3 uCol; varying vec2 vUv; varying vec3 vW;
+    void main(){
+      float t = vUv.y, a = pow(1.0 - t, 1.7) * 0.62 * smoothstep(0.0, 0.06, t);
+      vec2 p = vW.xz * 0.8;
+      float c1 = vnoise2(p + uTime * vec2(0.3, 0.2)), c2 = vnoise2(p * 1.3 - uTime * vec2(0.25, 0.35));
+      float caus = pow(1.0 - abs(c1 - c2), 9.0);
+      vec3 col = uCol * (0.7 + 0.7 * (1.0 - t)) + vec3(0.7, 0.85, 0.65) * caus * (1.0 - t);
+      gl_FragColor = vec4(col * uBright, a);
+    }`,
+});
+{
+  const N = 512, pos = [], uv = [], idx = [];
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+    let lo = 20, hi = 90; for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
+    pos.push(dx * (lo - 1.5), 0.012, dz * (lo - 1.5), dx * (lo + 16), 0.012, dz * (lo + 16)); uv.push(i / N, 0, i / N, 1);
+    if (i < N) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  const m = new THREE.Mesh(g, shallowMat); m.renderOrder = 1; scene.add(m);
+}
+
 // ─────────────────────────── Grass ───────────────────────────
 const blade = new THREE.BufferGeometry();
 {
@@ -463,7 +492,7 @@ const grassGeo = new THREE.InstancedBufferGeometry();
 grassGeo.index = blade.index; grassGeo.attributes.position = blade.attributes.position;
 const offsets = [], prm = [];
 {
-  const CAND = LOW ? 520000 : 1350000;
+  const CAND = LOW ? 560000 : 1700000;
   for (let i = 0; i < CAND; i++) {
     const x = (Math.random() - 0.5) * 124, z = (Math.random() - 0.5) * 124;
     const h = terrainH(x, z); if (h < 0.5) continue;
@@ -479,13 +508,33 @@ const offsets = [], prm = [];
   grassGeo.setAttribute('aParams', new THREE.InstancedBufferAttribute(new Float32Array(prm), 4));
   grassGeo.instanceCount = offsets.length / 3;
 }
-const grassMat = new THREE.ShaderMaterial({
+// Terrain baked into a texture (height, path, shore, meadow patch) so the GPU can place grass anywhere
+const HM = LOW ? 256 : 512, HM_MIN = -90, HM_SIZE = 180;
+const hmTex = (() => {
+  const d = new Uint16Array(HM * HM * 4), th = THREE.DataUtils.toHalfFloat;
+  for (let j = 0; j < HM; j++) for (let i = 0; i < HM; i++) {
+    const x = HM_MIN + (i + 0.5) / HM * HM_SIZE, z = HM_MIN + (j + 0.5) / HM * HM_SIZE, h = terrainH(x, z), o = (j * HM + i) * 4;
+    d[o] = th(h); d[o + 1] = th(pathMask(x, z)); d[o + 2] = th(smooth(0.5, 1.3, h)); d[o + 3] = th(fbm(x * 0.05 + 40, z * 0.05));
+  }
+  const t = new THREE.DataTexture(d, HM, HM, THREE.RGBAFormat, THREE.HalfFloatType);
+  t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t;
+})();
+const PATCH = 34; // side of the dense grass carpet that travels with the player (metres)
+Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector2(HM_MIN, HM_SIZE) }, uCenter: { value: new THREE.Vector2() }, uPatch: { value: PATCH } });
+
+function makeGrassMaterial(near) {
+  return new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
+  defines: near ? { NEAR: '' } : {},
   uniforms: SH,
   vertexShader: /* glsl */`
     uniform float uTime; uniform vec4 uPush0; uniform vec4 uPush1; uniform vec4 uCuts[16]; uniform mat4 uShadowMatrix;
+    #ifdef NEAR
+    uniform sampler2D uHeightMap; uniform vec2 uHm; uniform vec2 uCenter; uniform float uPatch;
+    #endif
     attribute vec3 aOffset; attribute vec4 aParams;
     varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch; varying vec4 vShadowCoord; varying float vCut;
+    varying float vSide; varying vec3 vTng;
     vec2 pushFrom(vec4 P, vec2 root, float t, float h){
       vec2 d = root - P.xy; float l = length(d) + 1e-4;
       float f = (1.0 - smoothstep(P.z*0.35, P.z, l)) * P.w;
@@ -494,27 +543,39 @@ const grassMat = new THREE.ShaderMaterial({
     void main(){
       float t = position.y;
       float rot = aParams.x, h = aParams.y, w = aParams.z, r = aParams.w;
+      #ifdef NEAR
+      // blades wrap around a carpet centred on the player; each one stays put in the world
+      vec2 L = aOffset.xz;
+      vec2 wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
+      vec4 hm = texture2D(uHeightMap, (wxz - uHm.x) / uHm.y);
+      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r)
+                 * (1.0 - smoothstep(uPatch * 0.3, uPatch * 0.47, distance(wxz, uCenter)));
+      vec3 root = vec3(wxz.x, hm.r - 0.02, wxz.y);
+      h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.65 + 0.5 * h) * keep;
+      #else
+      vec3 root = aOffset;
+      #endif
       vCut = 0.0;
-      for (int i = 0; i < 16; i++) { vec4 c = uCuts[i]; if (c.w > 0.0 && distance(aOffset.xz, c.xy) < c.z * (0.85 + 0.3 * r)) vCut = 1.0; }
+      for (int i = 0; i < 16; i++) { vec4 c = uCuts[i]; if (c.w > 0.0 && distance(root.xz, c.xy) < c.z * (0.85 + 0.3 * r)) vCut = 1.0; }
       h *= mix(1.0, 0.16 + 0.08 * r, vCut);
-      float camD = distance(aOffset.xz, cameraPosition.xz);                    // part around a low camera
-      if (cameraPosition.y < aOffset.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
+      float camD = distance(root.xz, cameraPosition.xz);                    // part around a low camera
+      if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
       vec3 tng = vec3(cos(rot), 0.0, sin(rot));
       vec3 nrm = vec3(-tng.z, 0.0, tng.x);
-      vec3 wp = aOffset + tng * position.x * w * (1.0 - t * 0.85 * (1.0 - vCut * 0.8)) + vec3(0.0, t * h, 0.0);
+      vec3 wp = root + tng * position.x * w * (1.0 - t * 0.85 * (1.0 - vCut * 0.8)) + vec3(0.0, t * h, 0.0);
       wp += nrm * t * t * h * (0.18 + 0.35 * r);                    // natural curl
       vec2 wdir = normalize(vec2(1.0, 0.35));
-      float g = sin(dot(aOffset.xz, wdir) * 0.09 - uTime * 1.25) * 0.5 + 0.5;
-      float g2 = sin(dot(aOffset.xz, vec2(-0.3, 1.0)) * 0.21 - uTime * 2.1) * 0.5 + 0.5;
+      float g = sin(dot(root.xz, wdir) * 0.09 - uTime * 1.25) * 0.5 + 0.5;
+      float g2 = sin(dot(root.xz, vec2(-0.3, 1.0)) * 0.21 - uTime * 2.1) * 0.5 + 0.5;
       g = g * g * 0.8 + g2 * 0.2;
-      float flutter = sin(uTime * 4.0 + r * 30.0 + aOffset.x * 0.9) * 0.06;
+      float flutter = sin(uTime * 4.0 + r * 30.0 + root.x * 0.9) * 0.06;
       vec2 disp = wdir * (0.12 + g * 0.6 + flutter) * t * t * h;
-      disp += pushFrom(uPush0, aOffset.xz, t, h) + pushFrom(uPush1, aOffset.xz, t, h);
+      disp += pushFrom(uPush0, root.xz, t, h) + pushFrom(uPush1, root.xz, t, h);
       float dl = length(disp);
       wp.xz += disp;
       wp.y -= min(dl * dl / max(h, 0.05) * 0.6, t * h * 0.8);       // preserve blade length when bent
-      vT = t; vRand = r; vWorld = wp;
-      vPatch = smoothstep(0.35, 0.75, sin(aOffset.x * 0.07) * sin(aOffset.z * 0.06 + 1.3) * 0.5 + 0.5 + r * 0.15);
+      vT = t; vRand = r; vWorld = wp; vSide = position.x; vTng = tng;
+      vPatch = smoothstep(0.35, 0.75, sin(root.x * 0.07) * sin(root.z * 0.06 + 1.3) * 0.5 + 0.5 + r * 0.15);
       vN = normalize(nrm + vec3(disp.x, 0.0, disp.y) * 0.5);
       vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
       gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
@@ -522,48 +583,83 @@ const grassMat = new THREE.ShaderMaterial({
   fragmentShader: '#include <packing>\n' + SHADOW_GLSL + NOISE_GLSL + /* glsl */`
     uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt;
     varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch; varying vec4 vShadowCoord; varying float vCut;
+    varying float vSide; varying vec3 vTng;
     void main(){
       vec3 N = normalize(vN); if (!gl_FrontFacing) N = -N;
-      N = normalize(N + vec3(0.0, 1.1, 0.0));
+      N = normalize(N + vTng * vSide * 1.4 + vec3(0.0, 1.1, 0.0));          // rounded blade cross-section
       vec3 V = normalize(cameraPosition - vWorld);
+      float big = vnoise2(vWorld.xz * 0.035), mid = vnoise2(vWorld.xz * 0.19 + 7.0);
       vec3 root = vec3(0.012, 0.025, 0.006);
-      vec3 tipG = vec3(0.16, 0.30, 0.05);
-      vec3 tipD = vec3(0.50, 0.40, 0.13);
-      vec3 col = mix(root, mix(tipG, tipD, vPatch), smoothstep(0.0, 1.0, vT));
+      vec3 tipG = mix(vec3(0.12, 0.27, 0.04), vec3(0.21, 0.34, 0.05), mid);
+      vec3 tipD = mix(vec3(0.52, 0.40, 0.12), vec3(0.42, 0.43, 0.12), mid);
+      vec3 col = mix(root, mix(tipG, tipD, clamp(vPatch * 0.8 + (big - 0.5) * 0.7, 0.0, 1.0)), smoothstep(0.0, 1.0, vT));
       col = mix(col, vec3(0.32, 0.42, 0.16), vCut * smoothstep(0.6, 1.0, vT));   // fresh-cut ends
-      col *= 0.75 + 0.5 * vRand;
+      col *= 0.9 + 0.2 * (1.0 - abs(vSide) * 2.0);                              // lighter midrib
+      col *= 0.78 + 0.44 * vRand;
       float vis = sunVisibility(vShadowCoord) * cloudShadowAt(vWorld.xz, uTime, uCloudAmt);
       float ndl = max(dot(N, uSunDir), 0.0);
       float back = pow(max(dot(-V, uSunDir), 0.0), 5.0) * vT * vT;
       float ao = mix(0.2, 1.0, vT);
       vec3 H = normalize(V + uSunDir);
       float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.12 * vT;
+      float sheen = pow(max(dot(reflect(-uSunDir, N), V), 0.0), 16.0) * 0.22 * vT;   // waxy blade sheen
       vec3 lit = col * (uSunCol * (ndl * 0.8 + 0.12) * vis + uAmb * 0.9) * ao
-               + (col * uSunCol * back * 3.5 + uSunCol * spec) * vis;
+               + (col * uSunCol * back * 3.5 + uSunCol * (spec + sheen * vec3(0.9, 1.0, 0.8))) * vis;
       float d = length(cameraPosition - vWorld);
       float fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
       gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
     }`,
-});
+  });
+}
+const grassMat = makeGrassMaterial(false);
+// Dense carpet that travels with the player: ~4x the field density up close
+const nearGrass = (() => {
+  const N = LOW ? 70000 : 280000, g = new THREE.InstancedBufferGeometry();
+  g.index = blade.index; g.attributes.position = blade.attributes.position;
+  const off = new Float32Array(N * 3), prm = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    off[i * 3] = (Math.random() - 0.5) * PATCH; off[i * 3 + 2] = (Math.random() - 0.5) * PATCH;
+    prm.set([Math.random() * Math.PI * 2, Math.random(), 0.04 + Math.random() * 0.03, Math.random()], i * 4);
+  }
+  g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
+  g.setAttribute('aParams', new THREE.InstancedBufferAttribute(prm, 4));
+  g.instanceCount = N;
+  const m = new THREE.Mesh(g, makeGrassMaterial(true)); m.frustumCulled = false; scene.add(m); return m;
+})();
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { grass.visible = false; orig(...a); grass.visible = true; }; }
+  water.onBeforeRender = (...a) => { grass.visible = nearGrass.visible = false; orig(...a); grass.visible = nearGrass.visible = true; }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
-const rock = new THREE.MeshStandardMaterial({ color: 0x4a4540, roughness: 0.9, flatShading: true });
-const skyRock = new THREE.MeshStandardMaterial({ color: 0x6b5a55, roughness: 0.9, flatShading: true, fog: false, emissive: 0x3a2a38, emissiveIntensity: 0.6 });
-function rockGeo(r, detail = 2, seed = 0) {
+const texRock = makeTex(512, (u, v) => {
+  const [d1, d2] = cells(u, v, 9), n = pfbm(u, v, 6, 5), grain = pnoise(u * 220, v * 220, 220);
+  const crack = 1 - smooth(0, 0.035, d2 - d1), lichen = smooth(0.6, 0.68, pfbm(u + 0.3, v + 0.1, 12, 3));
+  const k = (0.42 + 0.38 * n + 0.08 * grain) * (1 - crack * 0.55);
+  return [lerp(0.44 * k, 0.62, lichen * 0.45), lerp(0.41 * k, 0.56, lichen * 0.45), lerp(0.38 * k, 0.34, lichen * 0.45), n * 0.8 + grain * 0.15 - crack * 0.7];
+}, [2, 2], 5);
+const rock = TM(texRock, 0.88, 0, { vertexColors: true });
+const skyRock = TM(texRock, 0.9, 0, { vertexColors: true, fog: false, emissive: 0x3a2a38, emissiveIntensity: 0.6 });
+function rockGeo(r, detail = 2, seed = 0, island = false) {
   const g = new THREE.IcosahedronGeometry(r, detail), p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const v = new THREE.Vector3().fromBufferAttribute(p, i);
     const n = fbm(v.x * 0.6 / r * 3 + seed, v.y * 0.6 / r * 3 + v.z * 0.4 / r * 3, 4);
-    v.multiplyScalar(0.7 + n * 0.7); p.setXYZ(i, v.x, v.y, v.z);
+    v.multiplyScalar(0.7 + n * 0.7);
+    if (island) { if (v.y > 0) v.y *= 0.28; else v.y *= 1.6 + fbm(v.x / r * 2 + seed, v.z / r * 2) * 0.8; }
+    p.setXYZ(i, v.x, v.y, v.z);
   }
-  g.computeVertexNormals(); return g;
+  g.computeVertexNormals();
+  const nr = g.attributes.normal, col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) { // moss/grass on upward faces
+    const m = smooth(island ? 0.45 : 0.6, island ? 0.7 : 0.9, nr.getY(i)) * (island ? 1 : 0.7);
+    col[i * 3] = lerp(1, 0.33, m); col[i * 3 + 1] = lerp(1, 0.55, m); col[i * 3 + 2] = lerp(1, 0.16, m);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
 }
 { // torii gate on the loop path, facing the sea
   const a = 0.35, r = 27 + 5 * Math.sin(a * 3 + 0.6) + 2.5 * Math.sin(a * 5 + 1.7);
@@ -586,13 +682,13 @@ function rockGeo(r, detail = 2, seed = 0) {
 for (let i = 0; i < 14; i++) { // weathered stones in the grass
   const a = Math.random() * 6.28, d = 8 + Math.random() * 34, x = Math.cos(a) * d, z = Math.sin(a) * d;
   if (pathMask(x, z) > 0.1) continue;
-  const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 1, i * 3.1), rock);
+  const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 3, i * 3.1), rock);
   m.position.set(x, terrainH(x, z) - s * 0.25, z); m.rotation.set(Math.random(), Math.random() * 6, Math.random());
   m.castShadow = m.receiveShadow = true; scene.add(m);
 }
 { // loose pebbles and gravel scattered along the dirt roads
   const N = LOW ? 1500 : 4000, g = rockGeo(0.06, 0, 1.3);
-  const im = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: 0x8a7d6c, roughness: 0.85, flatShading: true }), N);
+  const im = new THREE.InstancedMesh(g, TM(texRock, 0.85), N);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   let n = 0;
   while (n < N) {
@@ -609,11 +705,7 @@ const floaters = [];
 for (let i = 0; i < 9; i++) { // surreal floating islands over the sea
   const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 260 + Math.random() * 420, s = 10 + Math.random() * 26;
   const g = new THREE.Group();
-  const body = new THREE.Mesh(rockGeo(s, 3, i * 7.7), skyRock); body.scale.set(1, 1.4, 1); g.add(body);
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.95, s * 0.8, s * 0.25, 24),
-    new THREE.MeshStandardMaterial({ color: 0x4d6a2c, roughness: 1, fog: false, emissive: 0x1a2a10 }));
-  cap.position.y = s * 0.55; g.add(cap);
-  body.position.y = -s * 0.5;
+  const body = new THREE.Mesh(rockGeo(s, 4, i * 7.7, true), skyRock); g.add(body);
   g.position.set(Math.cos(a) * d, 40 + Math.random() * 110, Math.sin(a) * d);
   g.userData = { base: g.position.y, ph: Math.random() * 6 };
   scene.add(g); floaters.push(g);
@@ -712,7 +804,9 @@ function buildSamurai() {
 
 // ─────────────────────────── Horse ───────────────────────────
 function buildHorse() {
-  const coat = TM(texHorse, 0.5, 0, { envMapIntensity: 0.9 }), sock = TM(texSock, 0.6), dark = TM(texMane, 0.55), hoof = M(0x1a1612, 0.5), saddle = TM(texLeather, 0.4), blanket = TM(texCloth, 0.9);
+  const coatM = (tex, sheen) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
+    roughness: 0.5, sheen: 0.6, sheenRoughness: 0.45, sheenColor: new THREE.Color(...sheen), envMapIntensity: 0.9 });
+  const coat = coatM(texHorse, [0.42, 0.28, 0.2]), sock = coatM(texSock, [0.9, 0.88, 0.82]), dark = TM(texMane, 0.55), hoof = M(0x1a1612, 0.5), saddle = TM(texLeather, 0.4), blanket = TM(texCloth, 0.9);
   const hoofM = hoof; hoofM.roughness = 0.35;
   const root = new THREE.Group(), body = pivot(root, 0, 1.28, 0);
   const trunk = part(new THREE.CapsuleGeometry(0.37, 0.95, 8, 24), coat, body, 0, 0, 0, Math.PI / 2); trunk.scale.set(0.95, 1, 1.12);
@@ -1151,6 +1245,7 @@ function applyPreset(p) {
   const wu = water.material.uniforms; wu.sunDirection.value.copy(sunDir); wu.sunColor.value.set(p.waterSun); wu.waterColor.value.set(p.water);
   fireflies.visible = p.ff > 0; fireflies.material.uniforms.uOn.value = p.ff;
   petals.visible = p.petals > 0; motes.visible = p.motes > 0;
+  shallowMat.uniforms.uBright.value = p.fromMoon ? 0.12 : 1;
   foamMat.uniforms.uCol.value.setRGB(...(p.fromMoon ? [0.25, 0.15, 0.18] : [1.3, 1.1, 0.95]));
   godRayAmt = p.rays;
   sky.visible = !p.fromMoon; scene.background = p.fromMoon ? new THREE.Color(0x05040a) : null;
@@ -1203,9 +1298,13 @@ function reskinArmor(mat) {
         diffuseColor.rgb = c1;
         float kLacq = plate, kMetal = min(stripe + steel, 1.0);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.26, kLacq); roughnessFactor = mix(roughnessFactor, 0.32, kMetal);`)
+        roughnessFactor = mix(roughnessFactor, 0.42, kLacq); roughnessFactor = mix(roughnessFactor, 0.32, kMetal);`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
-        metalnessFactor = mix(metalnessFactor, 0.9, kMetal);`);
+        metalnessFactor = mix(metalnessFactor, 0.9, kMetal);`)
+      .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+        #ifdef USE_CLEARCOAT
+        material.clearcoat *= kLacq * 0.35;
+        #endif`);
   };
   mat.envMapIntensity = 1.2; mat.needsUpdate = true;
 }
@@ -1229,7 +1328,11 @@ gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
   const model = g.scene, rig = new THREE.Group(), B = {};
   model.traverse(o => {
     if (/^mixamorig/.test(o.name)) B[o.name.replace(/^mixamorig:?/, '')] = o;
-    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; reskinArmor(o.material); }
+    if (o.isMesh) {
+      const m0 = o.material;
+      o.material = new THREE.MeshPhysicalMaterial({ map: m0.map, normalMap: m0.normalMap, roughness: m0.roughness, metalness: m0.metalness, clearcoat: 1, clearcoatRoughness: 0.18, envMapIntensity: 0.7 });
+      o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; reskinArmor(o.material);
+    }
   });
   rig.add(model); hero.root.add(rig); hero.root.updateMatrixWorld(true);
   const wp = b => rig.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
@@ -1472,13 +1575,16 @@ const godRays = new ShaderPass({ // screen-space light shafts streaming from the
     void main(){
       vec4 base = texture2D(tDiffuse, vUv);
       if (uAmt <= 0.001) { gl_FragColor = base; return; }
-      vec2 st = (uSun - vUv) / 56.0, uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
+      vec2 st = (uSun - vUv) / 56.0;
+      float jit = fract(sin(dot(vUv * 913.7, vec2(12.9898, 78.233))) * 43758.5453);   // dither: no ghost copies
+      vec2 uv = vUv + st * jit; float decay = 1.0; vec3 acc = vec3(0.0);
       for (int i = 0; i < 56; i++) {
-        uv += st; vec3 s = texture2D(tDiffuse, clamp(uv, 0.0, 1.0)).rgb;
-        float l = max(dot(s, vec3(0.3, 0.59, 0.11)) - 1.6, 0.0);
-        acc += s * min(l, 6.0) * decay; decay *= 0.962;
+        uv += st; vec3 s = min(texture2D(tDiffuse, clamp(uv, 0.0, 1.0)).rgb, vec3(5.0));
+        float l = max(dot(s, vec3(0.3, 0.59, 0.11)) - 1.8, 0.0);
+        acc += s * min(l, 2.0) * decay; decay *= 0.955;
       }
-      gl_FragColor = vec4(base.rgb + acc * uAmt * 0.035, base.a);
+      float edge = smoothstep(0.0, 0.25, min(min(uSun.x, 1.0 - uSun.x), min(uSun.y, 1.0 - uSun.y)) + 0.25);
+      gl_FragColor = vec4(base.rgb + min(acc * uAmt * 0.02 * edge, vec3(1.5)), base.a);
     }`,
 });
 composer.addPass(godRays);
@@ -1568,6 +1674,7 @@ function update(dt, t) {
   const u = grassMat.uniforms;
   u.uTime.value = t;
   u.uPush0.value.set(player.pos.x, player.pos.z, 0.7, player.mounted ? 0 : 1);
+  SH.uCenter.value.set(player.pos.x, player.pos.z);
   u.uPush1.value.set(hs.pos.x, hs.pos.z, 1.4, 1);
 
   // Third-person camera
@@ -1606,7 +1713,7 @@ function loop() {
   composer.render();
   requestAnimationFrame(loop);
 }
-window.__game = { dbg: { clouds, finalPass, godRays, bloom, moon, moonDir }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
+window.__game = { dbg: { clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
 loop();
 </script>
 </body>
