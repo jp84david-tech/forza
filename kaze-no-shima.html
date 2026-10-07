@@ -20,10 +20,13 @@
   #title p { font-size: 13px; letter-spacing: 6px; opacity: 0.7; margin-top: 4px; }
   #start {
     position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: #f4e9d8; background: rgba(10,6,4,0.45); cursor: pointer; text-align: center; transition: opacity 0.6s;
+    color: #f4e9d8; background: radial-gradient(ellipse at center, rgba(10,6,4,0.05) 30%, rgba(10,6,4,0.65) 100%); cursor: pointer; text-align: center; transition: opacity 0.6s;
   }
   #start h2 { font-size: 64px; font-weight: 400; letter-spacing: 18px; text-shadow: 0 4px 30px rgba(0,0,0,0.7); }
   #start .jp { font-size: 22px; letter-spacing: 14px; opacity: 0.8; margin-top: 6px; }
+  #start .sub { margin-top: 18px; font-size: 15px; letter-spacing: 4px; opacity: 0.75; font-style: italic; }
+  #start .go { animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.45; } }
   #start .go { margin-top: 42px; font-size: 14px; letter-spacing: 5px; opacity: 0.85; border: 1px solid rgba(244,233,216,0.5); padding: 12px 28px; }
   #start .keys { margin-top: 26px; font-size: 13px; letter-spacing: 2px; opacity: 0.6; line-height: 1.9; font-family: 'Segoe UI', sans-serif; }
   #prompt {
@@ -62,14 +65,15 @@
 <div id="prompt"></div>
 <div id="toast"></div>
 <div id="fade"></div>
-<div id="hint">F katana · Click slash · T time of day · P photo mode · M sound</div>
+<div id="hint">Space jump · F katana · Click slash · T time of day · P photo mode · M sound</div>
 <div id="loading">GROWING GRASS…</div>
 <div id="start">
   <h2>KAZE NO SHIMA</h2>
   <div class="jp">風 の 島</div>
+  <div class="sub">A wandering samurai. A horse. An island of wind.</div>
   <div class="go">CLICK TO BEGIN</div>
   <div class="keys">
-    W A S D — walk &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run / gallop &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse<br>
+    W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse<br>
     F — draw katana &nbsp;·&nbsp; Click — slash (cuts the grass) &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
@@ -87,7 +91,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const params = new URLSearchParams(location.search);
-const LOW = params.get('q') === 'low';
+const LOW = params.get('q') === 'low', ULTRA = params.get('q') === 'ultra';
 
 // ─────────────────────────── Renderer / scene ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -381,14 +385,21 @@ const tGeo = new THREE.PlaneGeometry(TS, TS, TSEG, TSEG); tGeo.rotateX(-Math.PI 
     col[i * 3] = r * 1.45; col[i * 3 + 1] = g * 1.45; col[i * 3 + 2] = b * 1.45;
   }
   tGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const gr = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); gr[i] = (1 - pathMask(x, z)) * smooth(0.55, 1.3, p.getY(i)); }
+  tGeo.setAttribute('aGrassy', new THREE.BufferAttribute(gr, 1));
   tGeo.computeVertexNormals();
 }
 const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ vertexColors: true, map: groundTex.map, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.95, envMapIntensity: 0.6 }));
 terrain.receiveShadow = true;
 terrain.material.onBeforeCompile = sh => {
   sh.uniforms.uTime = SH.uTime; sh.uniforms.uCloudAmt = SH.uCloudAmt;
-  sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-  sh.fragmentShader = 'varying vec3 vWPos; uniform float uTime; uniform float uCloudAmt;\n' + NOISE_GLSL + sh.fragmentShader.replace('#include <lights_fragment_begin>',
+  sh.vertexShader = 'attribute float aGrassy; varying float vGrassy; varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vGrassy = aGrassy;');
+  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; uniform float uTime; uniform float uCloudAmt;\n' + NOISE_GLSL + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+    float farG = smoothstep(6.0, 40.0, distance(vWPos.xz, cameraPosition.xz));
+    float pn = vnoise2(vWPos.xz * 0.035);
+    vec3 gcol = mix(vec3(0.05, 0.1, 0.018), vec3(0.19, 0.16, 0.05), clamp(pn * 1.2 - 0.1, 0.0, 1.0)) * (0.85 + 0.3 * vnoise2(vWPos.xz * 0.9));
+    diffuseColor.rgb = mix(diffuseColor.rgb, gcol, vGrassy * (0.5 + 0.45 * farG));`).replace('#include <lights_fragment_begin>',
     THREE.ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );',
       'getDirectionalLightInfo( directionalLight, directLight );\n directLight.color *= cloudShadowAt(vWPos.xz, uTime, uCloudAmt);'));
 };
@@ -488,11 +499,20 @@ const blade = new THREE.BufferGeometry();
   const b = (SEG - 1) * 2; idx.push(b, b + 1, SEG * 2);
   blade.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); blade.setIndex(idx);
 }
+const blade3 = new THREE.BufferGeometry(); // lighter blade for mid/far grass
+{
+  const SEG = 3, p = [], idx = [];
+  for (let i = 0; i < SEG; i++) { const t = i / SEG; p.push(-0.5, t, 0, 0.5, t, 0); }
+  p.push(0, 1, 0);
+  for (let i = 0; i < SEG - 1; i++) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+  const b = (SEG - 1) * 2; idx.push(b, b + 1, SEG * 2);
+  blade3.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); blade3.setIndex(idx);
+}
 const grassGeo = new THREE.InstancedBufferGeometry();
-grassGeo.index = blade.index; grassGeo.attributes.position = blade.attributes.position;
+grassGeo.index = blade3.index; grassGeo.attributes.position = blade3.attributes.position;
 const offsets = [], prm = [];
 {
-  const CAND = LOW ? 560000 : 1700000;
+  const CAND = LOW ? 450000 : ULTRA ? 1800000 : 1300000;
   for (let i = 0; i < CAND; i++) {
     const x = (Math.random() - 0.5) * 124, z = (Math.random() - 0.5) * 124;
     const h = terrainH(x, z); if (h < 0.5) continue;
@@ -519,14 +539,13 @@ const hmTex = (() => {
   const t = new THREE.DataTexture(d, HM, HM, THREE.RGBAFormat, THREE.HalfFloatType);
   t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t;
 })();
-const PATCH = 34; // side of the dense grass carpet that travels with the player (metres)
-Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector2(HM_MIN, HM_SIZE) }, uCenter: { value: new THREE.Vector2() }, uPatch: { value: PATCH } });
+Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector2(HM_MIN, HM_SIZE) }, uCenter: { value: new THREE.Vector2() } });
 
-function makeGrassMaterial(near) {
+function makeGrassMaterial(near, patch) {
   return new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
   defines: near ? { NEAR: '' } : {},
-  uniforms: SH,
+  uniforms: near ? { ...SH, uPatch: { value: patch } } : SH,
   vertexShader: /* glsl */`
     uniform float uTime; uniform vec4 uPush0; uniform vec4 uPush1; uniform vec4 uCuts[16]; uniform mat4 uShadowMatrix;
     #ifdef NEAR
@@ -555,6 +574,8 @@ function makeGrassMaterial(near) {
       #else
       vec3 root = aOffset;
       #endif
+      vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+      if (h < 0.004 || dot(root - cameraPosition, camF) < -1.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       vCut = 0.0;
       for (int i = 0; i < 16; i++) { vec4 c = uCuts[i]; if (c.w > 0.0 && distance(root.xz, c.xy) < c.z * (0.85 + 0.3 * r)) vCut = 1.0; }
       h *= mix(1.0, 0.16 + 0.08 * r, vCut);
@@ -612,29 +633,33 @@ function makeGrassMaterial(near) {
   });
 }
 const grassMat = makeGrassMaterial(false);
-// Dense carpet that travels with the player: ~4x the field density up close
-const nearGrass = (() => {
-  const N = LOW ? 70000 : 280000, g = new THREE.InstancedBufferGeometry();
-  g.index = blade.index; g.attributes.position = blade.attributes.position;
+// Grass carpets that travel with the player (blades wrap around and stay fixed in the world):
+// an ultra-dense near carpet and a wide mid carpet, on top of the island-wide field
+function makeCarpet(N, side, geo, wMin, wMax) {
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = geo.index; g.attributes.position = geo.attributes.position;
   const off = new Float32Array(N * 3), prm = new Float32Array(N * 4);
   for (let i = 0; i < N; i++) {
-    off[i * 3] = (Math.random() - 0.5) * PATCH; off[i * 3 + 2] = (Math.random() - 0.5) * PATCH;
-    prm.set([Math.random() * Math.PI * 2, Math.random(), 0.04 + Math.random() * 0.03, Math.random()], i * 4);
+    off[i * 3] = (Math.random() - 0.5) * side; off[i * 3 + 2] = (Math.random() - 0.5) * side;
+    prm.set([Math.random() * Math.PI * 2, Math.random(), wMin + Math.random() * (wMax - wMin), Math.random()], i * 4);
   }
   g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
   g.setAttribute('aParams', new THREE.InstancedBufferAttribute(prm, 4));
   g.instanceCount = N;
-  const m = new THREE.Mesh(g, makeGrassMaterial(true)); m.frustumCulled = false; scene.add(m); return m;
-})();
+  const m = new THREE.Mesh(g, makeGrassMaterial(true, side)); m.frustumCulled = false; scene.add(m); return m;
+}
+const nearGrass = makeCarpet(LOW ? 150000 : ULTRA ? 1100000 : 700000, 26, blade, 0.03, 0.055);
+const midGrass = makeCarpet(LOW ? 120000 : ULTRA ? 900000 : 550000, 72, blade3, 0.04, 0.07);
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { grass.visible = nearGrass.visible = false; orig(...a); grass.visible = nearGrass.visible = true; }; }
+  water.onBeforeRender = (...a) => { grass.visible = nearGrass.visible = midGrass.visible = false; orig(...a); grass.visible = nearGrass.visible = midGrass.visible = true; }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
+const COLLIDERS_INIT = [];
 const texRock = makeTex(512, (u, v) => {
   const [d1, d2] = cells(u, v, 9), n = pfbm(u, v, 6, 5), grain = pnoise(u * 220, v * 220, 220);
   const crack = 1 - smooth(0, 0.035, d2 - d1), lichen = smooth(0.6, 0.68, pfbm(u + 0.3, v + 0.1, 12, 3));
@@ -675,6 +700,7 @@ function rockGeo(r, detail = 2, seed = 0, island = false) {
   const kasagi2 = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.22, 0.4), red); kasagi2.position.y = 4.2; torii.add(kasagi2);
   const nuki = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.2, 0.2), red); nuki.position.y = 3.4; torii.add(nuki);
   torii.position.set(tx, ty - 0.1, tz);
+  for (const sx of [-1, 1]) COLLIDERS_INIT.push({ x: tx + Math.cos(a) * sx * 1.7, z: tz - Math.sin(a) * sx * 1.7, r: 0.3 });
   torii.rotation.y = -a;
   torii.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
   scene.add(torii);
@@ -685,6 +711,7 @@ for (let i = 0; i < 14; i++) { // weathered stones in the grass
   const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 3, i * 3.1), rock);
   m.position.set(x, terrainH(x, z) - s * 0.25, z); m.rotation.set(Math.random(), Math.random() * 6, Math.random());
   m.castShadow = m.receiveShadow = true; scene.add(m);
+  COLLIDERS_INIT.push({ x, z, r: s * 0.85 });
 }
 { // loose pebbles and gravel scattered along the dirt roads
   const N = LOW ? 1500 : 4000, g = rockGeo(0.06, 0, 1.3);
@@ -802,63 +829,241 @@ function buildSamurai() {
   return { root, body, hips, torso, chest, head, legs, arms, cape, phase: 0 };
 }
 
-// ─────────────────────────── Horse ───────────────────────────
+// ─────────────────────────── Horse: sculpted from signed-distance anatomy ───────────────────────────
+// Each body part is a blend of ellipsoids/tapered capsules; a surface-nets mesher turns the field into a smooth mesh.
+function sdE(px, py, pz, cx, cy, cz, rx, ry, rz) {
+  const x = (px - cx) / rx, y = (py - cy) / ry, z = (pz - cz) / rz;
+  const k0 = Math.sqrt(x * x + y * y + z * z), k1 = Math.sqrt(x * x / (rx * rx) + y * y / (ry * ry) + z * z / (rz * rz));
+  return k0 * (k0 - 1) / (k1 + 1e-9);
+}
+function sdC(px, py, pz, a, b, ra, rb) {
+  const bx = b[0] - a[0], by = b[1] - a[1], bz = b[2] - a[2], qx = px - a[0], qy = py - a[1], qz = pz - a[2];
+  const h = Math.max(0, Math.min(1, (qx * bx + qy * by + qz * bz) / (bx * bx + by * by + bz * bz)));
+  return Math.hypot(qx - bx * h, qy - by * h, qz - bz * h) - (ra + (rb - ra) * h);
+}
+function smin(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; }
+function surfaceNets(sdf, min, max, res, pivotPt, uvScale = 3) {
+  const nx = Math.ceil((max[0] - min[0]) / res) + 2, ny = Math.ceil((max[1] - min[1]) / res) + 2, nz = Math.ceil((max[2] - min[2]) / res) + 2;
+  const F = new Float32Array(nx * ny * nz), I = (i, j, k) => i + nx * (j + ny * k);
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) F[I(i, j, k)] = sdf(min[0] + i * res, min[1] + j * res, min[2] + k * res);
+  const C = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+  const E = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+  const V = new Int32Array(nx * ny * nz).fill(-1), pos = [], val = new Float32Array(8);
+  for (let k = 0; k < nz - 1; k++) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    let inside = 0;
+    for (let c = 0; c < 8; c++) { val[c] = F[I(i + C[c][0], j + C[c][1], k + C[c][2])]; if (val[c] < 0) inside++; }
+    if (inside === 0 || inside === 8) continue;
+    let sx = 0, sy = 0, sz = 0, n = 0;
+    for (const [e0, e1] of E) {
+      const a = val[e0], b = val[e1];
+      if ((a < 0) !== (b < 0)) { const t = a / (a - b), ca = C[e0], cb = C[e1]; sx += ca[0] + (cb[0] - ca[0]) * t; sy += ca[1] + (cb[1] - ca[1]) * t; sz += ca[2] + (cb[2] - ca[2]) * t; n++; }
+    }
+    V[I(i, j, k)] = pos.length / 3;
+    pos.push(min[0] + (i + sx / n) * res, min[1] + (j + sy / n) * res, min[2] + (k + sz / n) * res);
+  }
+  const nrm = new Float32Array(pos.length), e = res * 0.5;
+  for (let v = 0; v < pos.length; v += 3) {
+    const x = pos[v], y = pos[v + 1], z = pos[v + 2];
+    const gx = sdf(x + e, y, z) - sdf(x - e, y, z), gy = sdf(x, y + e, z) - sdf(x, y - e, z), gz = sdf(x, y, z + e) - sdf(x, y, z - e), l = Math.hypot(gx, gy, gz) || 1;
+    nrm[v] = gx / l; nrm[v + 1] = gy / l; nrm[v + 2] = gz / l;
+  }
+  const idx = [];
+  const quad = (a, b, c, d) => {
+    if (a < 0 || b < 0 || c < 0 || d < 0) return;
+    // orient so the face normal agrees with the field gradient
+    const ux = pos[b * 3] - pos[a * 3], uy = pos[b * 3 + 1] - pos[a * 3 + 1], uz = pos[b * 3 + 2] - pos[a * 3 + 2];
+    const wx = pos[c * 3] - pos[a * 3], wy = pos[c * 3 + 1] - pos[a * 3 + 1], wz = pos[c * 3 + 2] - pos[a * 3 + 2];
+    const fx = uy * wz - uz * wy, fy = uz * wx - ux * wz, fz = ux * wy - uy * wx;
+    const ok = fx * (nrm[a * 3] + nrm[c * 3]) + fy * (nrm[a * 3 + 1] + nrm[c * 3 + 1]) + fz * (nrm[a * 3 + 2] + nrm[c * 3 + 2]) > 0;
+    if (ok) idx.push(a, b, c, a, c, d); else idx.push(a, c, b, a, d, c);
+  };
+  for (let k = 1; k < nz - 1; k++) for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
+    const a = F[I(i, j, k)] < 0;
+    if (a !== (F[I(i + 1, j, k)] < 0)) quad(V[I(i, j - 1, k - 1)], V[I(i, j, k - 1)], V[I(i, j, k)], V[I(i, j - 1, k)]);
+    if (a !== (F[I(i, j + 1, k)] < 0)) quad(V[I(i - 1, j, k - 1)], V[I(i, j, k - 1)], V[I(i, j, k)], V[I(i - 1, j, k)]);
+    if (a !== (F[I(i, j, k + 1)] < 0)) quad(V[I(i - 1, j - 1, k)], V[I(i, j - 1, k)], V[I(i, j, k)], V[I(i - 1, j, k)]);
+  }
+  const uv = new Float32Array(pos.length / 3 * 2);
+  for (let v = 0, w = 0; v < pos.length; v += 3, w += 2) { // box projection, hair running nose→tail on the flanks
+    const ax = Math.abs(nrm[v]), ay = Math.abs(nrm[v + 1]), az = Math.abs(nrm[v + 2]);
+    if (ax >= ay && ax >= az) { uv[w] = pos[v + 1] * uvScale; uv[w + 1] = pos[v + 2] * uvScale; }
+    else if (ay >= az) { uv[w] = pos[v] * uvScale; uv[w + 1] = pos[v + 2] * uvScale; }
+    else { uv[w] = pos[v] * uvScale; uv[w + 1] = pos[v + 1] * uvScale; }
+  }
+  for (let v = 0; v < pos.length; v += 3) { pos[v] -= pivotPt[0]; pos[v + 1] -= pivotPt[1]; pos[v + 2] -= pivotPt[2]; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
 function buildHorse() {
-  const coatM = (tex, sheen) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
-    roughness: 0.5, sheen: 0.6, sheenRoughness: 0.45, sheenColor: new THREE.Color(...sheen), envMapIntensity: 0.9 });
-  const coat = coatM(texHorse, [0.42, 0.28, 0.2]), sock = coatM(texSock, [0.9, 0.88, 0.82]), dark = TM(texMane, 0.55), hoof = M(0x1a1612, 0.5), saddle = TM(texLeather, 0.4), blanket = TM(texCloth, 0.9);
-  const hoofM = hoof; hoofM.roughness = 0.35;
-  const root = new THREE.Group(), body = pivot(root, 0, 1.28, 0);
-  const trunk = part(new THREE.CapsuleGeometry(0.37, 0.95, 8, 24), coat, body, 0, 0, 0, Math.PI / 2); trunk.scale.set(0.95, 1, 1.12);
-  part(new THREE.SphereGeometry(0.38, 20, 16), coat, body, 0, 0.02, 0.55).scale.set(0.95, 1.05, 0.9);   // chest
-  part(new THREE.SphereGeometry(0.4, 20, 16), coat, body, 0, 0.04, -0.52).scale.set(1, 1, 0.95);        // rump
-  const neck = pivot(body, 0, 0.12, 0.66); neck.rotation.x = 0.62;
-  part(new THREE.CylinderGeometry(0.15, 0.29, 0.88, 18), coat, neck, 0, 0.36, 0).scale.set(0.8, 1, 1.15);
-  for (let i = 0; i < 70; i++) { // mane: individual hair locks falling to one side
-    const y = 0.02 + (i / 70) * 0.8, len = 0.14 + Math.random() * 0.12;
-    const lock = part(new THREE.CylinderGeometry(0.012, 0.002, len, 4), dark, neck, (Math.random() - 0.3) * 0.05, y, -0.15 + y * 0.09 - 0.02);
-    lock.geometry.translate(0, -len / 2, 0); lock.rotation.set(-0.3 + Math.random() * 0.3, 0, 1.1 + Math.random() * 0.5);
+  const coatM = (tex, color, sheen) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, normalScale: new THREE.Vector2(0.35, 0.35),
+    color, roughness: 0.48, sheen: 0.7, sheenRoughness: 0.4, sheenColor: new THREE.Color(...sheen), envMapIntensity: 0.9 });
+  const coat = coatM(texHorse, 0xa07c68, [0.45, 0.28, 0.2]);
+  const points = coatM(texHorse, 0x2a2420, [0.25, 0.22, 0.2]);   // bay: black lower legs
+  const dark = TM(texMane, 0.5), saddleM = TM(texLeather, 0.4), blanketM = TM(texCloth, 0.9);
+  const eyeM = new THREE.MeshPhysicalMaterial({ color: 0x0b0705, roughness: 0.05, clearcoat: 1 });
+  const RES = LOW ? 0.03 : 0.019;
+  const mesh = (sdf, min, max, pv, mat, parent, res = RES) => {
+    const m = new THREE.Mesh(surfaceNets(sdf, min, max, res, pv), mat); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
+  };
+  const root = new THREE.Group();
+  const BP = [0, 1.2, 0], body = pivot(root, ...BP);
+  const S = (x, y, z) => x; // (readability helper for mirrored parts)
+
+  // ── body ──
+  const bodySDF = (x, y, z) => {
+    const ax = Math.abs(x);
+    let d = sdE(x, y, z, 0, 1.2, -0.02, 0.31, 0.37, 0.62);
+    d = smin(d, sdE(x, y, z, 0, 1.07, 0.02, 0.27, 0.24, 0.5), 0.12);
+    d = smin(d, sdE(x, y, z, 0, 1.2, 0.48, 0.27, 0.33, 0.27), 0.12);
+    d = smin(d, sdE(x, y, z, 0, 1.07, 0.6, 0.18, 0.2, 0.15), 0.08);
+    d = smin(d, sdE(ax, y, z, 0.13, 1.27, 0.45, 0.14, 0.3, 0.2), 0.1);
+    d = smin(d, sdE(x, y, z, 0, 1.43, 0.33, 0.09, 0.12, 0.3), 0.1);
+    d = smin(d, sdE(x, y, z, 0, 1.38, -0.08, 0.2, 0.12, 0.5), 0.12);
+    d = smin(d, sdE(x, y, z, 0, 1.38, -0.55, 0.25, 0.17, 0.32), 0.1);
+    d = smin(d, sdE(ax, y, z, 0.14, 1.22, -0.6, 0.18, 0.3, 0.3), 0.1);
+    d = smin(d, sdE(x, y, z, 0, 1.22, -0.78, 0.22, 0.26, 0.16), 0.08);
+    d = smin(d, sdE(ax, y, z, 0.15, 1.04, 0.5, 0.1, 0.18, 0.12), 0.08);    // upper arm root
+    d = smin(d, sdE(ax, y, z, 0.16, 1.06, -0.47, 0.1, 0.15, 0.12), 0.08);  // stifle
+    d = smin(d, sdC(x, y, z, [0, 1.42, -0.86], [0, 1.32, -0.96], 0.07, 0.05), 0.05);
+    return d;
+  };
+  mesh(bodySDF, [-0.44, 0.78, -1.06], [0.44, 1.62, 0.84], BP, coat, body);
+
+  // ── neck + head (one piece, pivots at the base of the neck) ──
+  const NP = [0, 1.36, 0.55], neck = pivot(body, NP[0] - BP[0], NP[1] - BP[1], NP[2] - BP[2]);
+  const neckSDF = (x, y, z) => {
+    const ax = Math.abs(x);
+    let d = sdC(x, y, z, [0, 1.3, 0.55], [0, 1.76, 0.9], 0.23, 0.12);
+    d = smin(d, sdC(x, y, z, [0, 1.46, 0.45], [0, 1.86, 0.86], 0.1, 0.07), 0.08);
+    d = smin(d, sdC(x, y, z, [0, 1.25, 0.68], [0, 1.66, 1.0], 0.12, 0.08), 0.08);
+    d = smin(d, sdE(x, y, z, 0, 1.86, 0.98, 0.095, 0.11, 0.13), 0.06);
+    d = smin(d, sdE(x, y, z, 0, 1.73, 1.0, 0.09, 0.12, 0.12), 0.06);
+    d = smin(d, sdC(x, y, z, [0, 1.84, 1.05], [0, 1.5, 1.27], 0.085, 0.062), 0.05);
+    d = smin(d, sdE(x, y, z, 0, 1.49, 1.27, 0.072, 0.08, 0.085), 0.04);
+    d = smin(d, sdE(x, y, z, 0, 1.45, 1.22, 0.05, 0.04, 0.06), 0.03);
+    d = smin(d, sdC(ax, y, z, [0.05, 1.94, 0.95], [0.068, 2.07, 0.93], 0.028, 0.006), 0.02);
+    d = Math.max(d, -(Math.hypot(ax - 0.035, y - 1.47, z - 1.335) - 0.016));   // nostrils
+    return d;
+  };
+  mesh(neckSDF, [-0.2, 1.12, 0.32], [0.2, 2.12, 1.42], NP, coat, neck);
+  for (const s of [-1, 1]) { const e = part(new THREE.SphereGeometry(0.021, 12, 10), eyeM, neck, s * 0.083 - NP[0], 1.82 - NP[1], 1.035 - NP[2]); e.scale.set(0.7, 1, 1.15); }
+  const blaze = part(new THREE.SphereGeometry(0.03, 10, 8), M(0xe8e2d8, 0.6), neck, 0, 1.885 - NP[1], 1.07 - NP[2]); blaze.scale.set(1, 1.6, 0.35); blaze.rotation.x = -0.6;
+  for (let i = 0; i < 150; i++) { // mane rooted along the top of the crest, falling to the right
+    const t = i / 150, y = lerp(1.46, 1.88, t) + 0.085, z = lerp(0.42, 0.88, t) - 0.085, len = 0.14 + Math.random() * 0.16 - t * 0.05;
+    const lock = part(new THREE.CylinderGeometry(0.016, 0.003, len, 5), dark, neck, (Math.random() - 0.5) * 0.04, y - NP[1], z - NP[2]);
+    lock.geometry.translate(0, -len / 2, 0); lock.rotation.set(-0.5 + Math.random() * 0.3, 0, -0.9 - Math.random() * 0.6);
   }
-  for (let i = 0; i < 12; i++) { const f = part(new THREE.CylinderGeometry(0.01, 0.002, 0.16, 4), dark, neck, (Math.random() - 0.5) * 0.06, 0.85, 0.05); f.geometry.translate(0, -0.08, 0); f.rotation.set(1.8 + Math.random() * 0.6, 0, (Math.random() - 0.5) * 0.8); } // forelock
-  const head = pivot(neck, 0, 0.78, 0.02); head.rotation.x = 1.95;
-  part(new THREE.CylinderGeometry(0.075, 0.13, 0.52, 16), coat, head, 0, 0.3, 0).scale.set(0.85, 1, 1.15);
-  part(new THREE.SphereGeometry(0.15, 18, 14), coat, head, 0, 0.04, 0).scale.set(0.8, 1.1, 1);
-  part(new THREE.SphereGeometry(0.095, 12, 10), dark, head, 0, 0.56, 0.0);
-  for (const s of [-1, 1]) {
-    part(new THREE.ConeGeometry(0.04, 0.15, 8), coat, head, s * 0.07, -0.02, -0.12, -0.9, 0, s * 0.2);
-    part(new THREE.SphereGeometry(0.025, 8, 6), dark, head, s * 0.11, 0.12, 0.06);
+  for (let i = 0; i < 16; i++) { const f = part(new THREE.CylinderGeometry(0.009, 0.002, 0.18, 4), dark, neck, (Math.random() - 0.5) * 0.06, 1.95 - NP[1], 0.96 - NP[2]); f.geometry.translate(0, -0.09, 0); f.rotation.set(2.3 + Math.random() * 0.4, 0, (Math.random() - 0.5) * 0.6); }
+  { // bridle: noseband, browband and reins
+    const faceDir = new THREE.Vector3(0, -0.34, 0.22).normalize(), q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), faceDir);
+    for (const [y, z, r] of [[1.6, 1.185, 0.088], [1.87, 1.0, 0.105]]) { const b = part(new THREE.TorusGeometry(r, 0.008, 6, 28), saddleM, neck, 0, y - NP[1], z - NP[2]); b.quaternion.copy(q); }
+    for (const s of [-1, 1]) {
+      const c = new THREE.CatmullRomCurve3([new THREE.Vector3(s * 0.08, 1.6, 1.15), new THREE.Vector3(s * 0.12, 1.3, 0.85), new THREE.Vector3(s * 0.14, 1.5, 0.45)].map(v => v.sub(new THREE.Vector3(...NP))));
+      part(new THREE.TubeGeometry(c, 16, 0.006, 4), saddleM, neck);
+    }
   }
+
+  // ── legs: upper (forearm / gaskin) and lower (cannon, fetlock, pastern, hoof) pieces ──
   const legs = [];
-  for (const [x, z, front] of [[-0.2, 0.55, 1], [0.2, 0.55, 1], [-0.2, -0.55, 0], [0.2, -0.55, 0]]) {
-    const up = pivot(body, x, -0.1, z);
-    part(new THREE.CylinderGeometry(front ? 0.13 : 0.17, 0.075, 0.6, 14), coat, up, 0, -0.3, 0);
-    const lo = pivot(up, 0, -0.6, 0);
-    part(new THREE.CylinderGeometry(0.058, 0.05, 0.5, 12), front ? coat : sock, lo, 0, -0.25, 0);
-    part(new THREE.SphereGeometry(0.062, 10, 8), front ? coat : sock, lo, 0, -0.02, 0);     // knee / hock joint
-    part(new THREE.CylinderGeometry(0.06, 0.07, 0.07, 10), dark, lo, 0, -0.46, 0);         // feathering above hoof
-    part(new THREE.CylinderGeometry(0.065, 0.075, 0.1, 12), hoof, lo, 0, -0.53, 0.01);
-    legs.push({ up, lo, front });
+  const legDefs = [ // name, x, front?
+    ['LF', 0.155, true], ['RF', -0.155, true], ['LH', 0.15, false], ['RH', -0.15, false]];
+  for (const [name, x, front] of legDefs) {
+    const P = front ? [x, 1.12, 0.48] : [x, 1.15, -0.5], K = front ? [x, 0.53, 0.52] : [x, 0.6, -0.73];
+    const ax = x;
+    const upSDF = front
+      ? (px, py, pz) => smin(smin(sdC(px, py, pz, [ax, 1.15, 0.47], [ax, 0.55, 0.51], 0.09, 0.05), sdE(px, py, pz, ax, 0.88, 0.5, 0.075, 0.17, 0.085), 0.05), sdE(px, py, pz, ax, 0.53, 0.52, 0.05, 0.055, 0.06), 0.04)
+      : (px, py, pz) => smin(smin(smin(sdC(px, py, pz, [ax, 1.2, -0.48], [ax, 0.62, -0.72], 0.12, 0.055), sdE(px, py, pz, ax, 0.88, -0.62, 0.09, 0.2, 0.11), 0.06),
+          sdE(px, py, pz, ax, 0.6, -0.74, 0.05, 0.065, 0.075), 0.04), sdE(px, py, pz, ax, 0.63, -0.79, 0.035, 0.04, 0.035), 0.03);
+    const zc = front ? 0.52 : -0.69, zt = front ? 0.585 : -0.6;
+    const loSDF = (px, py, pz) => {
+      let d = sdC(px, py, pz, K, [ax, 0.16, zc - 0.01], 0.046, 0.036);
+      d = smin(d, sdE(px, py, pz, ax, 0.14, zc, 0.045, 0.048, 0.052), 0.03);
+      d = smin(d, sdC(px, py, pz, [ax, 0.14, zc], [ax, 0.075, zc + 0.04], 0.036, 0.042), 0.02);
+      d = smin(d, Math.max(sdC(px, py, pz, [ax, 0.075, zc + 0.045], [ax, 0.0, zt], 0.05, 0.064), -py), 0.015);   // hoof, flat sole
+      return d;
+    };
+    const upG = pivot(body, P[0] - BP[0], P[1] - BP[1], P[2] - BP[2]);
+    mesh(upSDF, [x - 0.14, front ? 0.42 : 0.5, front ? 0.34 : -0.86], [x + 0.14, 1.3, front ? 0.66 : -0.32], P, coat, upG);
+    const loG = pivot(upG, K[0] - P[0], K[1] - P[1], K[2] - P[2]);
+    mesh(loSDF, [x - 0.09, -0.02, zc - 0.12], [x + 0.09, K[1] + 0.06, zc + 0.14], K, points, loG);
+    legs.push({ up: upG, lo: loG, front, name, lastPh: 0 });
   }
-  const tail = pivot(body, 0, 0.18, -0.95); tail.rotation.x = 0.5;
-  part(new THREE.CylinderGeometry(0.05, 0.035, 0.2, 8), coat, tail, 0, -0.08, 0); // dock
-  for (let i = 0; i < 60; i++) { // tail hair strands
-    const len = 0.6 + Math.random() * 0.35, s = part(new THREE.CylinderGeometry(0.014, 0.003, len, 4), dark, tail, (Math.random() - 0.5) * 0.06, -0.12, (Math.random() - 0.5) * 0.06);
-    s.geometry.translate(0, -len / 2, 0); s.rotation.set((Math.random() - 0.5) * 0.3, 0, (Math.random() - 0.5) * 0.3);
+
+  // ── tail ──
+  const tail = pivot(body, 0, 1.36 - BP[1], -0.95 - BP[2]); tail.rotation.x = 0.35;
+  for (let i = 0; i < 90; i++) {
+    const len = 0.55 + Math.random() * 0.45, s = part(new THREE.CylinderGeometry(0.012, 0.003, len, 4), dark, tail, (Math.random() - 0.5) * 0.07, -0.02, (Math.random() - 0.5) * 0.07);
+    s.geometry.translate(0, -len / 2, 0); s.rotation.set((Math.random() - 0.5) * 0.35 - 0.1, 0, (Math.random() - 0.5) * 0.35);
   }
-  part(new THREE.BoxGeometry(0.62, 0.05, 0.75), blanket, body, 0, 0.33, 0.02);
-  part(new THREE.BoxGeometry(0.46, 0.12, 0.55), saddle, body, 0, 0.4, 0.02);
-  part(new THREE.BoxGeometry(0.3, 0.12, 0.08), saddle, body, 0, 0.48, 0.28);
-  part(new THREE.BoxGeometry(0.3, 0.14, 0.08), saddle, body, 0, 0.48, -0.24);
-  for (const s of [-1, 1]) { // stirrups and girth strap
-    part(new THREE.BoxGeometry(0.02, 0.5, 0.04), saddle, body, s * 0.25, 0.14, 0.06);
-    part(new THREE.TorusGeometry(0.05, 0.01, 6, 12), mats.trim, body, s * 0.25, -0.13, 0.06);
+
+  // ── tack: blanket draped over the back, saddle, stirrups, girth ──
+  mesh((x, y, z) => Math.max(Math.abs(bodySDF(x, y, z) - 0.022) - 0.01, Math.abs(z + 0.03) - 0.34, 1.12 - y),
+    [-0.4, 1.05, -0.42], [0.4, 1.62, 0.36], BP, blanketM, body, LOW ? 0.03 : 0.022);
+  mesh((x, y, z) => {
+    let d = Math.max(sdE(x, y, z, 0, 1.53, -0.04, 0.21, 0.08, 0.29), 1.47 - y);
+    d = smin(d, sdE(x, y, z, 0, 1.6, 0.2, 0.1, 0.07, 0.06), 0.05);
+    d = smin(d, sdE(x, y, z, 0, 1.61, -0.28, 0.15, 0.07, 0.05), 0.05);
+    d = smin(d, sdE(Math.abs(x), y, z, 0.29, 1.38, -0.02, 0.03, 0.17, 0.2), 0.05);
+    return d;
+  }, [-0.36, 1.18, -0.38], [0.36, 1.7, 0.3], BP, saddleM, body, LOW ? 0.03 : 0.018);
+  for (const s of [-1, 1]) {
+    part(new THREE.BoxGeometry(0.012, 0.42, 0.035), saddleM, body, s * 0.31, 1.27 - BP[1], 0.04 - BP[2]);
+    part(new THREE.TorusGeometry(0.055, 0.009, 6, 14), mats.trim, body, s * 0.31, 1.03 - BP[1], 0.04 - BP[2]);
   }
-  part(new THREE.TorusGeometry(0.36, 0.02, 6, 30), saddle, body, 0, 0.0, 0.1, 0, Math.PI / 2);
-  // bridle and reins
-  part(new THREE.TorusGeometry(0.11, 0.01, 6, 20), saddle, head, 0, 0.42, 0, Math.PI / 2);
-  part(new THREE.TorusGeometry(0.13, 0.01, 6, 20), saddle, head, 0, 0.08, 0, Math.PI / 2);
   root.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return { root, body, neck, head, legs, tail, phase: 0 };
+  return { root, body, neck, legs, tail, phase: 0, seatY: 1.61 - BP[1], bodyY: BP[1] };
+}
+
+// Gaits: stride frequency (Hz), stance fraction, swing amplitude, joint flex, footfall offsets [LF, RF, LH, RH]
+const GAITS = [
+  { v: 0.0, f: 0.9, duty: 0.62, A: 0.0, F: 0.0, off: [0.25, 0.75, 0.0, 0.5], bob: 0.0, pitch: 0.0, nod: 0.0 },
+  { v: 1.7, f: 0.95, duty: 0.62, A: 0.3, F: 0.8, off: [0.25, 0.75, 0.0, 0.5], bob: 0.018, pitch: 0.0, nod: 0.07 },   // walk (4-beat)
+  { v: 3.8, f: 1.4, duty: 0.45, A: 0.42, F: 1.05, off: [0.0, 0.5, 0.5, 0.0], bob: 0.045, pitch: 0.01, nod: 0.03 },   // trot (diagonal pairs)
+  { v: 7.0, f: 1.75, duty: 0.4, A: 0.55, F: 1.25, off: [0.3, 0.56, 0.0, 0.3], bob: 0.06, pitch: 0.06, nod: 0.08 },   // canter (3-beat)
+  { v: 12.5, f: 2.25, duty: 0.32, A: 0.72, F: 1.5, off: [0.46, 0.56, 0.0, 0.1], bob: 0.07, pitch: 0.07, nod: 0.1 }, // gallop (4-beat)
+];
+function gaitAt(v) {
+  v = Math.abs(v);
+  for (let i = 0; i < GAITS.length - 1; i++) {
+    const a = GAITS[i], b = GAITS[i + 1];
+    if (v <= b.v || i === GAITS.length - 2) {
+      const t = Math.min(1, Math.max(0, (v - a.v) / (b.v - a.v))), k = smooth(0.25, 0.75, t);
+      const o = {}; for (const key of ['f', 'duty', 'A', 'F', 'bob', 'pitch', 'nod']) o[key] = lerp(a[key], b[key], key === 'A' || key === 'F' ? t : k);
+      o.off = a.off.map((x, j) => lerp(x, b.off[j], k)); o.trot = (i === 1 ? k : i === 2 ? 1 - k : 0); return o;
+    }
+  }
+}
+const _hv = new THREE.Vector3();
+function animateHorse(dt, t, onHoof) {
+  const h = horse, spd = Math.abs(hs.speed), g = gaitAt(spd), air = !hs.onGround;
+  h.phase = (h.phase + dt * g.f * (spd > 0.05 ? 1 : 0)) % 1;
+  let drop = 0;
+  h.legs.forEach((l, i) => {
+    const ph = (h.phase + g.off[i]) % 1;
+    let up, lo;
+    if (ph < g.duty) { up = lerp(-g.A, g.A, ph / g.duty); lo = 0; drop = Math.max(drop, 1 - Math.cos(up)); }
+    else { const s = (ph - g.duty) / (1 - g.duty); up = lerp(g.A, -g.A, smooth(0, 1, s)); lo = Math.sin(Math.PI * s) * g.F; }
+    if (hs.speed < 0) up = -up;
+    if (air) { up = l.front ? -0.55 : 0.45; lo = l.front ? 1.7 : 1.1; }   // tuck over a jump
+    l.up.rotation.x = lerp(l.up.rotation.x, up, air ? Math.min(1, dt * 10) : 1);
+    l.lo.rotation.x = lerp(l.lo.rotation.x, l.front ? lo : -lo * 0.75, air ? Math.min(1, dt * 10) : 1);
+    if (!air && spd > 0.3 && l.lastPh > g.duty && ph < g.duty * 0.5 && onHoof) { l.lo.getWorldPosition(_hv); onHoof(_hv, i, g); }
+    l.lastPh = ph;
+  });
+  // idle: weight shifts and grazing with the head down in the grass
+  const graze = spd < 0.2 && !player.mounted && !hs.called ? (Math.sin(t * 0.21) > -0.2 ? 1 : 0) : 0;
+  h.grazeT = lerp(h.grazeT || 0, graze, dt * 1.1);
+  const beats = g.trot > 0.5 ? 2 : 1;
+  h.neck.rotation.x = lerp(0.0, 1.05, h.grazeT) + Math.sin(h.phase * Math.PI * 4) * g.nod - smooth(7, 12.5, spd) * 0.15 + (air ? -0.25 : 0);
+  h.body.position.y = h.bodyY + Math.sin(h.phase * Math.PI * 2 * beats) * g.bob - drop * 0.5 + (spd < 0.1 ? Math.sin(t * 1.3) * 0.004 : 0);
+  h.body.rotation.x = Math.sin(h.phase * Math.PI * 2 + 1) * g.pitch + (air ? -hs.vy * 0.05 : 0);
+  h.tail.rotation.x = 0.35 + smooth(4, 12, spd) * 0.7 + Math.sin(t * 2) * 0.06;
+  h.tail.rotation.z = Math.sin(t * 1.3) * 0.15 + (spd < 0.2 ? Math.sin(t * 0.7) * 0.2 : 0);
 }
 
 const hero = buildSamurai(); scene.add(hero.root);
@@ -873,7 +1078,7 @@ let lookYaw = camYaw, lookPitch = camPitch; // raw mouse targets; camera eases t
 player.yaw = camYaw + Math.PI;
 
 const keys = {};
-addEventListener('keydown', e => { keys[e.code] = true;
+addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyE') toggleMount();
   if (e.code === 'KeyH' && !player.mounted) hs.called = true;
   if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); }
@@ -897,7 +1102,7 @@ function toggleMount() {
   if (player.mounted) {
     player.mounted = false;
     const side = new THREE.Vector3(Math.cos(hs.yaw), 0, -Math.sin(hs.yaw)).multiplyScalar(-1.1);
-    player.pos.copy(hs.pos).add(side); player.speed = 0; hs.speed = 0; player.yaw = hs.yaw;
+    player.pos.copy(hs.pos).add(side); player.pos.y = terrainH(player.pos.x, player.pos.z); player.speed = 0; player.vel.set(0, 0, 0); hs.speed = 0; player.yaw = hs.yaw;
   } else if (player.pos.distanceTo(hs.pos) < 3.2) {
     player.mounted = true; hs.called = false; hs.speed = 0;
   }
@@ -949,27 +1154,6 @@ function animateSamurai(dt, t) {
     arr[i + 1] = by * (1 - flow * 0.35 * k);
   }
   s.cape.geometry.attributes.position.needsUpdate = true; s.cape.geometry.computeVertexNormals();
-}
-
-function animateHorse(dt, t) {
-  const h = horse, spd = hs.speed, gallop = smooth(4, 8, spd);
-  h.phase += dt * (spd < 0.1 ? 0 : 3.2 + spd * 0.9 - gallop * 1.5);
-  const amp = Math.min(1, spd / 1.2) * (0.35 + gallop * 0.4);
-  const walkOff = [0, 0.5, 0.75, 0.25], galOff = [0.1, 0.0, 0.6, 0.5];
-  h.legs.forEach((l, i) => {
-    const ph = h.phase + 6.2832 * lerp(walkOff[i], galOff[i], gallop), a = Math.sin(ph) * amp;
-    l.up.rotation.x = -a;
-    const bend = Math.max(0, Math.cos(ph)) * amp * 1.6;
-    l.lo.rotation.x = l.front ? bend : -bend * 0.8;
-  });
-  // idle: graze with head down in the grass
-  const graze = spd < 0.2 && !player.mounted ? (Math.sin(t * 0.25) > 0 ? 1 : 0) : 0;
-  h.grazeT = lerp(h.grazeT || 0, graze, dt * 1.2);
-  h.neck.rotation.x = lerp(0.62, 1.7, h.grazeT) + Math.sin(h.phase * 2) * 0.06 * amp - gallop * 0.2;
-  h.body.position.y = 1.28 + Math.abs(Math.sin(h.phase)) * 0.06 * gallop - (1 - Math.cos(amp)) * 0.55;
-  h.body.rotation.x = Math.sin(h.phase * 2) * 0.03 * gallop;
-  h.tail.rotation.x = 0.5 + gallop * 0.6 + Math.sin(t * 2) * 0.08;
-  h.tail.rotation.z = Math.sin(t * 1.3) * 0.15;
 }
 
 const CRANE_YAW = 0;
@@ -1197,6 +1381,8 @@ const audio = (() => {
   A.hoof = (dirt, hard) => { tone(140 + Math.random() * 30, 55, (dirt ? 0.5 : 0.25) * hard, 0.12); burst(dirt ? 900 : 1600, 'bandpass', 1.2, (dirt ? 0.25 : 0.1) * hard, 0.07); };
   A.draw = () => { burst(2500, 'bandpass', 2, 0.25, 0.45, 7000); tone(2200, 2150, 0.05, 1.4, 'sine', 0.35); tone(3310, 3290, 0.03, 1.1, 'sine', 0.35); };
   A.slash = () => { burst(500, 'bandpass', 1.5, 0.5, 0.32, 3000); };
+  A.jump = () => burst(700, 'bandpass', 1, 0.12, 0.25, 250);
+  A.land = (s = 1) => { tone(95, 38, Math.min(0.7, 0.3 + s * 0.3), 0.28); burst(380, 'lowpass', 1, Math.min(0.5, 0.2 + s * 0.2), 0.22); };
   A.cut = () => { for (let i = 0; i < 4; i++) setTimeout(() => burst(3000 + Math.random() * 2000, 'highpass', 0.7, 0.15, 0.08), i * 25); };
   A.update = (dt, gust, speed, shore, night) => {
     if (!ctx) return; const t = ctx.currentTime;
@@ -1270,12 +1456,38 @@ const soldier = { ready: false };
 const sword = { drawn: false, slashT: -1, cutDone: false };
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _ax = new THREE.Vector3();
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
-function rotBone(b, axisRig, ang) { // rotate a bone about an axis given in the character's own frame
+function rotBoneWorld(b, axisW, ang) {
   if (!b || !ang) return;
-  _ax.copy(axisRig).applyQuaternion(soldier.rig.getWorldQuaternion(_q3)).normalize();
-  b.parent.getWorldQuaternion(_q1); _q2.setFromAxisAngle(_ax, ang);
+  b.parent.getWorldQuaternion(_q1); _q2.setFromAxisAngle(axisW, ang);
   b.quaternion.premultiply(_q1).premultiply(_q2).premultiply(_q1.invert());
   b.updateMatrixWorld(true);
+}
+function rotBone(b, axisRig, ang) { // rotate a bone about an axis given in the character's own frame
+  if (!b || !ang) return;
+  rotBoneWorld(b, _ax.copy(axisRig).applyQuaternion(soldier.rig.getWorldQuaternion(_q3)).normalize(), ang);
+}
+const _ia = new THREE.Vector3(), _ib = new THREE.Vector3(), _ic = new THREE.Vector3(), _id = new THREE.Vector3(), _ie = new THREE.Vector3(), _if = new THREE.Vector3(), _ig = new THREE.Vector3();
+function legIK(up, low, foot, ty) { // analytic two-bone IK: put the ankle at height ty
+  const H = up.getWorldPosition(_ia), K = low.getWorldPosition(_ib), A = foot.getWorldPosition(_ic);
+  if (Math.abs(ty - A.y) < 0.004) return;
+  const T = _id.set(A.x, ty, A.z), l1 = H.distanceTo(K), l2 = K.distanceTo(A);
+  const d = Math.max(Math.abs(l1 - l2) + 1e-3, Math.min(l1 + l2 - 1e-3, H.distanceTo(T)));
+  const u = _ie.subVectors(H, K), w = _if.subVectors(A, K);
+  const cur = u.angleTo(w), want = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2))));
+  const n = _ig.crossVectors(u, w); if (n.lengthSq() < 1e-10) return; n.normalize();
+  rotBoneWorld(low, n, want - cur);
+  const A2 = foot.getWorldPosition(_ic), from = _ie.subVectors(A2, H).normalize(), to = _if.subVectors(T, H).normalize();
+  const ax = _ig.crossVectors(from, to), sn = ax.length();
+  if (sn > 1e-6) rotBoneWorld(up, ax.normalize(), Math.atan2(sn, from.dot(to)));
+}
+function footIK() {
+  const B = soldier.B, rootY = hero.root.position.y; let minY = Infinity;
+  for (const [u, l, f] of [[B.LeftUpLeg, B.LeftLeg, B.LeftFoot], [B.RightUpLeg, B.RightLeg, B.RightFoot]]) {
+    const A = f.getWorldPosition(_ib), gy = terrainH(A.x, A.z);
+    minY = Math.min(minY, gy);
+    legIK(u, l, f, A.y + (gy - rootY));
+  }
+  soldier.feet = { minY: Math.max(minY, player.pos.y - 0.25) };
 }
 function reskinArmor(mat) {
   // The source model is a weathered sci-fi trooper; recolour its texture regions into lacquered samurai armour.
@@ -1385,9 +1597,10 @@ function animateSoldier(dt, t) {
   const S = soldier, spd = player.mounted ? 0 : player.speed;
   const walkW = smooth(0.15, 1.2, spd) * (1 - smooth(2.4, 4.5, spd)), runW = smooth(2.4, 4.5, spd);
   S.act.Idle.setEffectiveWeight(1 - walkW - runW); S.act.Walk.setEffectiveWeight(walkW); S.act.Run.setEffectiveWeight(runW);
-  S.act.Walk.timeScale = Math.max(0.6, spd / 1.6); S.act.Run.timeScale = Math.max(0.7, spd / 5.0);
+  S.act.Walk.timeScale = Math.max(0.6, spd / 1.6); S.act.Run.timeScale = player.onGround ? Math.max(0.7, spd / 5.0) : 0.15;
   S.mixer.update(dt);
   S.rig.position.y = player.mounted ? 0.94 + 0.07 - S.hipsY : 0;
+  if (player.mounted) S.rig.rotation.set(0, 0, 0); else S.rig.rotation.set(player.pitchLean, 0, player.lean);
   (player.mounted ? horse.root : hero.root).updateMatrixWorld(true);
   const B = S.B;
   if (player.mounted) {
@@ -1406,6 +1619,12 @@ function animateSoldier(dt, t) {
     rotBone(B.RightForeArm, AX, -0.25 * env);
   } else if (sword.drawn && !player.mounted) {
     rotBone(B.RightArm, AX, -0.35); rotBone(B.RightForeArm, AX, -0.5); // ready stance, blade low and forward
+  }
+  if (!player.mounted) {
+    if (!player.onGround) { // airborne: knees up, arms out
+      rotBone(B.LeftUpLeg, AX, -0.75); rotBone(B.RightUpLeg, AX, -0.3); rotBone(B.LeftLeg, AX, 1.25); rotBone(B.RightLeg, AX, 0.7);
+      rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45);
+    } else footIK();
   }
   S.drawn.visible = sword.drawn; S.handle.visible = !sword.drawn;
 }
@@ -1491,22 +1710,10 @@ function updateWorld(dt, t) {
 
   // footsteps & hoofbeats (sound + dust)
   const moved = _v.subVectors(player.pos, lastPos).setY(0).length(); lastPos.copy(player.pos);
-  if (!player.mounted && moved < 1) {
+  if (!player.mounted && player.onGround && moved < 1) {
     stepDist += moved; const stride = player.speed > 3 ? 1.15 : 0.72;
     if (stepDist > stride) { stepDist = 0; const dirt = pathMask(player.pos.x, player.pos.z) > 0.3; audio.step(dirt, player.speed > 3); if (dirt || player.speed > 3) dustAt(player.pos.x, player.pos.z, player.speed > 3 ? 0.6 : 0.2); }
   }
-  const hm = _v.subVectors(hs.pos, lastHorse).setY(0).length(); lastHorse.copy(hs.pos);
-  if (hm < 2) {
-    hoofDist += hm; const gallop = hs.speed > 6, interval = gallop ? 0.85 : 0.55;
-    if (hoofDist > interval) {
-      hoofDist = 0; const dirt = pathMask(hs.pos.x, hs.pos.z) > 0.3;
-      const beats = gallop ? 3 : 1;
-      for (let i = 0; i < beats; i++) setTimeout(() => audio.hoof(dirt, gallop ? 1.2 : 0.8), i * 70);
-      const back = (hoofBeat++ % 2) ? 0.6 : -0.6;
-      dustAt(hs.pos.x - Math.sin(hs.yaw) * back, hs.pos.z - Math.cos(hs.yaw) * back, gallop ? 1 : 0.3);
-    }
-  }
-
   // particles
   for (const s of particles) {
     if (!s.visible) continue; const u = s.userData; u.age += dt;
@@ -1612,81 +1819,201 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
 });
 
+// ─────────────────────────── Physics: movement, gravity, collisions ───────────────────────────
+const GRAV = 22;
+const COLLIDERS = COLLIDERS_INIT; // static circles { x, z, r }
+let shake = 0;
+function collideCircles(p, radius, vel, extra) {
+  let hit = 0;
+  const list = extra ? COLLIDERS.concat(extra) : COLLIDERS;
+  for (const c of list) {
+    const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = c.r + radius;
+    if (d < m && d > 1e-5) {
+      const nx = dx / d, nz = dz / d; p.x = c.x + nx * m; p.z = c.z + nz * m;
+      if (vel) { const vn = vel.x * nx + vel.z * nz; if (vn < 0) { vel.x -= vn * nx; vel.z -= vn * nz; hit = Math.max(hit, -vn); } }
+      else hit = 1;
+    }
+  }
+  return hit;
+}
+function slopeAlong(x, z, dx, dz) { return (terrainH(x + dx * 0.6, z + dz * 0.6) - terrainH(x - dx * 0.6, z - dz * 0.6)) / 1.2; }
+function landImpact(p, strength) {
+  shake = Math.min(1.2, shake + strength * 0.5);
+  audio.land(strength);
+  dustAt(p.x, p.z, Math.min(1.5, strength));
+}
+
+// Player: velocity-based controller with acceleration, slope response, jumping and landing
+Object.assign(player, { vel: new THREE.Vector3(), onGround: true, jumpHeld: false, yawRate: 0, lean: 0, pitchLean: 0, prevSpeed: 0 });
+function updatePlayer(dt, moving, wantYaw, sprint) {
+  const p = player, v = p.vel, dirX = Math.sin(wantYaw), dirZ = Math.cos(wantYaw);
+  let top = moving ? (sprint ? 5.6 : 1.8) : 0;
+  if (moving) { const s = slopeAlong(p.pos.x, p.pos.z, dirX, dirZ); top *= s > 0 ? 1 - Math.min(0.45, s * 0.9) : 1 + Math.min(0.2, -s * 0.35); }
+  const accel = p.onGround ? (moving ? 10 : 14) : 2.5;
+  const ax = dirX * top - v.x, az = dirZ * top - v.z, al = Math.hypot(ax, az), step = Math.min(al, accel * dt);
+  if (al > 1e-5) { v.x += ax / al * step; v.z += az / al * step; }
+  // jump
+  if (keys.Space && !p.jumpHeld && p.onGround) { v.y = 6.4; p.onGround = false; audio.jump(); }
+  p.jumpHeld = !!keys.Space;
+  v.y -= GRAV * dt;
+  // horizontal move with island edge + colliders (incl. the horse's body)
+  const nx = p.pos.x + v.x * dt, nz = p.pos.z + v.z * dt;
+  if (walkable(nx, p.pos.z)) p.pos.x = nx; else v.x *= -0.2;
+  if (walkable(p.pos.x, nz)) p.pos.z = nz; else v.z *= -0.2;
+  const hx = Math.sin(hs.yaw), hz = Math.cos(hs.yaw);
+  collideCircles(p.pos, 0.32, v, [{ x: hs.pos.x + hx * 0.5, z: hs.pos.z + hz * 0.5, r: 0.42 }, { x: hs.pos.x - hx * 0.45, z: hs.pos.z - hz * 0.45, r: 0.42 }]);
+  // vertical: gravity, ground snapping on slopes, landing
+  const g = terrainH(p.pos.x, p.pos.z);
+  p.pos.y += v.y * dt;
+  if (p.pos.y <= g) {
+    if (!p.onGround && v.y < -6) landImpact(p.pos, (-v.y - 6) / 5);
+    p.pos.y = g; v.y = 0; p.onGround = true;
+  } else if (p.onGround && p.pos.y - g < 0.35 && v.y <= 0) { p.pos.y = g; v.y = 0; }
+  else p.onGround = false;
+  // facing follows velocity; lean into turns and acceleration
+  const hsp = Math.hypot(v.x, v.z), prevYaw = p.yaw;
+  if (hsp > 0.25) p.yaw += angDiff(p.yaw, Math.atan2(v.x, v.z)) * Math.min(1, dt * (p.onGround ? 11 : 4));
+  p.yawRate = lerp(p.yawRate, angDiff(prevYaw, p.yaw) / Math.max(dt, 1e-3), Math.min(1, dt * 8));
+  p.speed = hsp;
+  p.lean = lerp(p.lean, Math.max(-0.22, Math.min(0.22, -p.yawRate * hsp * 0.03)), Math.min(1, dt * 6));
+  p.pitchLean = lerp(p.pitchLean, Math.max(-0.12, Math.min(0.15, (hsp - p.prevSpeed) / Math.max(dt, 1e-3) * 0.012)), Math.min(1, dt * 5));
+  p.prevSpeed = hsp;
+}
+
+// Horse: forward speed with inertia, limited turn rate, slope response, braking, rein-back and jumping
+Object.assign(hs, { y: 0, vy: 0, onGround: true, yawRate: 0, lean: 0, urge: 0, jumpHeld: false, pitch: 0 });
+function updateHorse(dt, target, wantYaw, steer, jump) {
+  const sp = hs.speed, aSp = Math.abs(sp);
+  if (hs.onGround) {
+    const s = slopeAlong(hs.pos.x, hs.pos.z, Math.sin(hs.yaw), Math.cos(hs.yaw));
+    target *= target > 0 ? (s > 0 ? 1 - Math.min(0.4, s * 0.7) : 1 + Math.min(0.15, -s * 0.3)) : 1;
+    const rate = target > sp ? (sp < 4 ? 3.2 : 2.2) : (target < sp - 3 ? 7 : 3);
+    hs.speed += Math.max(-rate * dt, Math.min(rate * dt, target - sp));
+  }
+  if (steer) {
+    const maxTurn = lerp(2.3, 1.0, smooth(0, 12.5, aSp)) * (aSp < 0.2 ? 0.8 : 1);
+    const wantRate = Math.max(-maxTurn, Math.min(maxTurn, angDiff(hs.yaw, wantYaw) * 3));
+    hs.yawRate = lerp(hs.yawRate, wantRate, Math.min(1, dt * (hs.onGround ? 5 : 1)));
+  } else hs.yawRate = lerp(hs.yawRate, 0, Math.min(1, dt * 5));
+  hs.yaw += hs.yawRate * dt;
+  if (jump && hs.onGround && sp > 2.5) { hs.vy = 5.6; hs.onGround = false; audio.jump(); }
+  // move + collide
+  const vx = Math.sin(hs.yaw) * hs.speed, vz = Math.cos(hs.yaw) * hs.speed;
+  const nx = hs.pos.x + vx * dt, nz = hs.pos.z + vz * dt;
+  if (walkable(nx + Math.sin(hs.yaw) * 0.9 * Math.sign(hs.speed), nz + Math.cos(hs.yaw) * 0.9 * Math.sign(hs.speed))) { hs.pos.x = nx; hs.pos.z = nz; }
+  else { if (aSp > 5) { shake += 0.4; audio.land(0.6); } hs.speed *= -0.15; }
+  const front = { x: hs.pos.x + Math.sin(hs.yaw) * 0.7, z: hs.pos.z + Math.cos(hs.yaw) * 0.7 };
+  const hitF = collideCircles(front, 0.4, null), hitC = collideCircles(hs.pos, 0.5, null);
+  if (hitF || hitC) {
+    if (hitF) { hs.pos.x += front.x - (hs.pos.x + Math.sin(hs.yaw) * 0.7); hs.pos.z += front.z - (hs.pos.z + Math.cos(hs.yaw) * 0.7); }
+    if (aSp > 5) { shake += 0.5; audio.land(0.8); }
+    hs.speed *= 0.3;
+  }
+  // vertical
+  const g = (terrainH(hs.pos.x + Math.sin(hs.yaw) * 0.75, hs.pos.z + Math.cos(hs.yaw) * 0.75) + terrainH(hs.pos.x - Math.sin(hs.yaw) * 0.75, hs.pos.z - Math.cos(hs.yaw) * 0.75)) / 2;
+  hs.vy -= GRAV * dt; hs.y += hs.vy * dt;
+  if (hs.y <= g) { if (!hs.onGround && hs.vy < -4) landImpact(hs.pos, (-hs.vy - 3) / 4); hs.y = g; hs.vy = 0; hs.onGround = true; }
+  else if (hs.onGround && hs.y - g < 0.4 && hs.vy <= 0) { hs.y = g; hs.vy = 0; }
+  else hs.onGround = false;
+  hs.pos.y = hs.y;
+  hs.lean = lerp(hs.lean, Math.max(-0.28, Math.min(0.28, -hs.yawRate * hs.speed * 0.028)), Math.min(1, dt * 4));
+}
+
+// Hoof touchdown: sound + dust, felt through the camera at a gallop
+function onHoof(p, i, g) {
+  const dirt = pathMask(p.x, p.z) > 0.3, fast = Math.abs(hs.speed) > 6;
+  audio.hoof(dirt, fast ? 1.1 : 0.7);
+  if (dirt || fast) dustAt(p.x, p.z, fast ? 0.7 : 0.25);
+  if (player.mounted && fast) shake = Math.min(1, shake + 0.04);
+}
+
 // ─────────────────────────── Main loop ───────────────────────────
 const clock = new THREE.Clock();
-const camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
-let first = true;
+const camPos = new THREE.Vector3(), camTarget = new THREE.Vector3(), camLook = new THREE.Vector3();
+let first = true, camFov = 55;
 document.getElementById('loading').remove();
 setTimeout(() => document.getElementById('title').style.opacity = 0.55, 6000);
 
 function update(dt, t) {
   const ease = 1 - Math.exp(-dt * 16);
   camYaw += (lookYaw - camYaw) * ease; camPitch += (lookPitch - camPitch) * ease;
-  // Input → desired direction relative to camera
   const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   const r = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
-  const moving = f !== 0 || r !== 0, sprint = keys.ShiftLeft || keys.ShiftRight;
-  const wantYaw = Math.atan2(-r, f) + camYaw + Math.PI; // direction in world, relative to camera
+  const moving = started && (f !== 0 || r !== 0), sprint = keys.ShiftLeft || keys.ShiftRight;
+  const wantYaw = Math.atan2(-r, f) + camYaw + Math.PI;
 
   if (player.mounted) {
-    const top = moving ? (sprint ? 13 : 5.5) : 0;
-    hs.speed = lerp(hs.speed, top, dt * (top > hs.speed ? 1.2 : 2.2));
-    if (moving) hs.yaw += angDiff(hs.yaw, wantYaw) * Math.min(1, dt * 2.6);
-    const dx = Math.sin(hs.yaw) * hs.speed * dt, dz = Math.cos(hs.yaw) * hs.speed * dt;
-    if (!tryMove(hs.pos, dx, dz)) hs.speed *= 0.5;
-    player.pos.copy(hs.pos);
+    // W ramps trot → canter, Shift gallops, S brakes then backs up, A/D alone turn on the spot
+    hs.urge = f > 0 ? Math.min(1, hs.urge + dt * 0.45) : 0;
+    let target = 0;
+    if (f > 0) target = sprint ? 12.5 : lerp(3.8, 7, hs.urge);
+    else if (f < 0) target = hs.speed > 0.4 ? 0 : -1.3;
+    else if (r !== 0) target = 1.4;
+    const steerYaw = f < 0 ? hs.yaw + r * -0.8 : wantYaw;
+    updateHorse(dt, started ? target : 0, steerYaw, moving, keys.Space && !hs.jumpHeld);
+    hs.jumpHeld = !!keys.Space;
+    player.pos.copy(hs.pos); player.vel.set(0, 0, 0); player.onGround = true;
+    setPrompt('');
   } else {
-    const top = moving ? (sprint ? 6.5 : 1.9) : 0;
-    player.speed = lerp(player.speed, top, dt * (top > player.speed ? 4 : 7));
-    if (moving) player.yaw += angDiff(player.yaw, wantYaw) * Math.min(1, dt * 9);
-    tryMove(player.pos, Math.sin(player.yaw) * player.speed * dt, Math.cos(player.yaw) * player.speed * dt);
-    // horse: comes when called, otherwise wanders slowly
-    const toP = new THREE.Vector3().subVectors(player.pos, hs.pos); toP.y = 0;
-    const d = toP.length();
-    if (hs.called && d > 2.6) {
-      const want = Math.atan2(toP.x, toP.z);
-      hs.yaw += angDiff(hs.yaw, want) * Math.min(1, dt * 3);
-      hs.speed = lerp(hs.speed, d > 12 ? 11 : 3.5, dt * 1.5);
-    } else { if (hs.called) hs.called = false; hs.speed = lerp(hs.speed, 0, dt * 2.5); }
-    tryMove(hs.pos, Math.sin(hs.yaw) * hs.speed * dt, Math.cos(hs.yaw) * hs.speed * dt);
+    updatePlayer(dt, moving, wantYaw, sprint);
+    // horse: comes when called, otherwise stands and grazes
+    const dx = player.pos.x - hs.pos.x, dz = player.pos.z - hs.pos.z, d = Math.hypot(dx, dz);
+    let target = 0;
+    if (hs.called && d > 2.8) target = d > 14 ? 11 : d > 6 ? 6 : 2.2; else if (hs.called) hs.called = false;
+    updateHorse(dt, target, Math.atan2(dx, dz), hs.called, false);
     setPrompt(d < 3.2 ? '<b>E</b>MOUNT' : '');
   }
-  if (player.mounted) setPrompt('');
 
-  // Ground contact: horse pitched to the slope under its hooves, samurai feet on the terrain
+  // Place the horse: follow the slope front-to-back, bank into turns, pitch over jumps
   const hx = Math.sin(hs.yaw), hz = Math.cos(hs.yaw);
   const hFront = terrainH(hs.pos.x + hx * 0.75, hs.pos.z + hz * 0.75), hBack = terrainH(hs.pos.x - hx * 0.75, hs.pos.z - hz * 0.75);
-  hs.pos.y = (hFront + hBack) / 2;
-  horse.root.position.copy(hs.pos);
-  horse.root.rotation.set(0, 0, 0); horse.root.rotateY(hs.yaw); horse.root.rotateX(-Math.atan2(hFront - hBack, 1.5));
+  hs.pitch = lerp(hs.pitch, hs.onGround ? -Math.atan2(hFront - hBack, 1.5) : -hs.vy * 0.04, Math.min(1, dt * 8));
+  horse.root.position.set(hs.pos.x, hs.y, hs.pos.z);
+  horse.root.rotation.set(0, 0, 0); horse.root.rotateY(hs.yaw); horse.root.rotateX(hs.pitch); horse.root.rotateZ(hs.lean);
 
   if (player.mounted) {
-    hero.root.position.set(0, 0, 0); hero.root.rotation.set(0, 0, 0);
-    horse.body.add(hero.root); hero.root.position.set(0, -0.48, 0.02);
+    if (hero.root.parent !== horse.body) { horse.body.add(hero.root); }
+    hero.root.position.set(0, horse.seatY - 0.94, -0.04); hero.root.rotation.set(0, 0, 0);
   } else {
     if (hero.root.parent !== scene) scene.add(hero.root);
-    player.pos.y = terrainH(player.pos.x, player.pos.z);
-    hero.root.position.copy(player.pos); hero.root.rotation.set(0, player.yaw, 0);
+    hero.root.position.copy(player.pos);
+    if (player.onGround && soldier.feet) hero.root.position.y = Math.min(player.pos.y, soldier.feet.minY);
+    hero.root.rotation.set(0, player.yaw, 0);
   }
-  animateSamurai(dt, t); animateHorse(dt, t);
+  animateSamurai(dt, t); animateHorse(dt, t, onHoof);
 
   // Grass parts around feet and hooves
-  const u = grassMat.uniforms;
-  u.uTime.value = t;
-  u.uPush0.value.set(player.pos.x, player.pos.z, 0.7, player.mounted ? 0 : 1);
-  SH.uCenter.value.set(player.pos.x, player.pos.z);
-  u.uPush1.value.set(hs.pos.x, hs.pos.z, 1.4, 1);
+  SH.uTime.value = t;
+  SH.uPush0.value.set(player.pos.x, player.pos.z, 0.7, player.mounted ? 0 : 1);
+  SH.uPush1.value.set(hs.pos.x, hs.pos.z, 1.4, 1);
+  SH.uCenter.value.set(player.pos.x - Math.sin(camYaw) * 5, player.pos.z - Math.cos(camYaw) * 5); // carpets sit ahead of the camera
 
-  // Third-person camera
-  const dist = player.mounted ? 6.2 : 4.2, lift = player.mounted ? 2.5 : 1.55;
-  camTarget.set(player.pos.x, player.pos.y + lift, player.pos.z);
+  // Third-person camera: spring follow, speed-dependent distance and FOV, look-ahead, shake
+  const spd = player.mounted ? Math.abs(hs.speed) : player.speed, fast = smooth(4, 12.5, spd);
+  const dist = (player.mounted ? 6.0 : 4.2) + fast * 1.4, lift = player.mounted ? 2.45 : 1.55;
+  const vx = player.mounted ? Math.sin(hs.yaw) * hs.speed : player.vel.x, vz = player.mounted ? Math.cos(hs.yaw) * hs.speed : player.vel.z;
+  camTarget.set(player.pos.x + vx * 0.12, (player.mounted ? hs.y : hero.root.position.y) + lift, player.pos.z + vz * 0.12);
   const want = new THREE.Vector3(
     camTarget.x + Math.sin(camYaw) * Math.cos(camPitch) * dist,
     camTarget.y + Math.sin(camPitch) * dist,
     camTarget.z + Math.cos(camYaw) * Math.cos(camPitch) * dist);
   want.y = Math.max(want.y, terrainH(want.x, want.z) + 0.45, 0.6);
-  if (first) { camPos.copy(want); first = false; } else camPos.lerp(want, 1 - Math.exp(-dt * 10));
-  camera.position.copy(camPos); camera.lookAt(camTarget);
+  if (first) { camPos.copy(want); camLook.copy(camTarget); first = false; }
+  else { camPos.lerp(want, 1 - Math.exp(-dt * 9)); camLook.lerp(camTarget, 1 - Math.exp(-dt * 14)); }
+  shake *= Math.exp(-dt * 6);
+  const sh = shake * 0.12;
+  camera.position.set(camPos.x + (Math.sin(t * 53) + Math.sin(t * 31)) * sh, camPos.y + (Math.sin(t * 61) + Math.sin(t * 23)) * sh, camPos.z + Math.sin(t * 47) * sh);
+  camera.lookAt(camLook);
+  camFov = lerp(camFov, 55 + fast * 13, Math.min(1, dt * 3));
+  if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
+
+  if (window.__freeCam) { camera.position.copy(window.__freeCam[0]); camera.lookAt(window.__freeCam[1]); }
+  // Title screen: slow cinematic orbit of the island
+  else if (!started) {
+    const a = t * 0.045 + 2.2;
+    camera.position.set(Math.cos(a) * 62, 16 + Math.sin(t * 0.1) * 3, Math.sin(a) * 62);
+    camera.lookAt(0, 4, 0);
+  }
 
   // Shadows follow the player
   sun.position.copy(player.pos).addScaledVector(sunDir, 60); sun.target.position.copy(player.pos);
@@ -1707,13 +2034,25 @@ function update(dt, t) {
   updateWorld(dt, t);
 }
 
+const grassFull = [grass, nearGrass, midGrass].map(m => [m, m.geometry.instanceCount]);
+let perfAcc = 0, perfN = 0, grassScale = 1;
+function adaptQuality(rawDt) {
+  perfAcc += rawDt; perfN++;
+  if (perfAcc < 2) return;
+  const avg = perfAcc / perfN; perfAcc = perfN = 0;
+  const prev = grassScale;
+  if (avg > 1 / 38) grassScale = Math.max(0.3, grassScale * 0.82);
+  else if (avg < 1 / 56) grassScale = Math.min(1, grassScale * 1.08);
+  if (grassScale !== prev) grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * grassScale));
+}
 function loop() {
-  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  const raw = clock.getDelta(), dt = Math.min(raw, 0.05), t = clock.elapsedTime;
+  if (!params.get('fixed')) adaptQuality(raw);
   update(dt, t);
   composer.render();
   requestAnimationFrame(loop);
 }
-window.__game = { dbg: { clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
+window.__game = { dbg: { clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
 loop();
 </script>
 </body>
