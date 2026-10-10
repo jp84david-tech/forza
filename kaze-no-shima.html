@@ -425,6 +425,7 @@ const SH = {
   uFogCol: { value: scene.fog.color }, uFogDen: { value: scene.fog.density },
   uShadowMap: { value: null }, uShadowMatrix: { value: sun.shadow.matrix }, uHasShadow: { value: 0 },
   uCloudAmt: { value: 1 },
+  uPx: { value: 0.001 },   // world size of one screen pixel at 1 m (keeps grass blades from going sub-pixel)
 };
 
 // ─────────────────────────── Grass physics: trample + cut map ───────────────────────────
@@ -476,6 +477,19 @@ const NOISE_GLSL = /* glsl */`
   float vnoise2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash2(i), hash2(i + vec2(1, 0)), f.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), f.x), f.y); }
   float fbm5(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise2(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
+  // colour of the upper grass blades at a spot (shared by the blades and the painted far field)
+  vec3 meadowTip(vec2 xz, float mid, float big, float patchJit){
+    float pt = smoothstep(0.35, 0.75, sin(xz.x * 0.07) * sin(xz.y * 0.06 + 1.3) * 0.5 + 0.5 + patchJit);
+    vec3 tipG = mix(vec3(0.11, 0.25, 0.04), vec3(0.2, 0.32, 0.05), mid);
+    vec3 tipD = mix(vec3(0.48, 0.38, 0.12), vec3(0.4, 0.41, 0.12), mid);
+    return mix(tipG, tipD, clamp(pt * 0.8 + (big - 0.5) * 0.7, 0.0, 1.0));
+  }
+  // wind gusts rolling over the meadow (0..1)
+  float gustAt(vec2 xz, float t){
+    float g = sin(dot(xz, normalize(vec2(1.0, 0.35))) * 0.09 - t * 1.25) * 0.5 + 0.5;
+    float g2 = sin(dot(xz, vec2(-0.3, 1.0)) * 0.21 - t * 2.1) * 0.5 + 0.5;
+    return g * g * 0.8 + g2 * 0.2;
+  }
   float cloudShadowAt(vec2 xz, float t, float amt){ vec2 p = xz * 0.011 + t * vec2(0.03, 0.011); float n = vnoise2(p) * 0.62 + vnoise2(p * 2.03 + 1.7) * 0.38; return mix(1.0, 0.4, smoothstep(0.5, 0.66, n) * amt); }
 `;
 const SHADOW_GLSL = `#define SHADOW_RES ${SHADOW_RES}
@@ -517,16 +531,61 @@ const tGeo = new THREE.PlaneGeometry(TS, TS, TSEG, TSEG); tGeo.rotateX(-Math.PI 
 }
 const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ vertexColors: true, map: groundTex.map, normalMap: groundTex.normalMap, normalScale: new THREE.Vector2(1.4, 1.4), roughness: 0.95, envMapIntensity: 0.6 }));
 terrain.receiveShadow = true;
+// Painted meadow for the distance: a tileable sheet of short brush strokes. Past the blade carpets the
+// terrain shades itself like the grass (same colours, light, sheen and rolling wind gusts), so blades
+// can stop at ~40 m without the field going flat or sparse.
+const grassPaint = (() => {
+  const S = LOW ? 256 : 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), k = S / 512; x.fillStyle = 'rgb(118,118,118)'; x.fillRect(0, 0, S, S); x.lineCap = 'round';
+  for (let i = 0; i < 26000 * k * k; i++) {
+    const cx = Math.random() * S, cy = Math.random() * S, a = -Math.PI / 2 + (Math.random() - 0.5) * 1.4, l = (3 + Math.random() * 7) * k;
+    const v = 50 + Math.random() * 170 | 0, dx = Math.cos(a) * l, dy = Math.sin(a) * l;
+    x.strokeStyle = `rgb(${v},${v},${v})`; x.lineWidth = (0.7 + Math.random() * 1.1) * k;
+    for (const ox of [0, -S, S]) for (const oy of [0, -S, S]) {
+      if ((ox && Math.min(cx, S - cx) > l) || (oy && Math.min(cy, S - cy) > l)) continue;
+      x.beginPath(); x.moveTo(cx + ox, cy + oy); x.quadraticCurveTo(cx + ox + dx * 0.5 + 1.5 * k, cy + oy + dy * 0.5, cx + ox + dx, cy + oy + dy); x.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; return t;
+})();
 terrain.material.onBeforeCompile = sh => {
-  sh.uniforms.uTime = SH.uTime; sh.uniforms.uCloudAmt = SH.uCloudAmt;
-  sh.vertexShader = 'attribute float aGrassy; varying float vGrassy; varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vGrassy = aGrassy;');
-  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; uniform float uTime; uniform float uCloudAmt;\n' + NOISE_GLSL + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-    float farG = smoothstep(6.0, 40.0, distance(vWPos.xz, cameraPosition.xz));
-    float pn = vnoise2(vWPos.xz * 0.035);
-    vec3 gcol = mix(vec3(0.05, 0.1, 0.018), vec3(0.19, 0.16, 0.05), clamp(pn * 1.2 - 0.1, 0.0, 1.0)) * (0.85 + 0.3 * vnoise2(vWPos.xz * 0.9));
-    diffuseColor.rgb = mix(diffuseColor.rgb, gcol, vGrassy * (0.5 + 0.45 * farG));`).replace('#include <lights_fragment_begin>',
-    THREE.ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );',
-      'getDirectionalLightInfo( directionalLight, directLight );\n directLight.color *= cloudShadowAt(vWPos.xz, uTime, uCloudAmt);'));
+  Object.assign(sh.uniforms, { uTime: SH.uTime, uCloudAmt: SH.uCloudAmt, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uPaint: { value: grassPaint } });
+  sh.vertexShader = 'attribute float aGrassy; varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vGrassy = aGrassy; vWNrm = normalize(mat3(modelMatrix) * objectNormal);');
+  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform vec3 uSunDir, uSunCol, uAmb; uniform sampler2D uPaint;\n' + NOISE_GLSL + sh.fragmentShader
+    .replace('#include <lights_fragment_begin>', 'float gVis = 1.0;\n' + THREE.ShaderChunk.lights_fragment_begin
+      .replace('getDirectionalLightInfo( directionalLight, directLight );',
+        'getDirectionalLightInfo( directionalLight, directLight );\n directLight.color *= cloudShadowAt(vWPos.xz, uTime, uCloudAmt);')
+      .replace('directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;',
+        '{ float sV = ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0; directLight.color *= sV; gVis = min(gVis, sV); }'))
+    .replace('#include <opaque_fragment>', `
+    if (vGrassy > 0.01) {
+      vec2 xz = vWPos.xz; float dist = distance(vWPos, cameraPosition);
+      vec3 V = normalize(cameraPosition - vWPos), L = uSunDir, H = normalize(V + L);
+      float g = gustAt(xz, uTime);
+      vec2 wdir = normalize(vec2(1.0, 0.35));
+      // brush strokes at two scales, swaying with the gusts
+      vec2 sway = wdir * (g * 0.12 + sin(uTime * 2.3 + xz.x * 0.4) * 0.015);
+      float det = texture2D(uPaint, xz / 2.7 + sway).r * 0.6 + texture2D(uPaint, mat2(0.8, -0.6, 0.6, 0.8) * xz / 9.3 + sway * 0.4).r * 0.4;
+      // seen from afar you look across the blade tops; up close, down between them to the dark roots
+      float k = mix(0.27, mix(0.42, 0.52, 1.0 - abs(V.y)), smoothstep(3.0, 35.0, dist));
+      vec3 col = mix(vec3(0.012, 0.025, 0.006), meadowTip(xz, vnoise2(xz * 0.19 + 7.0), vnoise2(xz * 0.035), 0.075), smoothstep(0.0, 1.0, k));
+      float clump = vnoise2(xz * 0.45) * 0.6 + vnoise2(xz * 1.3 + 3.0) * 0.4;  // tufts and hollows
+      col *= mix(0.5, 1.3, det) * mix(0.65, 1.35, clump) * 0.93 * 0.92;
+      col *= 1.0 + (g - 0.4) * 0.24;                                         // gusts roll over as lighter waves
+      float nl = dot(normalize(vWNrm), L);
+      float ndl = clamp(0.62 * nl + 0.25 * sqrt(max(1.0 - nl * nl, 0.0)), 0.0, 1.0);   // average over leaning blades
+      float vis = gVis * cloudShadowAt(xz, uTime, uCloudAmt);
+      float ao = mix(0.15, 1.0, smoothstep(0.0, 0.85, k));
+      float trans = pow(max(dot(-V, L), 0.0), 6.0) * 0.5 * k;
+      vec3 up = normalize(vec3(wdir.x * (0.12 + g * 0.6) * 2.2, 1.0, wdir.y * (0.12 + g * 0.6) * 2.2));
+      float th = dot(up, H), sinTH = sqrt(max(1.0 - th * th, 0.0));
+      float sheen = (pow(sinTH, 12.0) * 0.055 + pow(sinTH, 4.0) * 0.02) * smoothstep(0.2, 0.9, k) * (0.4 + 0.6 * ndl) * (0.6 + 0.8 * det);
+      vec3 field = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
+                 + col * uSunCol * trans * 0.45 * vis
+                 + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis;
+      outgoingLight = mix(outgoingLight, field, smoothstep(0.0, 1.0, vGrassy));
+    }
+    #include <opaque_fragment>`);
 };
 scene.add(terrain);
 
@@ -672,14 +731,14 @@ function makeGrassMaterial(near, patch) {
   defines: near ? { NEAR: '' } : {},
   uniforms: near ? { ...SH, uPatch: { value: patch } } : SH,
   vertexShader: /* glsl */`
-    uniform float uTime, uCloudAmt; uniform vec4 uPush0; uniform vec4 uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample; uniform float uTrSize;
+    uniform float uTime, uCloudAmt, uPx; uniform vec4 uPush0; uniform vec4 uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample; uniform float uTrSize;
     ${NOISE_GLSL}
     #ifdef NEAR
     uniform sampler2D uHeightMap; uniform vec3 uHm; uniform vec2 uCenter; uniform float uPatch;
     #endif
     attribute vec3 aOffset; attribute vec4 aParams;
-    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch; varying vec4 vShadowCoord; varying float vCut;
-    varying float vSide; varying vec3 vTng; varying vec3 vUp; varying vec3 vNz;
+    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
+    varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; varying float vCov;
     vec2 pushFrom(vec4 P, vec2 root, float t, float h){
       vec2 d = root - P.xy; float l = length(d) + 1e-4;
       float f = (1.0 - smoothstep(P.z*0.35, P.z, l)) * P.w;
@@ -711,12 +770,15 @@ function makeGrassMaterial(near, patch) {
       if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
       vec3 tng = vec3(cos(rot), 0.0, sin(rot));
       vec3 nrm = vec3(-tng.z, 0.0, tng.x);
-      vec3 wp = root + tng * position.x * w * (1.0 + clamp(camD / 45.0, 0.0, 1.0) * 0.9) * (1.0 - t * 0.85 * (1.0 - vCut * 0.8)) + vec3(0.0, t * h, 0.0);
+      // blade width here; never thinner than a pixel, and how much of a pixel it really covers (fades the
+      // highlights on sub-pixel tips, which otherwise sparkle as a white fuzz)
+      float bw = w * (1.0 + clamp(camD / 45.0, 0.0, 1.0) * 0.9) * (1.0 - t * 0.85 * (1.0 - vCut * 0.8));
+      float pxW = distance(root + vec3(0.0, t * h, 0.0), cameraPosition) * uPx;
+      vCov = clamp(bw / (pxW * 2.0), 0.0, 1.0);
+      vec3 wp = root + tng * position.x * max(bw, pxW * 0.9) + vec3(0.0, t * h, 0.0);
       wp += nrm * t * t * h * (0.18 + 0.35 * r);                    // natural curl
       vec2 wdir = normalize(vec2(1.0, 0.35));
-      float g = sin(dot(root.xz, wdir) * 0.09 - uTime * 1.25) * 0.5 + 0.5;
-      float g2 = sin(dot(root.xz, vec2(-0.3, 1.0)) * 0.21 - uTime * 2.1) * 0.5 + 0.5;
-      g = g * g * 0.8 + g2 * 0.2;
+      float g = gustAt(root.xz, uTime);
       float flutter = sin(uTime * 4.0 + r * 30.0 + root.x * 0.9) * 0.06;
       vec2 disp = wdir * (0.12 + g * 0.6 + flutter) * t * t * h;
       disp *= 1.0 - ta * 0.8;                                           // trampled blades stop swaying
@@ -726,40 +788,38 @@ function makeGrassMaterial(near, patch) {
       wp.xz += disp;
       wp.y -= min(dl * dl / max(h, 0.05) * 0.6 + ta * t * h * 0.35, t * h * 0.93);   // keep blade length as it bends
       vT = t; vRand = r; vWorld = wp; vSide = position.x; vTng = tng;
-      vPatch = smoothstep(0.35, 0.75, sin(root.x * 0.07) * sin(root.z * 0.06 + 1.3) * 0.5 + 0.5 + r * 0.15);
       vN = normalize(nrm + vec3(disp.x, 0.0, disp.y) * 0.5);
       vUp = normalize(vec3(disp.x * 2.2, max(h, 0.02), disp.y * 2.2) + nrm * h * 0.25);   // direction the blade runs
-      vNz = vec3(vnoise2(root.xz * 0.035), vnoise2(root.xz * 0.19 + 7.0), cloudShadowAt(root.xz, uTime, uCloudAmt));
+      vTip = meadowTip(root.xz, vnoise2(root.xz * 0.19 + 7.0), vnoise2(root.xz * 0.035), r * 0.15);
+      vCloud = cloudShadowAt(root.xz, uTime, uCloudAmt);
       vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
       gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
     }`,
   fragmentShader: '#include <packing>\n' + SHADOW_GLSL + /* glsl */`
     uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt;
-    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying float vPatch; varying vec4 vShadowCoord; varying float vCut;
-    varying float vSide; varying vec3 vTng; varying vec3 vUp; varying vec3 vNz;
+    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
+    varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; varying float vCov;
     void main(){
       vec3 Nf = normalize(vN); if (!gl_FrontFacing) Nf = -Nf;
       vec3 N = normalize(Nf + vTng * vSide * 1.6 + vec3(0.0, 0.9, 0.0));     // rounded blade cross-section
       vec3 V = normalize(cameraPosition - vWorld), L = uSunDir;
-      float big = vNz.x, mid = vNz.y;
       vec3 root = vec3(0.012, 0.025, 0.006);
-      vec3 tipG = mix(vec3(0.11, 0.25, 0.04), vec3(0.2, 0.32, 0.05), mid);
-      vec3 tipD = mix(vec3(0.48, 0.38, 0.12), vec3(0.4, 0.41, 0.12), mid);
-      vec3 col = mix(root, mix(tipG, tipD, clamp(vPatch * 0.8 + (big - 0.5) * 0.7, 0.0, 1.0)), smoothstep(0.0, 1.0, vT));
+      vec3 col = mix(root, vTip, smoothstep(0.0, 1.0, vT));
       col = mix(col, vec3(0.32, 0.42, 0.16), vCut * smoothstep(0.6, 1.0, vT));   // fresh-cut ends
       // blade surface: fine parallel veins, a paler midrib, darker edges
       float ax = abs(vSide) * 2.0;
       col *= 0.9 + 0.08 * cos(vSide * 6.2832 * 3.5) + 0.07 * (1.0 - smoothstep(0.0, 0.16, ax));
       col *= 1.0 - 0.3 * pow(ax, 6.0);
       col *= 0.8 + 0.4 * vRand;
-      float vis = sunVisibility(vShadowCoord) * vNz.z;
+      float vis = sunVisibility(vShadowCoord) * vCloud;
       float ndl = max(dot(N, L), 0.0);
       float trans = pow(max(dot(-V, L), 0.0), 6.0) * (dot(-Nf, L) * 0.5 + 0.5) * vT;  // light passing through the blade
       float ao = mix(0.15, 1.0, smoothstep(0.0, 0.85, vT));
       vec3 H = normalize(V + L);
       // soft sheen running along the blade, like light on wet hair (anisotropic, no hard glints)
       float th = dot(normalize(vUp), H), sinTH = sqrt(max(1.0 - th * th, 0.0));
-      float sheen = (pow(sinTH, 12.0) * 0.055 + pow(sinTH, 4.0) * 0.02) * smoothstep(0.2, 0.9, vT) * (0.4 + 0.6 * ndl);
+      float sheen = (pow(sinTH, 12.0) * 0.055 + pow(sinTH, 4.0) * 0.02) * smoothstep(0.2, 0.9, vT) * (0.4 + 0.6 * ndl) * vCov * vCov;
+      trans *= vCov;
       col *= 0.93;                                                                // a touch deeper, like damp grass
       vec3 lit = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
                + col * uSunCol * trans * 0.45 * vis
@@ -789,7 +849,6 @@ function makeCarpet(N, side, geo, wMin, wMax) {
   const m = new THREE.Mesh(g, makeGrassMaterial(true, side)); m.frustumCulled = false; scene.add(m); return m;
 }
 const nearGrass = makeCarpet(LOW ? 90000 : ULTRA ? 1100000 : 200000, 24, blade, 0.035, 0.06);
-const farGrass = makeCarpet(LOW ? 50000 : ULTRA ? 400000 : 120000, 210, blade3, 0.07, 0.12);
 const midGrass = makeCarpet(LOW ? 90000 : ULTRA ? 900000 : 170000, 92, blade3, 0.045, 0.075);
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
@@ -797,7 +856,7 @@ scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, farGrass, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
+  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -2718,7 +2777,7 @@ composer.addPass(finalPass);
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setPixelRatio(targetPR()); composer.setPixelRatio(renderer.getPixelRatio());
+  renderer.setPixelRatio(targetPR() * GFX.scale); composer.setPixelRatio(renderer.getPixelRatio());
   renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); setFxaa();
 });
 
@@ -2937,7 +2996,7 @@ function update(dt, t) {
   updateWorld(dt, t);
 }
 
-const grassFull = [nearGrass, midGrass, farGrass].map(m => [m, m.geometry.instanceCount]);
+const grassFull = [nearGrass, midGrass].map(m => [m, m.geometry.instanceCount]);
 let perfAcc = 0, perfN = 0, grassScale = 1;
 const basePR = renderer.getPixelRatio();
 function adaptQuality(rawDt) {
@@ -2995,6 +3054,7 @@ function loop() {
   if (!params.get('fixed')) adaptQuality(raw);
   update(dt, t);
   if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
+  SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
   if (GFX.post === false) renderer.render(scene, camera); else composer.render();
   fpsAcc += raw; fpsN++;
   if (fpsAcc > 0.5) {
