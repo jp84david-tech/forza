@@ -405,14 +405,15 @@ scene.add(hemi);
 const REFL_HIDE = []; // small detail left out of the sea reflection
 // Graphics settings (G menu), remembered between visits
 const GFX_PRESETS = {
-  low:    { grass: 0.45, shadows: false, reflect: false, rays: false, bloom: false, scale: 0.85 },
-  medium: { grass: 0.7,  shadows: true,  reflect: false, rays: false, bloom: true,  scale: 1 },
-  high:   { grass: 1,    shadows: true,  reflect: true,  rays: true,  bloom: true,  scale: 1 },
+  potato: { grass: 0.25, shadows: false, reflect: false, rays: false, bloom: false, scale: 0.7,  post: false, flowers: false },
+  low:    { grass: 0.45, shadows: false, reflect: false, rays: false, bloom: false, scale: 0.85, post: false, flowers: true },
+  medium: { grass: 0.7,  shadows: true,  reflect: false, rays: false, bloom: true,  scale: 1,    post: true,  flowers: true },
+  high:   { grass: 1,    shadows: true,  reflect: true,  rays: true,  bloom: true,  scale: 1,    post: true,  flowers: true },
 };
 const GFX = (() => {
   let saved = null; try { saved = JSON.parse(localStorage.getItem('kns-gfx') || 'null'); } catch (e) {}
   const preset = params.get('q') ? (LOW ? 'low' : ULTRA ? 'high' : 'medium') : (saved?.preset || 'medium');
-  return Object.assign({ preset, fps: false }, GFX_PRESETS[preset] || GFX_PRESETS.medium, saved && !params.get('q') ? saved : {});
+  return Object.assign({ preset, fps: false, auto: true }, GFX_PRESETS[preset] || GFX_PRESETS.medium, saved && !params.get('q') ? saved : {});
 })();
 // Uniforms shared by the grass, flower and cloud shaders (one object, so a single update reaches all of them)
 const SH = {
@@ -581,6 +582,8 @@ scene.add(water);
         float br = n(vec2(vUv.x*8., vUv.y*6.-uTime*0.6))*n(vec2(vUv.x*23., vUv.y*9.+uTime*0.3));
         float a = (line*0.8 + 0.25*smoothstep(0.35,0.0,vUv.y)) * edge * smoothstep(0.1,0.5,br);
         gl_FragColor = vec4(uCol, a*0.75);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
       }`,
   });
   const foam = new THREE.Mesh(geo, foamMat); foam.renderOrder = 2; scene.add(foam);
@@ -599,6 +602,8 @@ const shallowMat = new THREE.ShaderMaterial({
       float caus = pow(1.0 - abs(c1 - c2), 9.0);
       vec3 col = uCol * (0.7 + 0.7 * (1.0 - t)) + vec3(0.7, 0.85, 0.65) * caus * (1.0 - t);
       gl_FragColor = vec4(col * uBright, a);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }`,
 });
 {
@@ -762,6 +767,8 @@ function makeGrassMaterial(near, patch) {
       float d = length(cameraPosition - vWorld);
       float fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
       gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }`,
   });
 }
@@ -1338,6 +1345,8 @@ const cloudMat = new THREE.ShaderMaterial({
         col = mix(col, c, ca); a = max(a, ca);
       }
       gl_FragColor = vec4(col, a);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
     }`,
 });
 const clouds = new THREE.Mesh(new THREE.SphereGeometry(5000, 64, 32), cloudMat);
@@ -1428,6 +1437,8 @@ const flowers = (() => {
         vec3 lit = col * (uSunCol * (0.55 + 0.25 * vH) * vis + uAmb) + col * uSunCol * back * 2.5 * vis;
         float d = length(cameraPosition - vWorld);
         gl_FragColor = vec4(mix(lit, uFogCol, 1.0 - exp(-d * d * uFogDen * uFogDen)), 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
       }`,
   });
   const m = new THREE.Mesh(ig, mat); m.frustumCulled = false; scene.add(m); REFL_HIDE.push(m); return m;
@@ -1445,7 +1456,9 @@ const fireflies = (() => {
       void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = 70.0 / -mv.z;
         vA = uOn * pow(0.5 + 0.5 * sin(uTime * (1.5 + aPh) + aPh * 6.28), 3.0); gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a *= a;
-      gl_FragColor = vec4(vec3(1.4, 2.4, 0.5) * a * vA * 3.0, a * vA); }`,
+      gl_FragColor = vec4(vec3(1.4, 2.4, 0.5) * a * vA * 3.0, a * vA);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment> }`,
   }));
   m.frustumCulled = false; m.visible = false; scene.add(m); return m;
 })();
@@ -2099,7 +2112,9 @@ const trail = (() => {
   const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: `attribute float aA; varying float vA; void main(){ vA = aA; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `varying float vA; void main(){ gl_FragColor = vec4(vec3(1.6, 1.5, 1.4) * vA, vA); }`,
+    fragmentShader: `varying float vA; void main(){ gl_FragColor = vec4(vec3(1.6, 1.5, 1.4) * vA, vA);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment> }`,
   }));
   m.frustumCulled = false; scene.add(m); return { m, pos, al, n: 0 };
 })();
@@ -2938,7 +2953,7 @@ function adaptQuality(rawDt) {
 function applyGrassCount() { grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * grassScale * GFX.grass)); }
 function applyGfx() {
   sun.castShadow = GFX.shadows;
-  godRays.enabled = GFX.rays; bloom.enabled = GFX.bloom;
+  godRays.enabled = GFX.rays; bloom.enabled = GFX.bloom; flowers.visible = GFX.flowers !== false;
   renderer.setPixelRatio(targetPR() * GFX.scale); composer.setPixelRatio(renderer.getPixelRatio()); setFxaa();
   applyGrassCount();
   document.getElementById('fps').style.display = GFX.fps || gfxEl.style.display === 'block' ? 'block' : 'none';
@@ -2950,18 +2965,18 @@ function renderGfxMenu() {
   const b = (on, act, label) => `<button class="${on ? 'on' : ''}" data-act="${act}">${label}</button>`;
   const tog = (k, label) => `<div class="row"><span>${label}</span>${b(GFX[k], 'tog:' + k, GFX[k] ? 'On' : 'Off')}</div>`;
   gfxEl.innerHTML = `<h3>GRAPHICS</h3>
-    <div class="row"><span>Preset</span><span>${['low', 'medium', 'high'].map(p => b(GFX.preset === p, 'pre:' + p, p[0].toUpperCase() + p.slice(1))).join(' ')}</span></div>
+    <div class="row"><span>Preset</span><span>${['potato', 'low', 'medium', 'high'].map(p => b(GFX.preset === p, 'pre:' + p, p[0].toUpperCase() + p.slice(1))).join(' ')}</span></div>
     <div class="row"><span>Grass amount</span><span>${[[0.45, 'Low'], [0.7, 'Med'], [1, 'High']].map(([v, l]) => b(GFX.grass === v, 'grass:' + v, l)).join(' ')}</span></div>
-    <div class="row"><span>Resolution</span><span>${[[0.7, '70%'], [0.85, '85%'], [1, '100%']].map(([v, l]) => b(GFX.scale === v, 'scale:' + v, l)).join(' ')}</span></div>
-    ${tog('shadows', 'Shadows')}${tog('reflect', 'Live water reflections')}${tog('rays', 'Sun rays')}${tog('bloom', 'Glow')}${tog('fps', 'Show FPS')}
+    <div class="row"><span>Resolution</span><span>${[[0.55, '55%'], [0.7, '70%'], [0.85, '85%'], [1, '100%']].map(([v, l]) => b(GFX.scale === v, 'scale:' + v, l)).join(' ')}</span></div>
+    ${tog('post', 'Post effects (film look, glow)')}${tog('flowers', 'Flowers')}${tog('shadows', 'Shadows')}${tog('reflect', 'Live water reflections')}${tog('rays', 'Sun rays')}${tog('bloom', 'Glow')}${tog('fps', 'Show FPS')}
     <div class="note">G to close · settings are saved</div>`;
 }
 gfxEl.addEventListener('click', e => {
   const a = e.target.dataset?.act; if (!a) return;
   const [k, v] = a.split(':');
-  if (k === 'pre') Object.assign(GFX, GFX_PRESETS[v], { preset: v });
-  else if (k === 'tog') { GFX[v] = !GFX[v]; GFX.preset = 'custom'; }
-  else { GFX[k] = +v; GFX.preset = 'custom'; }
+  if (k === 'pre') Object.assign(GFX, GFX_PRESETS[v], { preset: v, auto: false });
+  else if (k === 'tog') { GFX[v] = !GFX[v]; GFX.preset = 'custom'; GFX.auto = false; }
+  else { GFX[k] = +v; GFX.preset = 'custom'; GFX.auto = false; }
   applyGfx();
 });
 addEventListener('keydown', e => {
@@ -2971,7 +2986,7 @@ addEventListener('keydown', e => {
   if (open) document.exitPointerLock?.();
   applyGfx();
 });
-const fpsEl = document.getElementById('fps'); let fpsAcc = 0, fpsN = 0;
+const fpsEl = document.getElementById('fps'); let fpsAcc = 0, fpsN = 0, autoSlow = 0;
 applyGfx();
 
 function loop() {
@@ -2980,8 +2995,19 @@ function loop() {
   if (!params.get('fixed')) adaptQuality(raw);
   update(dt, t);
   if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
-  composer.render();
-  fpsAcc += raw; fpsN++; if (fpsAcc > 0.5) { fpsEl.textContent = Math.round(fpsN / fpsAcc) + ' FPS'; fpsAcc = fpsN = 0; }
+  if (GFX.post === false) renderer.render(scene, camera); else composer.render();
+  fpsAcc += raw; fpsN++;
+  if (fpsAcc > 0.5) {
+    const fps = fpsN / fpsAcc; fpsEl.textContent = Math.round(fps) + ' FPS'; fpsAcc = fpsN = 0;
+    if (started && GFX.auto && !params.get('fixed')) {
+      autoSlow = fps < 24 ? autoSlow + 1 : 0;
+      const order = ['high', 'medium', 'low', 'potato'], i = order.indexOf(GFX.preset);
+      if (autoSlow >= 4 && i >= 0 && i < order.length - 1) {
+        Object.assign(GFX, GFX_PRESETS[order[i + 1]], { preset: order[i + 1] }); applyGfx(); autoSlow = 0;
+        toast('GRAPHICS: ' + order[i + 1].toUpperCase() + ' · press G to change', 2600);
+      }
+    }
+  }
   requestAnimationFrame(loop);
 }
 window.__game = { enemies, hitEnemy, beginSlash: k => beginSlash(soldier, k), terrainH, dbg: { scene, camera, clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
