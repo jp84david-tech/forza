@@ -43,6 +43,14 @@
   #hp { position: fixed; left: 36px; bottom: 48px; width: 220px; height: 6px; background: rgba(0,0,0,0.45); border: 1px solid rgba(244,233,216,0.35); transition: opacity 0.6s; opacity: 0.25; pointer-events: none; }
   #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg, #6e120e, #c8321e); transition: width 0.15s; }
   #hurt { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,0.65) 100%); opacity: 0; transition: opacity 0.35s; }
+  #gfx { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(14,10,8,0.88); border: 1px solid rgba(244,233,216,0.3);
+    color: #f4e9d8; padding: 22px 28px; font-family: 'Segoe UI', sans-serif; font-size: 13px; letter-spacing: 1px; display: none; min-width: 300px; z-index: 10; }
+  #gfx h3 { font-family: Georgia, serif; font-weight: 400; letter-spacing: 6px; margin-bottom: 14px; }
+  #gfx .row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; gap: 16px; }
+  #gfx button { background: transparent; color: #f4e9d8; border: 1px solid rgba(244,233,216,0.35); padding: 5px 12px; cursor: pointer; font: inherit; }
+  #gfx button.on { background: rgba(200,50,30,0.55); border-color: #c8321e; }
+  #gfx .note { opacity: 0.55; font-size: 11px; margin-top: 12px; }
+  #fps { position: fixed; top: 14px; right: 18px; color: #f4e9d8; font: 12px 'Segoe UI', sans-serif; opacity: 0.7; display: none; pointer-events: none; }
   .ebar { position: fixed; width: 60px; height: 4px; background: rgba(0,0,0,0.55); display: none; pointer-events: none; border: 1px solid rgba(0,0,0,0.6); }
   .ebar div { height: 100%; width: 100%; background: #c8321e; }
   #loading { position: fixed; bottom: 24px; right: 30px; color: #f4e9d8; font-size: 12px; letter-spacing: 3px; opacity: 0.6; }
@@ -70,9 +78,11 @@
 <div id="prompt"></div>
 <div id="toast"></div>
 <div id="hurt"></div>
+<div id="gfx"></div>
+<div id="fps"></div>
 <div id="hp"><div id="hpfill"></div></div>
 <div id="fade"></div>
-<div id="hint">Space jump · F katana · Click ×3 combo · T time of day · P photo mode · M sound</div>
+<div id="hint">G graphics · Space jump · F katana · Click ×3 combo · T time of day · P photo mode · M sound</div>
 <div id="loading">GROWING GRASS…</div>
 <div id="start">
   <h2>KAZE NO SHIMA</h2>
@@ -81,7 +91,7 @@
   <div class="go">CLICK TO BEGIN</div>
   <div class="keys">
     W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse<br>
-    F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
+    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
 </div>
@@ -259,14 +269,16 @@ const texWood = makeTex(256, (u, v) => { const g = fract(u * 30 + pfbm(u, v, 4, 
 // Hand-placed routes, resampled and pushed sideways by noise so they meander. Width, wear and grassy
 // two-track medians change along each path. Baked into distance / width / median grids.
 const ROUTES = [
-  { pts: Array.from({ length: 24 }, (_, i) => { const a = i / 24 * Math.PI * 2; const r = 52 + 9 * Math.sin(2 * a + 0.6) + 5 * Math.sin(5 * a + 1.7); return [Math.cos(a) * r, Math.sin(a) * r]; }), closed: true, wander: 4 },
-  { pts: [[-96, -8], [-72, -4], [-50, 6], [-28, 2], [-8, -6], [12, 2], [30, 14], [52, 18], [74, 26], [98, 30]], wander: 6 },  // west–east trail
-  { pts: [[10, -2], [13, -20], [22, -36], [32, -50], [38, -64]], wander: 5 },    // up to the shrine
-  { pts: [[-28, 2], [-35, -18], [-42, -34], [-47, -52], [-50, -66]], wander: 5 },  // into the bamboo grove
-  { pts: [[22, 50], [30, 64], [42, 76], [50, 90]], wander: 4 },                 // down to the south cove
-];
+  { pts: Array.from({ length: 36 }, (_, i) => { const a = i / 36 * Math.PI * 2; const r = 116 + 20 * Math.sin(2 * a + 0.6) + 11 * Math.sin(5 * a + 1.7); return [Math.cos(a) * r, Math.sin(a) * r]; }), closed: true, wander: 8 },
+  { pts: [[-96, -8], [-72, -4], [-50, 6], [-28, 2], [-8, -6], [12, 2], [30, 14], [52, 18], [74, 26], [98, 30]], wander: 12 },  // west–east trail
+  { pts: [[10, -2], [13, -20], [22, -36], [32, -50], [38, -64]], wander: 10 },    // up to the shrine
+  { pts: [[-28, 2], [-35, -18], [-42, -34], [-47, -52], [-50, -66]], wander: 10 },  // into the bamboo grove
+  { pts: [[22, 50], [30, 64], [42, 76], [50, 90]], wander: 8 },                 // down to the south cove
+  { pts: [[-27, 18], [-36, 31], [-42, 47], [-45, 62]], wander: 10 },        // north-west hills
+  { pts: [[31, -9], [47, -20], [62, -27], [76, -31]], wander: 10 },          // east headland
+].map((rt, i) => i === 0 ? rt : { ...rt, pts: rt.pts.map(([x, z]) => [x * 2.24, z * 2.24]) });   // map scaled up 5x in area
 const pathPts = []; // [x, z, width]
-const PG = 1, PMIN = -170, PN = 341;
+const PG = 1, PMIN = -300, PN = 601;
 const pathGrid = new Float32Array(PN * PN).fill(99), pathW = new Float32Array(PN * PN).fill(1), pathMed = new Float32Array(PN * PN);
 ROUTES.forEach((rt, ri) => {
   const curve = new THREE.CatmullRomCurve3(rt.pts.map(([x, z]) => new THREE.Vector3(x, 0, z)), !!rt.closed, 'centripetal');
@@ -311,13 +323,13 @@ function pathMask(x, z) {
 // ~6 acres: island radius ≈ 88 m, rolling hills up to ~10 m.
 function islandRadius(x, z) {
   const r = Math.hypot(x, z) + 1e-5, dx = x / r, dz = z / r;
-  return 88 + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 30;
+  return 196 + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 60;
 }
 function terrainHp(x, z, pm) {
   const t = Math.hypot(x, z) / islandRadius(x, z);
   const land = 1 - smooth(0.6, 1.0, t);
   let h = lerp(-6, 0.35, 1 - smooth(0.93, 1.35, t));
-  h += land * (1.2 + 9 * fbm(x * 0.012 + 3, z * 0.012 - 5) + 1.3 * fbm(x * 0.05, z * 0.05) + 0.35 * fbm(x * 0.17, z * 0.17));
+  h += land * (1.2 + 16 * fbm(x * 0.0065 + 3, z * 0.0065 - 5) + 3 * fbm(x * 0.025 + 9, z * 0.025) + 1.3 * fbm(x * 0.05, z * 0.05) + 0.35 * fbm(x * 0.17, z * 0.17));
   if (pm > 0) {
     h -= land * pm * (0.08 + 0.14 * vnoise(x * 0.2, z * 0.2));                  // worn into the ground, deeper in places
     h += land * pm * (fbm(x * 0.8, z * 0.8) - 0.5) * 0.16;                     // lumpy, never flat
@@ -329,7 +341,7 @@ function terrainHp(x, z, pm) {
 function terrainH(x, z) { return terrainHp(x, z, pathMask(x, z)); }
 
 // Terrain sampled once on a grid shared by the terrain mesh, the GPU grass and placement code
-const HM = LOW ? 385 : 481, HM_MIN = -170, HM_SIZE = 340;
+const HM = LOW ? 481 : 641, HM_MIN = -300, HM_SIZE = 600;
 const HMF = new Float32Array(HM * HM * 4); // height, path, shore, meadow patch
 for (let j = 0; j < HM; j++) for (let i = 0; i < HM; i++) {
   const x = HM_MIN + i / (HM - 1) * HM_SIZE, z = HM_MIN + j / (HM - 1) * HM_SIZE, pm = pathMask(x, z), h = terrainHp(x, z, pm), o = (j * HM + i) * 4;
@@ -360,7 +372,7 @@ Object.keys(su).forEach(k => skyClone.material.uniforms[k].value = su[k].value);
 envScene.add(skyClone);
 scene.environment = pmrem.fromScene(envScene).texture;
 
-scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0036);
+scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0022);
 
 // Surreal: a colossal pale moon rising opposite the sun
 const moonDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 11), THREE.MathUtils.degToRad(SUN_AZ + 150));
@@ -385,11 +397,23 @@ const SHADOW_RES = ULTRA ? 4096 : 2048;
 sun.shadow.mapSize.set(SHADOW_RES, SHADOW_RES);
 Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 120 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+sun.shadow.autoUpdate = false;   // refreshed every other frame in the main loop
 scene.add(sun, sun.target);
 const hemi = new THREE.HemisphereLight(0xa9b8e0, 0x3a2a14, 0.9);
 scene.add(hemi);
 
 const REFL_HIDE = []; // small detail left out of the sea reflection
+// Graphics settings (G menu), remembered between visits
+const GFX_PRESETS = {
+  low:    { grass: 0.45, shadows: false, reflect: false, rays: false, bloom: false, scale: 0.85 },
+  medium: { grass: 0.7,  shadows: true,  reflect: false, rays: false, bloom: true,  scale: 1 },
+  high:   { grass: 1,    shadows: true,  reflect: true,  rays: true,  bloom: true,  scale: 1 },
+};
+const GFX = (() => {
+  let saved = null; try { saved = JSON.parse(localStorage.getItem('kns-gfx') || 'null'); } catch (e) {}
+  const preset = params.get('q') ? (LOW ? 'low' : ULTRA ? 'high' : 'medium') : (saved?.preset || 'medium');
+  return Object.assign({ preset, fps: false }, GFX_PRESETS[preset] || GFX_PRESETS.medium, saved && !params.get('q') ? saved : {});
+})();
 // Uniforms shared by the grass, flower and cloud shaders (one object, so a single update reaches all of them)
 const SH = {
   uTime: { value: 0 },
@@ -532,10 +556,10 @@ scene.add(water);
 
 // Shore foam: a soft band hugging the coastline
 {
-  const N = 512, inner = [], geo = new THREE.BufferGeometry(), pos = [], uv = [], idx = [];
+  const N = 1024, inner = [], geo = new THREE.BufferGeometry(), pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const a = i / N * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
-    let lo = 40, hi = 170; // binary search coastline (h = 0)
+    let lo = 90, hi = 330; // binary search coastline (h = 0)
     for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
     pos.push(dx * (lo - 1.2), 0.03, dz * (lo - 1.2), dx * (lo + 2.8), 0.03, dz * (lo + 2.8));
     uv.push(i / N * 60, 0, i / N * 60, 1);
@@ -581,7 +605,7 @@ const shallowMat = new THREE.ShaderMaterial({
   const N = 512, pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const a = i / N * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
-    let lo = 40, hi = 170; for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
+    let lo = 90, hi = 330; for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2; terrainH(dx * m, dz * m) > 0 ? lo = m : hi = m; }
     pos.push(dx * (lo - 1.5), 0.012, dz * (lo - 1.5), dx * (lo + 16), 0.012, dz * (lo + 16)); uv.push(i / N, 0, i / N, 1);
     if (i < N) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
   }
@@ -612,7 +636,7 @@ const grassGeo = new THREE.InstancedBufferGeometry();
 grassGeo.index = blade3.index; grassGeo.attributes.position = blade3.attributes.position;
 const offsets = [], prm = [];
 {
-  const CAND = LOW ? 400000 : ULTRA ? 2600000 : 650000;
+  const CAND = 0;   // the island-wide field grass is replaced by the far carpet below
   for (let i = 0; i < CAND; i++) {
     const x = (Math.random() - 0.5) * 230, z = (Math.random() - 0.5) * 230;
     const h = sampleHM(x, z, 0); if (h < 0.5) continue;
@@ -758,6 +782,7 @@ function makeCarpet(N, side, geo, wMin, wMax) {
   const m = new THREE.Mesh(g, makeGrassMaterial(true, side)); m.frustumCulled = false; scene.add(m); return m;
 }
 const nearGrass = makeCarpet(LOW ? 90000 : ULTRA ? 1100000 : 200000, 24, blade, 0.035, 0.06);
+const farGrass = makeCarpet(LOW ? 50000 : ULTRA ? 400000 : 120000, 210, blade3, 0.07, 0.12);
 const midGrass = makeCarpet(LOW ? 90000 : ULTRA ? 900000 : 170000, 92, blade3, 0.045, 0.075);
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
@@ -765,7 +790,7 @@ scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { const hide = [grass, nearGrass, midGrass, ...REFL_HIDE]; hide.forEach(m => m.visible = false); orig(...a); hide.forEach(m => m.visible = true); }; }
+  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, farGrass, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -816,8 +841,8 @@ const routePts = ri => pathPts.filter(p => p[3] === ri);
   torii.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
   scene.add(torii);
 }
-for (let i = 0; i < 45; i++) { // weathered stones in the grass
-  const a = Math.random() * 6.28, d = 8 + Math.random() * 72, x = Math.cos(a) * d, z = Math.sin(a) * d;
+for (let i = 0; i < 100; i++) { // weathered stones in the grass
+  const a = Math.random() * 6.28, d = 8 + Math.random() * 175, x = Math.cos(a) * d, z = Math.sin(a) * d;
   if (terrainH(x, z) < 0.6) continue;
   if (pathMask(x, z) > 0.1) continue;
   const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 3, i * 3.1), rock);
@@ -842,7 +867,7 @@ for (let i = 0; i < 45; i++) { // weathered stones in the grass
 }
 const floaters = [];
 for (let i = 0; i < 9; i++) { // surreal floating islands over the sea
-  const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 420 + Math.random() * 500, s = 12 + Math.random() * 30;
+  const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 700 + Math.random() * 700, s = 16 + Math.random() * 40;
   const g = new THREE.Group();
   const body = new THREE.Mesh(rockGeo(s, 4, i * 7.7, true), skyRock); g.add(body);
   g.position.set(Math.cos(a) * d, 40 + Math.random() * 110, Math.sin(a) * d);
@@ -1304,7 +1329,7 @@ const cloudMat = new THREE.ShaderMaterial({
         float n = fbm5(uv);
         float cov = smoothstep(1.0 - uCover, 1.0 - uCover + 0.32, n);
         vec2 sd = normalize(uSunDir.xz + 1e-4) * 0.14;
-        float dens = smoothstep(1.0 - uCover - 0.05, 1.0, (fbm5(uv + sd) + fbm5(uv + sd * 2.0)) * 0.5);
+        float dens = smoothstep(1.0 - uCover - 0.05, 1.0, fbm5(uv + sd * 1.5));
         float sunAmt = exp(-dens * 3.0);
         float mu = max(dot(d, uSunDir), 0.0);
         float silver = pow(mu, 10.0) * 2.5 + pow(mu, 3.0) * 0.4;
@@ -1354,7 +1379,7 @@ const flowers = (() => {
   ig.index = g.index; for (const k of ['position', 'color', 'aH']) ig.setAttribute(k, g.attributes[k]);
   const off = [], prm = [], MAX = LOW ? 3000 : 9000;
   for (let i = 0; i < 1200000 && off.length / 3 < MAX; i++) {
-    const x = (Math.random() - 0.5) * 200, z = (Math.random() - 0.5) * 200, h = sampleHM(x, z, 0);
+    const x = (Math.random() - 0.5) * 440, z = (Math.random() - 0.5) * 440, h = sampleHM(x, z, 0);
     if (h < 0.9 || sampleHM(x, z, 1) > 0.05) continue;
     const n = fbm(x * 0.045 + 100, z * 0.045 - 30);
     const dens = smooth(0.6, 0.72, n) + (Math.random() < 0.004 ? 1 : 0);
@@ -1523,13 +1548,13 @@ const audio = (() => {
 const deg = THREE.MathUtils.degToRad;
 const PRESETS = [
   { name: 'GOLDEN HOUR', elev: 5.5, az: 205, turb: 3.2, ray: 3.2, mie: 0.003, mieG: 0.78, exp: 0.42, sun: [1, 0.72, 0.45], sunI: 5.5, grassSun: 5,
-    hemi: [0xa9b8e0, 0x3a2a14, 0.9], fog: 0xd6a883, fogD: 0.0036, amb: [0.55, 0.6, 0.85], cLit: [3.2, 2.0, 1.2], cShade: [0.35, 0.22, 0.3], cover: 0.45,
+    hemi: [0xa9b8e0, 0x3a2a14, 0.9], fog: 0xd6a883, fogD: 0.0022, amb: [0.55, 0.6, 0.85], cLit: [3.2, 2.0, 1.2], cShade: [0.35, 0.22, 0.3], cover: 0.45,
     stars: 0, moon: [1.6, 1.45, 1.35], ff: 0, petals: 1, water: 0x042a33, waterSun: 0xffc890, rays: 0.3, motes: 1 },
   { name: 'MISTY DAWN', elev: 13, az: 100, turb: 2.2, ray: 1.6, mie: 0.0025, mieG: 0.76, exp: 0.5, sun: [1, 0.88, 0.74], sunI: 4.2, grassSun: 4,
-    hemi: [0xbfd0e8, 0x2f3a2a, 1.1], fog: 0xaebfc9, fogD: 0.008, amb: [0.65, 0.75, 0.95], cLit: [3.0, 2.8, 2.6], cShade: [0.55, 0.6, 0.7], cover: 0.55,
+    hemi: [0xbfd0e8, 0x2f3a2a, 1.1], fog: 0xaebfc9, fogD: 0.0055, amb: [0.65, 0.75, 0.95], cLit: [3.0, 2.8, 2.6], cShade: [0.55, 0.6, 0.7], cover: 0.55,
     stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 0.6, water: 0x0a3440, waterSun: 0xfff0dd, rays: 0.35, motes: 0.5 },
   { name: 'BLOOD MOON', fromMoon: true, elev: -14, az: 205, turb: 1, ray: 0.3, mie: 0.002, mieG: 0.8, exp: 0.8, sun: [1.0, 0.4, 0.33], sunI: 1.8, grassSun: 1.7,
-    hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.0045, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
+    hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.003, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
     stars: 1, moon: [3.4, 0.5, 0.3], ff: 1, petals: 0, water: 0x020b10, waterSun: 0xff5a40, rays: 0.3, motes: 0 },
 ];
 let presetIdx = 0, godRayAmt = 0.3;
@@ -2125,7 +2150,7 @@ gltfLoader.load(MODEL_BASE + 'Stork.glb', g => {
     const mixer = new THREE.AnimationMixer(m);
     mixer.clipAction(g.animations[0]).setDuration(1.1 + Math.random() * 0.3).startAt(-Math.random()).play();
     scene.add(m);
-    cranes.push({ m, mixer, r: 90 + Math.random() * 110, h: 30 + Math.random() * 25, a: Math.random() * 6.28, sp: (6 + Math.random() * 3) * (i % 3 === 0 ? -1 : 1), ph: Math.random() * 6 });
+    cranes.push({ m, mixer, r: 180 + Math.random() * 200, h: 40 + Math.random() * 35, a: Math.random() * 6.28, sp: (6 + Math.random() * 3) * (i % 3 === 0 ? -1 : 1), ph: Math.random() * 6 });
   }
 }, undefined, e => console.warn('Stork model failed to load', e));
 
@@ -2259,14 +2284,20 @@ function animateEnemy(e, dt) {
   e.flash = Math.max(0, e.flash - dt * 5);
   for (const m of e.mats) { if (m.emissive) { m.emissive.setRGB(0.9 * e.flash, 0.08 * e.flash, 0.02 * e.flash); } }
 }
-const _eb = new THREE.Vector3();
+const _eb = new THREE.Vector3(), _ec = new THREE.Vector3();
 function updateEnemies(dt, t) {
   if (!enemies.length) return;
   player.invuln = Math.max(0, player.invuln - dt);
   if (!player.dead && player.hp < player.maxHp && clock.elapsedTime - lastHurt > 5) player.hp = Math.min(player.maxHp, player.hp + 7 * dt);
   for (const e of enemies) {
     const near = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z) < 70;
-    if (near || e.state === 'chase') { updateEnemy(e, dt, t); animateEnemy(e, dt); }
+    if (near || e.state === 'chase') {
+      updateEnemy(e, dt, t);
+      const d = Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z);
+      const onScreen = _eb.set(e.pos.x, e.pos.y + 1, e.pos.z).sub(camera.position).dot(camera.getWorldDirection(_ec)) > -1;
+      if (onScreen && (d < 45 || (frameNo & 3) === 0)) animateEnemy(e, d < 45 ? dt : dt * 4);   // far ones animate at quarter rate
+      else { e.root.position.copy(e.pos); e.root.rotation.y = e.yaw; }
+    }
     // floating health bar once hurt
     const show = e.alive && e.hp < e.maxHp && near && e.root.visible;
     if (show) {
@@ -2281,6 +2312,7 @@ function updateEnemies(dt, t) {
 function toast(text, ms = 2000) { toastEl.textContent = text; toastEl.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.style.opacity = 0, ms); }
 
 // ─────────────────────────── Flora & props: red maples, bamboo grove, lanterns, shrine, campfires ───────────────────────────
+const FLORA_LOD = [];   // { objs, x, z, far }: hidden beyond `far` metres
 const FLORA = { uTime: SH.uTime, uSunView: { value: new THREE.Vector3() }, uSunCol: SH.uSunCol };
 function rng32(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function canvasTex(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO; return t; }
@@ -2332,12 +2364,12 @@ const swayAttr = (arr) => new THREE.InstancedBufferAttribute(new Float32Array(ar
 // ── Red Japanese maples ──
 const mapleSpots = [];
 {
-  const okSpot = (x, z, gap) => sampleHM(x, z, 0) > 1.1 && pathMask(x, z) < 0.05 && Math.hypot(x, z) < 78 && mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
+  const okSpot = (x, z, gap) => sampleHM(x, z, 0) > 1.1 && pathMask(x, z) < 0.05 && Math.hypot(x, z) < 175 && Math.hypot(x - spawnPt[0], z - spawnPt[1]) > 9 && mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
   const tryAround = (cx, cz, r, n, gap, seed) => { const R = rng32(seed); for (let i = 0; i < 400 && n > 0; i++) { const a = R() * 6.28, d = Math.sqrt(R()) * r, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d; if (okSpot(x, z, gap)) { mapleSpots.push([x, z]); n--; } } };
-  tryAround(52, 8, 22, 9, 6.5, 11);                                               // maple grove in the east
+  tryAround(116, 18, 34, 12, 6.5, 11);                                               // maple grove in the east
   const sp = routePts(2), end = sp[sp.length - 1]; tryAround(end[0], end[1], 12, 3, 6, 22);  // around the shrine
   tryAround(spawnPt[0], spawnPt[1], 20, 3, 8, 33);                    // a few near the start
-  tryAround(0, 0, 70, 6, 14, 44);                                                 // scattered singles
+  tryAround(0, 0, 170, 18, 20, 44);                                                 // scattered singles
 }
 const mapleClusters = [];
 window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
@@ -2345,7 +2377,6 @@ window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
   const barkM = TM(texBark, 0.9);
   const leafGeo = new THREE.PlaneGeometry(1, 1); leafGeo.translate(0, 0.5, 0);
   const leafMat = foliageMaterial(mapleLeafTex);
-  const leafM = [], leafC = [], sway = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), col = new THREE.Color();
   mapleSpots.forEach(([tx, tz], ti) => {
     const R = rng32(1000 + ti * 77), parts = [], clusters = [];
@@ -2374,23 +2405,26 @@ window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
     trunk.position.set(tx, ty, tz); trunk.rotation.y = R() * 6.28; trunk.castShadow = trunk.receiveShadow = true; scene.add(trunk);
     trunk.updateMatrixWorld(true);
     COLLIDERS_INIT.push({ x: tx, z: tz, r: 0.32 });
-    const hue = R();
+    const hue = R(), tM = [], tC = [], tS = [];
     for (const c of clusters) {
       const wc = c.clone().applyMatrix4(trunk.matrixWorld); mapleClusters.push(wc);
       for (let k = 0; k < (LOW ? 70 : 110); k++) {
         const o = new THREE.Vector3((R() - 0.5) * 2, (R() - 0.35) * 1.1, (R() - 0.5) * 2); if (o.length() > 1) o.normalize();
         const p = wc.clone().add(o.multiply(sc.set(1.35, 0.75, 1.35)));
         q.setFromEuler(e.set(-1.2 + R() * 0.9, R() * 6.28, (R() - 0.5) * 0.8)); const s = 0.21 + R() * 0.12;
-        leafM.push(m4.compose(p, q, sc.set(s, s, s)).clone());
-        col.setHSL((0.975 + R() * 0.05 + hue * 0.02) % 1, 0.82, 0.24 + R() * 0.16); if (R() < 0.1) col.setHSL(0.05, 0.9, 0.38); leafC.push(col.clone());
-        sway.push(tx, tz, ty, 6);
+        tM.push(m4.compose(p, q, sc.set(s, s, s)).clone());
+        col.setHSL((0.975 + R() * 0.05 + hue * 0.02) % 1, 0.82, 0.24 + R() * 0.16); if (R() < 0.1) col.setHSL(0.05, 0.9, 0.38); tC.push(col.clone());
+        tS.push(tx, tz, ty, 6);
       }
     }
+    // one leaf mesh per tree, so trees off-screen or far away are skipped entirely
+    const g = leafGeo.clone(); g.setAttribute('aSway', swayAttr(tS));
+    const im = new THREE.InstancedMesh(g, leafMat, tM.length);
+    tM.forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, tC[i]); });
+    im.computeBoundingSphere(); im.boundingSphere.radius += 1;
+    im.customDepthMaterial = leafDepth(mapleLeafTex); im.castShadow = true; im.receiveShadow = true; scene.add(im); REFL_HIDE.push(im);
+    FLORA_LOD.push({ objs: [im, trunk], x: tx, z: tz, far: 230 });
   });
-  const im = new THREE.InstancedMesh(leafGeo, leafMat, leafM.length);
-  leafM.forEach((m, i) => { im.setMatrixAt(i, m); im.setColorAt(i, leafC[i]); });
-  leafGeo.setAttribute('aSway', swayAttr(sway));
-  im.customDepthMaterial = leafDepth(mapleLeafTex); im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; scene.add(im); REFL_HIDE.push(im);
 }
 // falling maple leaves drifting down under the canopies
 const fallingLeaves = (() => {
@@ -2444,11 +2478,12 @@ function updateFallingLeaves(dt, t) {
     }
   });
   sGeo.setAttribute('aSway', swayAttr(sway));
-  stalkIM.castShadow = stalkIM.receiveShadow = true; stalkIM.frustumCulled = false; scene.add(stalkIM);
+  stalkIM.castShadow = stalkIM.receiveShadow = true; stalkIM.computeBoundingSphere(); stalkIM.boundingSphere.radius += 2; scene.add(stalkIM);
   const lGeo = new THREE.PlaneGeometry(1, 1); lGeo.translate(0, 0.5, 0); lGeo.setAttribute('aSway', swayAttr(lSway));
   const leafIM = new THREE.InstancedMesh(lGeo, foliageMaterial(bambooLeafTex), lM.length);
   lM.forEach((m, i) => { leafIM.setMatrixAt(i, m); leafIM.setColorAt(i, lC[i]); });
-  leafIM.customDepthMaterial = leafDepth(bambooLeafTex); leafIM.castShadow = true; leafIM.frustumCulled = false; scene.add(leafIM); REFL_HIDE.push(leafIM);
+  leafIM.customDepthMaterial = leafDepth(bambooLeafTex); leafIM.castShadow = true; leafIM.computeBoundingSphere(); leafIM.boundingSphere.radius += 2; scene.add(leafIM); REFL_HIDE.push(leafIM);
+  FLORA_LOD.push({ objs: [stalkIM, leafIM], x: gx, z: gz, far: 260 });
 }
 
 // ── Stone lanterns (tōrō) beside the paths, a shrine above the torii, campfires at the bandit camps ──
@@ -2471,7 +2506,7 @@ function stoneLantern(x, z, yaw) {
 }
 {
   for (let ri = 0; ri < ROUTES.length; ri++) {
-    const rp = routePts(ri), step = ri === 2 ? 22 : 70;
+    const rp = routePts(ri), step = ri === 2 ? 30 : 110;
     for (let k = 30; k < rp.length - 10; k += step) {
       const p = rp[k], q = rp[k + 4], tx = q[0] - p[0], tz = q[1] - p[1], tl = Math.hypot(tx, tz) || 1, side = (k / step) % 2 ? 1 : -1;
       const x = p[0] - tz / tl * side * (p[2] * 1.6 + 1.0), z = p[1] + tx / tl * side * (p[2] * 1.6 + 1.0);
@@ -2512,6 +2547,7 @@ function campfire(x, z) {
 }
 campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c.x + Math.cos(a) * 2.6, c.z + Math.sin(a) * 2.6); } });
 function updateFlora(dt, t) {
+  for (const f of FLORA_LOD) { const v = Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < f.far; for (const o of f.objs) o.visible = v; }
   FLORA.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
   updateFallingLeaves(dt, t);
   const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
@@ -2537,17 +2573,19 @@ function stampFeet(B, vx, vz) { // planted feet press the grass down in the dire
     trample((a.x + b.x) / 2, (a.z + b.z) / 2, dx, dz, 0.15);
   }
 }
+let trampleAcc = 0, frameNo = 0;
 function updateWorld(dt, t) {
+  frameNo++;
   // grass physics: feet and hooves fold the blades
   if (!player.mounted) { if (soldier.ready) stampFeet(soldier.B, player.vel.x, player.vel.z); else trample(player.pos.x, player.pos.z, player.vel.x, player.vel.z, 0.3); }
   { const fx = Math.sin(hs.yaw) * Math.sign(hs.speed || 1), fz = Math.cos(hs.yaw) * Math.sign(hs.speed || 1);
     for (const l of horse.legs) { const p = l.lo.localToWorld(_fa.copy(l.hoof)); if (p.y - terrainH(p.x, p.z) < 0.15) trample(p.x, p.z, fx, fz, 0.17); } }
   for (const e of (window.__enemies || [])) e.stamp?.();
-  updateTrample(dt, player.pos.x, player.pos.z);
+  trampleAcc += dt; if ((frameNo & 1) === 0) { updateTrample(trampleAcc, player.pos.x, player.pos.z); trampleAcc = 0; }
   updateEnemies(dt, t);
   updateFlora(dt, t);
   // shadows into grass + flowers
-  if (sun.shadow.map) { SH.uShadowMap.value = sun.shadow.map.texture; SH.uHasShadow.value = 1; }
+  if (sun.shadow.map && GFX.shadows) { SH.uShadowMap.value = sun.shadow.map.texture; SH.uHasShadow.value = 1; } else SH.uHasShadow.value = 0;
   clouds.position.copy(camera.position);
   updateSword(dt);
 
@@ -2884,7 +2922,7 @@ function update(dt, t) {
   updateWorld(dt, t);
 }
 
-const grassFull = [grass, nearGrass, midGrass].map(m => [m, m.geometry.instanceCount]);
+const grassFull = [nearGrass, midGrass, farGrass].map(m => [m, m.geometry.instanceCount]);
 let perfAcc = 0, perfN = 0, grassScale = 1;
 const basePR = renderer.getPixelRatio();
 function adaptQuality(rawDt) {
@@ -2894,14 +2932,56 @@ function adaptQuality(rawDt) {
   const prev = grassScale;   // only the grass density adapts; resolution stays sharp
   if (avg > 1 / 45) grassScale = Math.max(0.35, grassScale * 0.8);
   else if (avg < 1 / 57) grassScale = Math.min(1, grassScale * 1.08);
-  if (grassScale !== prev) grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * grassScale));
+  if (grassScale !== prev) applyGrassCount();
 }
+// ─────────────────────────── Graphics menu ───────────────────────────
+function applyGrassCount() { grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * grassScale * GFX.grass)); }
+function applyGfx() {
+  sun.castShadow = GFX.shadows;
+  godRays.enabled = GFX.rays; bloom.enabled = GFX.bloom;
+  renderer.setPixelRatio(targetPR() * GFX.scale); composer.setPixelRatio(renderer.getPixelRatio()); setFxaa();
+  applyGrassCount();
+  document.getElementById('fps').style.display = GFX.fps || gfxEl.style.display === 'block' ? 'block' : 'none';
+  try { localStorage.setItem('kns-gfx', JSON.stringify(GFX)); } catch (e) {}
+  renderGfxMenu();
+}
+const gfxEl = document.getElementById('gfx');
+function renderGfxMenu() {
+  const b = (on, act, label) => `<button class="${on ? 'on' : ''}" data-act="${act}">${label}</button>`;
+  const tog = (k, label) => `<div class="row"><span>${label}</span>${b(GFX[k], 'tog:' + k, GFX[k] ? 'On' : 'Off')}</div>`;
+  gfxEl.innerHTML = `<h3>GRAPHICS</h3>
+    <div class="row"><span>Preset</span><span>${['low', 'medium', 'high'].map(p => b(GFX.preset === p, 'pre:' + p, p[0].toUpperCase() + p.slice(1))).join(' ')}</span></div>
+    <div class="row"><span>Grass amount</span><span>${[[0.45, 'Low'], [0.7, 'Med'], [1, 'High']].map(([v, l]) => b(GFX.grass === v, 'grass:' + v, l)).join(' ')}</span></div>
+    <div class="row"><span>Resolution</span><span>${[[0.7, '70%'], [0.85, '85%'], [1, '100%']].map(([v, l]) => b(GFX.scale === v, 'scale:' + v, l)).join(' ')}</span></div>
+    ${tog('shadows', 'Shadows')}${tog('reflect', 'Live water reflections')}${tog('rays', 'Sun rays')}${tog('bloom', 'Glow')}${tog('fps', 'Show FPS')}
+    <div class="note">G to close · settings are saved</div>`;
+}
+gfxEl.addEventListener('click', e => {
+  const a = e.target.dataset?.act; if (!a) return;
+  const [k, v] = a.split(':');
+  if (k === 'pre') Object.assign(GFX, GFX_PRESETS[v], { preset: v });
+  else if (k === 'tog') { GFX[v] = !GFX[v]; GFX.preset = 'custom'; }
+  else { GFX[k] = +v; GFX.preset = 'custom'; }
+  applyGfx();
+});
+addEventListener('keydown', e => {
+  if (e.code !== 'KeyG') return;
+  const open = gfxEl.style.display !== 'block';
+  gfxEl.style.display = open ? 'block' : 'none';
+  if (open) document.exitPointerLock?.();
+  applyGfx();
+});
+const fpsEl = document.getElementById('fps'); let fpsAcc = 0, fpsN = 0;
+applyGfx();
+
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
   update(dt, t);
+  if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
   composer.render();
+  fpsAcc += raw; fpsN++; if (fpsAcc > 0.5) { fpsEl.textContent = Math.round(fpsN / fpsAcc) + ' FPS'; fpsAcc = fpsN = 0; }
   requestAnimationFrame(loop);
 }
 window.__game = { enemies, hitEnemy, beginSlash: k => beginSlash(soldier, k), terrainH, dbg: { scene, camera, clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
