@@ -805,7 +805,8 @@ function makeGrassMaterial(near, patch) {
       vec3 N = normalize(Nf + vTng * vSide * 1.6 + vec3(0.0, 0.9, 0.0));     // rounded blade cross-section
       vec3 V = normalize(cameraPosition - vWorld), L = uSunDir;
       vec3 root = vec3(0.012, 0.025, 0.006);
-      vec3 col = mix(root, vTip, smoothstep(0.0, 1.0, vT));
+      float dCam = length(cameraPosition - vWorld), farB = smoothstep(12.0, 40.0, dCam) * 0.7;   // distant blades even out
+      vec3 col = mix(root, vTip, mix(smoothstep(0.0, 1.0, vT), 0.55, farB));
       col = mix(col, vec3(0.32, 0.42, 0.16), vCut * smoothstep(0.6, 1.0, vT));   // fresh-cut ends
       // blade surface: fine parallel veins, a paler midrib, darker edges
       float ax = abs(vSide) * 2.0;
@@ -815,7 +816,7 @@ function makeGrassMaterial(near, patch) {
       float vis = sunVisibility(vShadowCoord) * vCloud;
       float ndl = max(dot(N, L), 0.0);
       float trans = pow(max(dot(-V, L), 0.0), 6.0) * (dot(-Nf, L) * 0.5 + 0.5) * vT;  // light passing through the blade
-      float ao = mix(0.15, 1.0, smoothstep(0.0, 0.85, vT));
+      float ao = mix(mix(0.15, 1.0, smoothstep(0.0, 0.85, vT)), 0.7, farB);
       vec3 H = normalize(V + L);
       // soft sheen running along the blade, like light on wet hair (anisotropic, no hard glints)
       float th = dot(normalize(vUp), H), sinTH = sqrt(max(1.0 - th * th, 0.0));
