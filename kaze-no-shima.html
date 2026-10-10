@@ -567,10 +567,11 @@ terrain.material.onBeforeCompile = sh => {
       vec2 sway = wdir * (g * 0.12 + sin(uTime * 2.3 + xz.x * 0.4) * 0.015);
       float det = texture2D(uPaint, xz / 2.7 + sway).r * 0.6 + texture2D(uPaint, mat2(0.8, -0.6, 0.6, 0.8) * xz / 9.3 + sway * 0.4).r * 0.4;
       // seen from afar you look across the blade tops; up close, down between them to the dark roots
-      float k = mix(0.27, mix(0.42, 0.52, 1.0 - abs(V.y)), smoothstep(3.0, 35.0, dist));
+      float k = mix(0.36, mix(0.42, 0.52, 1.0 - abs(V.y)), smoothstep(3.0, 35.0, dist));
       vec3 col = mix(vec3(0.012, 0.025, 0.006), meadowTip(xz, vnoise2(xz * 0.19 + 7.0), vnoise2(xz * 0.035), 0.075), smoothstep(0.0, 1.0, k));
       float clump = vnoise2(xz * 0.45) * 0.6 + vnoise2(xz * 1.3 + 3.0) * 0.4;  // tufts and hollows
       col *= mix(0.5, 1.3, det) * mix(0.65, 1.35, clump) * 0.93 * 0.92;
+      col *= 1.0 + (vnoise2(xz * 0.08 + 11.0) - 0.5) * 0.3 * smoothstep(30.0, 60.0, dist);   // broad swathes far off
       col *= 1.0 + (g - 0.4) * 0.24;                                         // gusts roll over as lighter waves
       float nl = dot(normalize(vWNrm), L);
       float ndl = clamp(0.62 * nl + 0.25 * sqrt(max(1.0 - nl * nl, 0.0)), 0.0, 1.0);   // average over leaning blades
