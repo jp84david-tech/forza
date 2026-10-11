@@ -1,5 +1,5 @@
 // Offline support: cache every game file on first visit, then serve from cache.
-const CACHE = 'kaze-no-shima-v16';
+const CACHE = 'kaze-no-shima-v17';
 const FILES = [
   './',
   './kaze-no-shima.html',
