@@ -961,12 +961,12 @@ const cardGeo = (() => {   // three quads crossed at 60°, two rows high so they
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
 })();
-function makeCardMaterial(patch) {
+function makeCardMaterial(patch, fadeA, fadeB) {
   return new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
-  uniforms: { ...SH, uPatch: { value: patch }, uCardTex: { value: grassCardTex }, uTexSize: { value: grassCardTex.image.width } },
+  uniforms: { ...SH, uPatch: { value: patch }, uFade: { value: new THREE.Vector2(fadeA, fadeB) }, uCardTex: { value: grassCardTex }, uTexSize: { value: grassCardTex.image.width } },
   vertexShader: /* glsl */`
-    uniform float uTime, uCloudAmt, uPatch; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
+    uniform float uTime, uCloudAmt, uPatch; uniform vec2 uFade; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
     ${NOISE_GLSL}
     attribute vec3 aOffset; attribute vec4 aParams;
     varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
@@ -978,8 +978,9 @@ function makeCardMaterial(patch) {
       float t = position.y, rot = aParams.x, r = aParams.w;
       vec2 L = aOffset.xz, wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
       vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
-      float edgeFade = 1.0 - smoothstep(uPatch * 0.16, uPatch * 0.49, distance(wxz, uCenter));
-      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * step(fract(r * 7.31 + aParams.y * 3.17), edgeFade);
+      // tufts grow up out of the ground towards the player and sink back with distance: nothing pops in
+      float grow = 1.0 - smoothstep(uFade.x, uFade.y, distance(wxz, uCenter));
+      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * grow;
       vec3 root = vec3(wxz.x, hm.r - 0.03, wxz.y);
       float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.7 + 0.5 * aParams.y) * keep;
       vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
@@ -1038,7 +1039,7 @@ function makeCardMaterial(patch) {
     }`,
   });
 }
-function makeCardCarpet(N, side, wMin, wMax) {
+function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB) {
   const g = new THREE.InstancedBufferGeometry();
   g.index = cardGeo.index; g.attributes.position = cardGeo.attributes.position; g.attributes.uv = cardGeo.attributes.uv;
   const off = new Float32Array(N * 3), prm = new Float32Array(N * 4);
@@ -1049,10 +1050,10 @@ function makeCardCarpet(N, side, wMin, wMax) {
   g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
   g.setAttribute('aParams', new THREE.InstancedBufferAttribute(prm, 4));
   g.instanceCount = N;
-  const m = new THREE.Mesh(g, makeCardMaterial(side)); m.frustumCulled = false; scene.add(m); return m;
+  const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB)); m.frustumCulled = false; scene.add(m); return m;
 }
-const nearCards = makeCardCarpet(LOW ? 5000 : ULTRA ? 14000 : 7000, 24, 0.7, 1.05);
-const midCards = makeCardCarpet(LOW ? 14000 : ULTRA ? 45000 : 22000, 92, 0.9, 1.35);
+const nearCards = makeCardCarpet(LOW ? 5000 : ULTRA ? 14000 : 7000, 40, 0.7, 1.05, 11, 19.5);    // dense layer round the player
+const midCards = makeCardCarpet(LOW ? 20000 : ULTRA ? 55000 : 30000, 160, 0.9, 1.35, 48, 79);    // wide layer out to ~80 m
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
@@ -3278,7 +3279,7 @@ function adaptQuality(rawDt) {
 }
 // ─────────────────────────── Graphics menu ───────────────────────────
 function applyGrassCount() {   // cards are cheap, so they stay dense even on low grass settings
-  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards ? Math.min(1, 0.45 + 0.55 * GFX.grass) * Math.max(0.7, grassScale) : grassScale * GFX.grass)));
+  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards ? Math.min(1, 0.75 + 0.25 * GFX.grass) * Math.max(0.85, grassScale) : grassScale * GFX.grass)));
 }
 function applyGfx() {
   const cards = GFX.grassStyle !== 'blades';
