@@ -994,14 +994,25 @@ const routePts = ri => pathPts.filter(p => p[3] === ri);
   torii.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
   scene.add(torii);
 }
-for (let i = 0; i < 320; i++) { // weathered stones in the grass
-  const a = Math.random() * 6.28, d = 8 + Math.random() * 590, x = Math.cos(a) * d, z = Math.sin(a) * d;
-  if (terrainH(x, z) < 0.6) continue;
-  if (pathMask(x, z) > 0.1) continue;
-  const s = 0.4 + Math.random() * 1.1, m = new THREE.Mesh(rockGeo(s, 3, i * 3.1), rock);
-  m.position.set(x, terrainH(x, z) - s * 0.25, z); m.rotation.set(Math.random(), Math.random() * 6, Math.random());
-  m.castShadow = m.receiveShadow = true; scene.add(m);
-  COLLIDERS_INIT.push({ x, z, r: s * 0.85 });
+{ // weathered stones in the grass: GPU-instanced, one draw call per 160 m cell
+  const shapes = [0, 1, 2, 3].map(k => rockGeo(1, 3, k * 3.1 + 0.7)), cells = new Map();
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let i = 0; i < 320; i++) {
+    const a = Math.random() * 6.28, d = 8 + Math.random() * 590, x = Math.cos(a) * d, z = Math.sin(a) * d;
+    if (terrainH(x, z) < 0.6 || pathMask(x, z) > 0.1) continue;
+    const s = 0.4 + Math.random() * 1.1, key = Math.floor(x / 160) + ',' + Math.floor(z / 160);
+    q.setFromEuler(e.set(Math.random(), Math.random() * 6, Math.random()));
+    sc.set(s * (0.8 + Math.random() * 0.4), s * (0.7 + Math.random() * 0.5), s * (0.8 + Math.random() * 0.4));   // stretched so shared shapes still differ
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(m4.compose(p.set(x, terrainH(x, z) - s * 0.25, z), q, sc).clone());
+    COLLIDERS_INIT.push({ x, z, r: s * 0.85 });
+  }
+  let k = 0;
+  for (const mats of cells.values()) {
+    const im = new THREE.InstancedMesh(shapes[k++ % shapes.length], rock, mats.length);
+    mats.forEach((m, i) => im.setMatrixAt(i, m)); im.computeBoundingSphere();
+    im.castShadow = im.receiveShadow = true; scene.add(im);
+  }
 }
 { // loose pebbles and gravel scattered along the dirt roads
   const N = LOW ? 7000 : 20000, g = rockGeo(0.06, 0, 1.3);
@@ -1358,7 +1369,7 @@ function animateHorse(dt, t, onHoof) {
 }
 
 const hero = buildSamurai(); scene.add(hero.root);
-const horse = buildHorse(); scene.add(horse.root);
+const horse = buildHorse(); scene.add(horse.root); mergeLeaves(horse.root);
 
 // ─────────────────────────── State / input ───────────────────────────
 const spawnPt = pathPts.filter(p => p[3] === 0).reduce((b, p) => Math.abs(Math.atan2(p[1], p[0]) - 2.4) < Math.abs(Math.atan2(b[1], b[0]) - 2.4) ? p : b);
@@ -2006,6 +2017,47 @@ function orientDownOut(obj, down, out) {
   obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
 }
 
+// Armour is sculpted from ~100 separate plates; once fitted, the plates riding on the same bone (or on
+// the same swinging skirt pivot) are merged into one mesh per material, so a warrior costs a handful
+// of draw calls instead of a hundred.
+function mergeInto(anchor, meshes) {
+  const inv = new THREE.Matrix4().copy(anchor.matrixWorld).invert(), m = new THREE.Matrix4(), groups = new Map();
+  for (const o of meshes) { const k = o.material.uuid + (o.castShadow ? 's' : ''); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(o); }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const geos = list.map(o => {
+      const g = o.geometry.index ? o.geometry.clone() : o.geometry.clone().setIndex([...Array(o.geometry.attributes.position.count).keys()]);
+      for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n);
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      if (!g.attributes.normal) g.computeVertexNormals();
+      m.multiplyMatrices(inv, o.matrixWorld); g.applyMatrix4(m);
+      if (m.determinant() < 0) { const ix = g.index.array; for (let i = 0; i < ix.length; i += 3) { const t = ix[i]; ix[i] = ix[i + 2]; ix[i + 2] = t; } }
+      g.morphAttributes = {}; return g;
+    });
+    const merged = mergeGeometries(geos, false); if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, list[0].material);
+    mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow; mesh.frustumCulled = list[0].frustumCulled;
+    anchor.add(mesh);
+    for (const o of list) o.parent.remove(o);
+  }
+}
+function mergeArmour(rig, armour) {
+  rig.updateMatrixWorld(true);
+  const pivots = new Set(armour.kusazuri), byAnchor = new Map(), roots = [];
+  rig.traverse(o => { if (o.userData.arm) roots.push(o); });
+  for (const r of roots) {
+    const anchor = pivots.has(r) ? r : r.parent;
+    if (!byAnchor.has(anchor)) byAnchor.set(anchor, []);
+    r.traverse(o => { if (o.isMesh && o.visible && !o.isSkinnedMesh) byAnchor.get(anchor).push(o); });
+  }
+  for (const [anchor, meshes] of byAnchor) mergeInto(anchor, meshes);
+}
+// Static leaf meshes (no children of their own) are merged into their parent, per material
+function mergeLeaves(root) {
+  root.updateMatrixWorld(true);
+  const nodes = []; root.traverse(o => { if (!o.isMesh) nodes.push(o); });
+  for (const n of nodes) mergeInto(n, n.children.filter(o => o.isMesh && !o.isSkinnedMesh && o.visible && !o.children.length));
+}
 function buildArmour(model, rig, B, paletteName) {
   const P = ARMOUR_PALETTES[paletteName];
   const lame = lacquer(makeLameTex(P.plate, P.cord, P.knot));
@@ -2033,7 +2085,7 @@ function buildArmour(model, rig, B, paletteName) {
     const z0 = pct(zs.slice(), 0.03), z1 = pct(zs, 0.97);
     return { rx: pct(xs, 0.96), cz: (z0 + z1) / 2, rz: (z1 - z0) / 2 };
   }
-  const attach = (bone, obj) => { rig.add(obj); bone.attach(obj); return obj; };
+  const attach = (bone, obj) => { rig.add(obj); bone.attach(obj); obj.userData.arm = true; return obj; };
   const up = new THREE.Vector3(0, 1, 0), fwd = new THREE.Vector3(0, 0, 1);
   const hips = wp(B.Hips), sp1 = wp(B.Spine1), sp2 = wp(B.Spine2), neck = wp(B.Neck), head = wp(B.Head), top = wp(B.HeadTop_End);
   const out = { kusazuri: [] };
@@ -2197,6 +2249,7 @@ function makeWarrior(model, animations, palette) {
   handle.position.copy(sheath.position); handle.quaternion.copy(sheath.quaternion); rig.add(handle); B.Hips.attach(handle);
 
   const armour = buildArmour(model, rig, B, palette);
+  mergeArmour(rig, armour);
   const mixer = new THREE.AnimationMixer(model), act = {};
   for (const c of animations) act[c.name] = mixer.clipAction(c);
   for (const n of ['Idle', 'Walk', 'Run']) { act[n].play(); act[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
@@ -2649,23 +2702,29 @@ function updateFallingLeaves(dt, t) {
 }
 
 // ── Stone lanterns (tōrō) beside the paths, a shrine above the torii, campfires at the bandit camps ──
-const lanternGlow = [];
+const lanternGlow = [], lanternAt = [];
 const stoneM = TM(texRock, 0.85);
+// Lanterns are placed first, then every part (base, post, light box, roof...) is drawn for all of
+// them at once with GPU instancing: one draw call per part instead of one per part per lantern.
 function stoneLantern(x, z, yaw) {
-  const g = new THREE.Group(), y = terrainH(x, z) - 0.05;
-  const add = (geo, py, mat = stoneM) => { const m = new THREE.Mesh(geo, mat); m.position.y = py; m.castShadow = m.receiveShadow = true; g.add(m); return m; };
-  add(new THREE.CylinderGeometry(0.34, 0.4, 0.16, 6), 0.08);
-  add(new THREE.CylinderGeometry(0.11, 0.14, 0.75, 10), 0.53);
-  add(new THREE.CylinderGeometry(0.3, 0.22, 0.12, 6), 0.96);
-  const box = add(new THREE.CylinderGeometry(0.2, 0.2, 0.28, 6), 1.16);
-  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.05, 0.03, 0.01) });
-  add(new THREE.CylinderGeometry(0.15, 0.15, 0.2, 6), 1.16, glow).scale.set(1.02, 1, 1.02);
-  for (let k = 0; k < 2; k++) { const w = add(new THREE.BoxGeometry(0.42, 0.13, 0.08), 1.16, glow); w.rotation.y = k * Math.PI / 2; }
-  add(new THREE.ConeGeometry(0.46, 0.26, 6), 1.43);
-  add(new THREE.SphereGeometry(0.07, 10, 8), 1.6);
-  g.position.set(x, y, z); g.rotation.y = yaw; scene.add(g);
-  lanternGlow.push(glow); COLLIDERS_INIT.push({ x, z, r: 0.35 });
+  lanternAt.push([x, terrainH(x, z) - 0.05, z, yaw]);
+  COLLIDERS_INIT.push({ x, z, r: 0.35 });
   (window.__lanterns ||= []).push([x, z]);
+}
+function buildLanterns() {
+  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.05, 0.03, 0.01) }); lanternGlow.push(glow);
+  const parts = [
+    [new THREE.CylinderGeometry(0.34, 0.4, 0.16, 6), 0.08], [new THREE.CylinderGeometry(0.11, 0.14, 0.75, 10), 0.53],
+    [new THREE.CylinderGeometry(0.3, 0.22, 0.12, 6), 0.96], [new THREE.CylinderGeometry(0.2, 0.2, 0.28, 6), 1.16],
+    [new THREE.CylinderGeometry(0.15, 0.15, 0.2, 6).scale(1.02, 1, 1.02), 1.16, glow],
+    [new THREE.BoxGeometry(0.42, 0.13, 0.08), 1.16, glow], [new THREE.BoxGeometry(0.42, 0.13, 0.08).rotateY(Math.PI / 2), 1.16, glow],
+    [new THREE.ConeGeometry(0.46, 0.26, 6), 1.43], [new THREE.SphereGeometry(0.07, 10, 8), 1.6]];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
+  for (const [geo, py, mat] of parts) {
+    const im = new THREE.InstancedMesh(geo, mat || stoneM, lanternAt.length);
+    lanternAt.forEach(([x, y, z, yaw], i) => im.setMatrixAt(i, m4.compose(p.set(x, y + py, z), q.setFromAxisAngle(up, yaw), one)));
+    im.castShadow = !mat; im.receiveShadow = true; im.computeBoundingSphere(); scene.add(im);
+  }
 }
 {
   for (let ri = 0; ri < ROUTES.length; ri++) {
@@ -2695,6 +2754,7 @@ function stoneLantern(x, z, yaw) {
   window.__flora = Object.assign(window.__flora || {}, { shrine: [cx + fx * 9, y, cz + fz * 9, cx, cz] });
   for (const s of [-1, 1]) stoneLantern(cx + fx * 3.2 + fz * s * 1.9, cz + fz * 3.2 - fx * s * 1.9, yaw);
 }
+buildLanterns();
 const campfires = [];
 function campfire(x, z) {
   const y = terrainH(x, z), g = new THREE.Group();
