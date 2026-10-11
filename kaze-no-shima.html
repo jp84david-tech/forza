@@ -573,10 +573,11 @@ const grassPaint = (() => {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; return t;
 })();
 function terrainCompile(sh) {
-  Object.assign(sh.uniforms, { uTime: SH.uTime, uCloudAmt: SH.uCloudAmt, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uWaves: SH.uWaves, uPaint: { value: grassPaint },
+  if (!tuftPaint) tuftPaint = buildTuftPaint();
+  Object.assign(sh.uniforms, { uTime: SH.uTime, uCloudAmt: SH.uCloudAmt, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uWaves: SH.uWaves, uPaint: { value: grassPaint }, uTuft: { value: tuftPaint || (tuftPaint = buildTuftPaint()) }, uTuftGain: { value: 0.62 },
     uHeightMap: SH.uHeightMap, uHm: SH.uHm, uFineMin: { value: fineMin }, uFineMax: { value: fineMax } });
   sh.vertexShader = 'attribute float aGrassy; varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vGrassy = aGrassy; vWNrm = normalize(mat3(modelMatrix) * objectNormal);');
-  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform vec3 uSunDir, uSunCol, uAmb; uniform float uWaves; uniform sampler2D uPaint, uHeightMap; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + sh.fragmentShader
+  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform vec3 uSunDir, uSunCol, uAmb; uniform float uWaves, uTuftGain; uniform sampler2D uPaint, uHeightMap, uTuft; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + sh.fragmentShader
     .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
     float grassy = vGrassy;
     #ifdef COARSE
@@ -601,15 +602,30 @@ function terrainCompile(sh) {
       float g = mix(0.4, gustAt(xz, uTime), uWaves);
       vec2 wdir = normalize(vec2(1.0, 0.35));
       // brush strokes at two scales, swaying with the gusts
-      vec2 sway = wdir * (g * 0.12 + sin(uTime * 2.3 + xz.x * 0.4) * 0.015);
+      vec2 sway = vec2(0.0);   // the ground itself stays put
       float det = texture2D(uPaint, xz / 2.7 + sway).r * 0.6 + texture2D(uPaint, mat2(0.8, -0.6, 0.6, 0.8) * xz / 9.3 + sway * 0.4).r * 0.4;
       // seen from afar you look across the blade tops; up close, down between them to the dark roots
       float k = mix(0.36, mix(0.42, 0.52, 1.0 - abs(V.y)), smoothstep(3.0, 35.0, dist));
       vec3 col = mix(vec3(0.012, 0.025, 0.006), meadowTip(xz, vnoise2(xz * 0.19 + 7.0), vnoise2(xz * 0.035), 0.075), smoothstep(0.0, 1.0, k));
+      // between the tufts near the player: patches of dry, damp and wet mud
+      float mudW = 1.0 - smoothstep(15.0, 70.0, dist);
+      float wet = smoothstep(0.58, 0.72, vnoise2(xz * 0.06 + 21.0) * 0.7 + vnoise2(xz * 0.25) * 0.3);
+      float damp = smoothstep(0.35, 0.6, vnoise2(xz * 0.11 + 5.0));
+      vec3 mud = mix(mix(vec3(0.21, 0.165, 0.11), vec3(0.11, 0.085, 0.06), damp), vec3(0.05, 0.04, 0.03), wet);
+      col = mix(col, mud * (0.8 + 0.4 * det), mudW * 0.85);
       float clump = vnoise2(xz * 0.45) * 0.6 + vnoise2(xz * 1.3 + 3.0) * 0.4;  // tufts and hollows
       col *= mix(0.5, 1.3, det) * mix(0.65, 1.35, clump) * 0.93 * 0.92;
       col *= 1.0 + (vnoise2(xz * 0.08 + 11.0) - 0.5) * 0.3 * smoothstep(30.0, 60.0, dist);   // broad swathes far off
       col *= mix(1.0, 0.8, smoothstep(40.0, 120.0, dist));   // matched to the grass-card tufts it continues
+      // past the last tufts the ground is painted with the tufts themselves (a sheet stamped from the card picture)
+      float farP = smoothstep(150.0, 260.0, dist);
+      if (farP > 0.0) {
+        float lt = texture2D(uTuft, xz / 3.4).r * 0.6 + texture2D(uTuft, mat2(0.8, -0.6, 0.6, 0.8) * xz / 8.1 + 0.37).r * 0.4;
+        vec3 tip = meadowTip(xz, vnoise2(xz * 0.19 + 7.0), vnoise2(xz * 0.035), 0.075);
+        vec3 tcol = mix(vec3(0.012, 0.025, 0.006), tip, smoothstep(0.0, 1.0, 0.25 + lt * 0.75)) * (0.5 + 0.7 * lt) * uTuftGain;
+        tcol *= 1.0 + (vnoise2(xz * 0.08 + 11.0) - 0.5) * 0.3;
+        col = mix(col, tcol, farP);
+      }
       col *= 1.0 + (g - 0.4) * 0.24;                                         // gusts roll over as lighter waves
       float nl = dot(normalize(vWNrm), L);
       float ndl = clamp(0.62 * nl + 0.25 * sqrt(max(1.0 - nl * nl, 0.0)), 0.0, 1.0);   // average over leaning blades
@@ -621,10 +637,25 @@ function terrainCompile(sh) {
       float sheen = (pow(sinTH, 12.0) * 0.055 + pow(sinTH, 4.0) * 0.02) * smoothstep(0.2, 0.9, k) * (0.4 + 0.6 * ndl) * (0.6 + 0.8 * det);
       vec3 field = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
                  + col * uSunCol * trans * 0.45 * vis
-                 + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis;
+                 + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis
+                 + uSunCol * wet * mudW * 0.04 * pow(max(dot(reflect(-L, vec3(0.0, 1.0, 0.0)), V), 0.0), 24.0) * vis;   // soft shine on wet mud
       outgoingLight = mix(outgoingLight, field, smoothstep(0.0, 1.0, grassy));
     }
     #include <opaque_fragment>`);
+}
+let tuftPaint = null;
+function buildTuftPaint() {   // a tileable sheet of small tufts stamped from the grass-card picture, with dark gaps
+  const S = LOW ? 256 : 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), src = grassCardTex.image, R = rng32(4242), k = S / 512;
+  x.fillStyle = 'rgb(40,40,40)'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 420; i++) {
+    const w = (40 + R() * 50) * k, h = w * (0.55 + R() * 0.35), px = R() * S, py = R() * S, a = (R() - 0.5) * 0.5;
+    for (const ox of [0, -S, S]) for (const oy of [0, -S, S]) {
+      if ((ox && Math.min(px, S - px) > w) || (oy && Math.min(py, S - py) > h)) continue;
+      x.save(); x.translate(px + ox, py + oy); x.rotate(a); x.globalAlpha = 0.75 + R() * 0.25; x.drawImage(src, -w / 2, -h, w, h); x.restore();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; return t;
 }
 terrain.material.onBeforeCompile = terrainCompile; terrain.material.customProgramCacheKey = () => 'terrain-coarse';
 scene.add(terrain);
@@ -1064,9 +1095,9 @@ function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -
   g.instanceCount = N;
   const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB)); m.frustumCulled = false; scene.add(m); return m;
 }
-const nearCards = makeCardCarpet(LOW ? 5000 : ULTRA ? 14000 : 7000, 40, 0.7, 1.05, 11, 19.5);    // dense layer round the player
-const midCards = makeCardCarpet(LOW ? 20000 : ULTRA ? 55000 : 30000, 160, 0.9, 1.35, 60, 79);    // wide layer out to ~80 m
-const farCards = makeCardCarpet(LOW ? 16000 : ULTRA ? 50000 : 28000, 520, 1.7, 2.5, 200, 258, 42, 58, cardGeoFar);   // big sparse tufts to ~250 m
+const nearCards = makeCardCarpet(LOW ? 8000 : ULTRA ? 20000 : 12000, 40, 0.7, 1.05, 11, 19.5);    // dense layer round the player
+const midCards = makeCardCarpet(LOW ? 26000 : ULTRA ? 65000 : 40000, 160, 0.9, 1.35, 60, 79);    // wide layer out to ~80 m
+const farCards = makeCardCarpet(LOW ? 32000 : ULTRA ? 90000 : 60000, 520, 1.7, 2.5, 200, 258, 42, 58, cardGeoFar);   // big sparse tufts to ~250 m
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
