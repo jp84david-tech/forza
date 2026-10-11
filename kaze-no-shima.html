@@ -3452,7 +3452,7 @@ const SPECIES = [
     const h = sampleHM(x, z, 0); if (h < 1.1 || h > 60) return false;
     if (pathMask(x, z) > 0.03 || riverWet(x, z) > 0 || _rd < _rw + 3) return false;
     if (Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 9) return false;
-    for (const hs of VILLAGE_HOUSES) if (Math.hypot(hs.x - x, hs.z - z) < hs.w / 2 + 3.5) return false;
+    for (const hs of VILLAGE_HOUSES) if (Math.hypot(hs.x - x, hs.z - z) < hs.w / 2 + 7) return false;
     if (Math.abs(sampleHM(x + 2, z, 0) - sampleHM(x - 2, z, 0)) > 2.4) return false;   // not on cliffs
     return mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
   };
