@@ -820,8 +820,8 @@ function makeGrassMaterial(near, patch) {
     uniform sampler2D uHeightMap; uniform vec3 uHm; uniform vec2 uCenter; uniform float uPatch;
     #endif
     attribute vec3 aOffset; attribute vec4 aParams;
-    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
-    varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; varying float vCov;
+    centroid varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
+    centroid varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; centroid varying float vCov;
     vec2 pushFrom(vec4 P, vec2 root, float t, float h){
       vec2 d = root - P.xy; float l = length(d) + 1e-4;
       float f = (1.0 - smoothstep(P.z*0.35, P.z, l)) * P.w;
@@ -880,9 +880,11 @@ function makeGrassMaterial(near, patch) {
     }`,
   fragmentShader: '#include <packing>\n' + SHADOW_GLSL + /* glsl */`
     uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt, uDbg;
-    varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
-    varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; varying float vCov;
+    centroid varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
+    centroid varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; centroid varying float vCov;
     void main(){
+      // with MSAA, edge pixels of thin blades can be shaded from outside the triangle: keep inputs in range
+      float vT = clamp(vT, 0.0, 1.0), vSide = clamp(vSide, -0.5, 0.5), vCov = clamp(vCov, 0.0, 1.0);
       vec3 Nf = normalize(vN); if (!gl_FrontFacing) Nf = -Nf;
       vec3 N = normalize(Nf + vTng * vSide * 1.6 + vec3(0.0, 0.9, 0.0));     // rounded blade cross-section
       vec3 V = normalize(cameraPosition - vWorld), L = uSunDir;
