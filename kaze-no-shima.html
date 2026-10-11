@@ -2747,12 +2747,11 @@ function faceTexture(name) {
 function makeHead(style, hc, up, fwd) {
   const st = FACE_STYLES[style], g = new THREE.Group();
   const skin = new THREE.MeshStandardMaterial({ map: faceTexture(style), roughness: 0.62, metalness: 0 });
-  const plain = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.skin[0] / 255, st.skin[1] / 255, st.skin[2] / 255).convertSRGBToLinear(), roughness: 0.65 });
+  const plain = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.skin[0] / 255, st.skin[1] / 255, st.skin[2] / 255).convertSRGBToLinear().multiplyScalar(0.78), roughness: 0.65 });
   const hairM = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.hair[0] / 255, st.hair[1] / 255, st.hair[2] / 255).convertSRGBToLinear(), roughness: 0.55 });
   const head = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), skin); head.scale.set(0.079, 0.108, 0.093); g.add(head);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.017, 0.045, 10), plain); nose.rotation.x = Math.PI * 0.62; nose.position.set(0, -0.012, 0.094); nose.scale.set(1, 1, 0.75); g.add(nose);
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.0125, 12, 8), plain); tip.position.set(0, -0.03, 0.104); g.add(tip);
-  const brow = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), plain); brow.scale.set(0.06, 0.012, 0.03); brow.position.set(0, 0.012, 0.072); g.add(brow);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.034, 10), plain); nose.rotation.x = Math.PI * 0.6; nose.position.set(0, -0.014, 0.091); nose.scale.set(1, 1, 0.7); g.add(nose);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.009, 12, 8), plain); tip.position.set(0, -0.029, 0.099); g.add(tip);
   for (const s of [-1, 1]) { const ear = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), plain); ear.scale.set(0.012, 0.03, 0.02); ear.position.set(s * 0.079, -0.002, 0.004); g.add(ear); }
   const chin = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), skin); chin.scale.set(0.045, 0.03, 0.04); chin.position.set(0, -0.082, 0.045); chin.visible = false; g.add(chin);
   if (st.top === 'chonmage') { const k = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.07, 8), hairM); k.rotation.x = Math.PI / 2; k.position.set(0, 0.106, 0.0); g.add(k); }
