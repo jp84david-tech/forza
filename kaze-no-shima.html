@@ -746,7 +746,9 @@ function terrainCompile(sh) {
     #ifdef COARSE
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.22, 0.14, 0.08) * (0.85 + 0.3 * vnoise2(vWPos.xz * 1.7)), pmS * smoothstep(0.45, 1.0, hmS.r));
     #endif`)
-    .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+    .replace('#include <normal_fragment_maps>', `vec3 nGeo = normal;
+    #include <normal_fragment_maps>
+    normal = normalize(mix(normal, nGeo, max(snowW, rockW) * 0.85));   // the dirt-crack normal map belongs to soil, not snow or rock
     { vec3 vp = -vViewPosition, dpx = dFdx(vp), dpy = dFdy(vp); float hx = dFdx(dH), hy = dFdy(dH);   // bump from the fine relief
       vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx); float det = dot(dpx, r1);
       normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2)); }`)
