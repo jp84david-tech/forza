@@ -2624,7 +2624,7 @@ function buildArmour(model, rig, B, paletteName) {
     attach(B.Head, hat); out.kabuto = hat;
     return out;
   }
-  const kab = new THREE.Group(); kab.position.copy(hc);
+  const kab = new THREE.Group(); kab.position.copy(fc).addScaledVector(up, 0.058); kab.scale.setScalar(Math.min(1, 0.118 / hr));   // sized to the human head, riding above the brows
   const bowl = new THREE.Mesh(new THREE.SphereGeometry(hr, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.52), kabutoM); bowl.scale.set(1, 1.08, 1.06); bowl.castShadow = true; kab.add(bowl);
   const tehen = new THREE.Mesh(new THREE.TorusGeometry(hr * 0.16, 0.007, 6, 20), trimM); tehen.rotation.x = Math.PI / 2; tehen.position.y = hr * 1.07; kab.add(tehen);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(hr * 1.01, 0.008, 6, 48), trimM); rim.rotation.x = Math.PI / 2; rim.scale.set(1, 1.06, 1); rim.position.y = -0.005; kab.add(rim);
