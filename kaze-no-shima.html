@@ -122,6 +122,53 @@ const targetPR = () => LOW ? Math.min(devicePixelRatio, 1) : Math.min(2, Math.ma
 renderer.setPixelRatio(targetPR());
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.42;
+// Atmosphere: the haze glows warm towards the sun and cool away from it, and thins with altitude so the
+// snow peaks rise clear of it. Replaces three.js's fog for every material; the grass and water shaders
+// use the same formula (ATMO_GLSL).
+const FOGU = { uFogSunV: { value: new THREE.Vector3(0, 1, 0) }, uFogUpV: { value: new THREE.Vector3(0, 1, 0) }, uFogCamY: { value: 0 } };
+THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n varying float vFogDepth; varying vec3 vFogView;\n#endif';
+THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n vFogDepth = - mvPosition.z; vFogView = mvPosition.xyz;\n#endif';
+THREE.ShaderChunk.fog_pars_fragment = `#ifdef USE_FOG
+  uniform vec3 fogColor; varying float vFogDepth; varying vec3 vFogView;
+  uniform vec3 uFogSunV, uFogUpV; uniform float uFogCamY;
+  #ifdef FOG_EXP2
+    uniform float fogDensity;
+  #else
+    uniform float fogNear; uniform float fogFar;
+  #endif
+#endif`;
+THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
+  float fogD = length(vFogView);
+  float hAvg = uFogCamY + 0.5 * dot(vFogView, uFogUpV);              // mean height along the line of sight
+  float hfF = exp(-max(hAvg - 6.0, 0.0) / 150.0);
+  #ifdef FOG_EXP2
+    float fogK = fogD * fogDensity * hfF, fogFactor = 1.0 - exp(-fogK * fogK);
+  #else
+    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+  #endif
+  float sunA = pow(max(dot(vFogView / max(fogD, 1e-3), uFogSunV), 0.0), 6.0);
+  vec3 fogC = mix(fogColor * vec3(0.84, 0.9, 1.04), min(fogColor * vec3(1.3, 1.12, 0.88), vec3(1.0)), sunA);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogC, fogFactor);
+#endif`;
+const ATMO_GLSL = /* glsl */`
+  vec3 atmo(vec3 col, vec3 wp, vec3 fogCol, float den, vec3 sunDir) {
+    vec3 dv = wp - cameraPosition; float d = length(dv);
+    float hf = exp(-max((cameraPosition.y + wp.y) * 0.5 - 6.0, 0.0) / 150.0), k = d * den * hf;
+    float sunA = pow(max(dot(dv / max(d, 1e-3), sunDir), 0.0), 6.0);
+    return mix(col, mix(fogCol * vec3(0.84, 0.9, 1.04), fogCol * vec3(1.3, 1.12, 0.88), sunA), 1.0 - exp(-k * k));
+  }
+`;
+// every material gets the atmosphere's uniforms (chained onto any shader edits it already has)
+function patchFog(m) {
+  if (!m || m.userData.__fog) return;
+  m.userData.__fog = true;
+  const prev = m.onBeforeCompile, key = m.customProgramCacheKey();
+  m.onBeforeCompile = function (sh, r) { if (prev) prev.call(this, sh, r); Object.assign(sh.uniforms, FOGU); };
+  m.customProgramCacheKey = () => key + '|atmo';
+  m.needsUpdate = true;
+}
+function patchAllFog(root) { root.traverse(o => { if (o.material) [].concat(o.material).forEach(patchFog); }); }
+
 // Tone curve used when post effects are off (Potato/Low): filmic, then a gentle warm grade standing in
 // for the film pass that the post stack would apply
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
@@ -960,7 +1007,7 @@ const riverMat = new THREE.ShaderMaterial({
   uniforms: { uTime: SH.uTime, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uFogCol: SH.uFogCol, uFogDen: SH.uFogDen },
   vertexShader: /* glsl */`attribute float aRapid; varying vec2 vUv; varying vec3 vW; varying float vRapid;
     void main(){ vUv = uv; vRapid = aRapid; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-  fragmentShader: NOISE_GLSL + /* glsl */`
+  fragmentShader: NOISE_GLSL + ATMO_GLSL + /* glsl */`
     uniform float uTime, uFogDen; uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; varying vec2 vUv; varying vec3 vW; varying float vRapid;
     void main(){
       float across = vUv.x, along = vUv.y, edge = 1.0 - abs(across * 2.0 - 1.0);
@@ -980,8 +1027,7 @@ const riverMat = new THREE.ShaderMaterial({
       float streak = vnoise2(vec2(p.x * 1.6, p.y * 0.12 - uTime * sp * 0.25));            // white water drawn out along the flow
       float foam = smoothstep(0.66, 0.92, streak * 0.6 + n3 * 0.4 + vRapid * 0.25 - 0.1) * smoothstep(0.05, 0.4, vRapid) + (1.0 - smoothstep(0.0, 0.07, edge)) * 0.35 * n2;
       col = mix(col * (1.0 - vRapid * 0.35), vec3(0.86, 0.9, 0.93) * (uAmb * 0.95 + uSunCol * 0.05), clamp(foam, 0.0, 1.0) * 0.7);   // white water lit by the sky, dark water between
-      float d = length(cameraPosition - vW), fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
-      gl_FragColor = vec4(mix(col, uFogCol, fog), smoothstep(0.0, 0.14, edge) * mix(0.88, 1.0, foam));
+      gl_FragColor = vec4(atmo(col, vW, uFogCol, uFogDen, uSunDir), smoothstep(0.0, 0.14, edge) * mix(0.88, 1.0, foam));
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }`,
@@ -1185,7 +1231,7 @@ function makeGrassMaterial(near, patch) {
       vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
       gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
     }`,
-  fragmentShader: '#include <packing>\n' + SHADOW_GLSL + /* glsl */`
+  fragmentShader: '#include <packing>\n' + SHADOW_GLSL + ATMO_GLSL + /* glsl */`
     uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt;
     centroid varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
     centroid varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; centroid varying float vCov;
@@ -1218,9 +1264,7 @@ function makeGrassMaterial(near, patch) {
       vec3 lit = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
                + col * uSunCol * trans * 0.45 * vis
                + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis;
-      float d = length(cameraPosition - vWorld);
-      float fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
-      gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
+      gl_FragColor = vec4(atmo(lit, vWorld, uFogCol, uFogDen, uSunDir), 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }`,
@@ -1302,13 +1346,16 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
     void main(){
       float t = position.y, rot = aParams.x, r = aParams.w;
       vec2 L = aOffset.xz, wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
-      vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
       // tufts grow up out of the ground towards the player and sink back with distance: nothing pops in
       // each layer rises where the nearer one still covers the ground, and sinks where the next one does
       // every tuft fades at its own distance across the band, so density thins out gradually (no ring)
       float dC = distance(wxz, uCenter), rr = fract(r * 13.7 + aParams.y * 5.1);
       float fadeD = mix(uFade.x, uFade.y, rr), growD = mix(uGrow.x, uGrow.y, fract(rr * 3.3 + 0.17));
       float grow = (1.0 - smoothstep(fadeD - 5.0, fadeD + 5.0, dC)) * smoothstep(growD - 5.0, growD + 5.0, dC);
+      vec3 camF0 = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+      // cheap exits first: out of this layer's band, or behind the camera (before any texture is read)
+      if (grow <= 0.0 || dot(vec2(wxz - cameraPosition.xz), normalize(camF0.xz + vec2(1e-4))) < -3.0 - abs(camF0.y) * 30.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
       float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * (1.0 - smoothstep(52.0, 72.0, hm.r)) * smoothstep(0.05, 0.35, hm.b) * grow;
       vec3 root = vec3(wxz.x, hm.r - 0.03, wxz.y);
       float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.7 + 0.5 * aParams.y) * keep;
@@ -1344,7 +1391,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
       gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
     }`,
-  fragmentShader: '#include <packing>\n' + SHADOW_GLSL + /* glsl */`
+  fragmentShader: '#include <packing>\n' + SHADOW_GLSL + ATMO_GLSL + /* glsl */`
     uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTexSize; uniform sampler2D uCardTex;
     varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
     void main(){
@@ -1367,8 +1414,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       vec3 lit = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
                + col * uSunCol * trans * 0.45 * vis
                + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis;
-      float d = length(cameraPosition - vWorld), fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
-      gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
+      gl_FragColor = vec4(atmo(lit, vWorld, uFogCol, uFogDen, uSunDir), 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
     }`,
@@ -1387,9 +1433,9 @@ function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -
   g.instanceCount = N;
   const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB, geo === cardGeoFar)); m.frustumCulled = false; scene.add(m); return m;
 }
-const nearCards = makeCardCarpet(LOW ? 14000 : ULTRA ? 40000 : 24000, 48, 0.7, 1.05, 9, 23);    // dense layer round the player
-const midCards = makeCardCarpet(LOW ? 45000 : ULTRA ? 130000 : 80000, 210, 0.9, 1.35, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
-const farCards = makeCardCarpet(LOW ? 120000 : ULTRA ? 360000 : 240000, 540, 1.5, 2.3, 185, 262, 28, 60, cardGeoFar);   // big sparse tufts to ~250 m
+const nearCards = makeCardCarpet(LOW ? 28000 : ULTRA ? 80000 : 48000, 48, 0.7, 1.05, 9, 23);    // dense layer round the player
+const midCards = makeCardCarpet(LOW ? 90000 : ULTRA ? 260000 : 160000, 210, 0.9, 1.35, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
+const farCards = makeCardCarpet(LOW ? 240000 : ULTRA ? 700000 : 480000, 540, 1.5, 2.3, 185, 262, 28, 60, cardGeoFar);   // big sparse tufts to ~250 m
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
@@ -2042,7 +2088,7 @@ const flowers = (() => {
         vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
         gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
       }`,
-    fragmentShader: '#include <packing>\n' + SHADOW_GLSL + NOISE_GLSL + /* glsl */`
+    fragmentShader: '#include <packing>\n' + SHADOW_GLSL + NOISE_GLSL + ATMO_GLSL + /* glsl */`
       uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt;
       varying vec3 vCol; varying vec3 vWorld; varying float vH; varying float vWhite; varying vec4 vShadowCoord;
       void main(){
@@ -2052,8 +2098,7 @@ const flowers = (() => {
         float vis = sunVisibility(vShadowCoord) * cloudShadowAt(vWorld.xz, uTime, uCloudAmt);
         float back = pow(max(dot(-V, uSunDir), 0.0), 4.0) * petal;
         vec3 lit = col * (uSunCol * (0.55 + 0.25 * vH) * vis + uAmb) + col * uSunCol * back * 2.5 * vis;
-        float d = length(cameraPosition - vWorld);
-        gl_FragColor = vec4(mix(lit, uFogCol, 1.0 - exp(-d * d * uFogDen * uFogDen)), 1.0);
+        gl_FragColor = vec4(atmo(lit, vWorld, uFogCol, uFogDen, uSunDir), 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
       }`,
@@ -2619,10 +2664,10 @@ function buildArmour(model, rig, B, paletteName) {
 
   // ── kabuto: ridged bowl, flared neck guard, turned-back flaps, visor, crest; menpō face mask ──
   const hc = head.clone().lerp(top, 0.42), hr = girth(hc, up, 0.07, 0.22, 0.9) + 0.022;
-  const fc = hc.clone().addScaledVector(up, -0.04);                       // centre of the human head that replaces the helmet
+  const fc = hc.clone().addScaledVector(up, -0.03);                       // centre of the human head that replaces the helmet
   attach(B.Head, makeHead(P.hat === 'kasa' ? 'bandit' : 'hero', fc, up, fwd));
   if (P.hat === 'kasa') { // ronin: wide straw hat over a cloth headband
-    const hat = new THREE.Group(); hat.position.copy(fc);
+    const hat = new THREE.Group(); hat.position.copy(fc); hat.scale.setScalar(HEAD_K);
     const strawM = TM(texStraw, 0.95, 0, { side: THREE.DoubleSide });
     const cone = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.17, 36, 1, true), strawM); cone.position.y = 0.165; hat.add(cone);
     const band = new THREE.Mesh(new THREE.TorusGeometry(0.079, 0.012, 6, 28), sashM); band.rotation.x = Math.PI / 2; band.scale.set(0.93, 1.1, 1); band.position.y = 0.035; hat.add(band);
@@ -2632,7 +2677,7 @@ function buildArmour(model, rig, B, paletteName) {
     attach(B.Head, hat); out.kabuto = hat;
     return out;
   }
-  const kab = new THREE.Group(); kab.position.copy(fc).addScaledVector(up, 0.058); kab.scale.setScalar(Math.min(1, 0.118 / hr));   // sized to the human head, riding above the brows
+  const kab = new THREE.Group(); kab.position.copy(fc).addScaledVector(up, 0.058 * HEAD_K); kab.scale.setScalar(Math.min(1, 0.118 / hr) * HEAD_K);   // sized to the human head, riding above the brows
   const bowl = new THREE.Mesh(new THREE.SphereGeometry(hr, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.52), kabutoM); bowl.scale.set(1, 1.08, 1.06); bowl.castShadow = true; kab.add(bowl);
   const tehen = new THREE.Mesh(new THREE.TorusGeometry(hr * 0.16, 0.007, 6, 20), trimM); tehen.rotation.x = Math.PI / 2; tehen.position.y = hr * 1.07; kab.add(tehen);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(hr * 1.01, 0.008, 6, 48), trimM); rim.rotation.x = Math.PI / 2; rim.scale.set(1, 1.06, 1); rim.position.y = -0.005; kab.add(rim);
@@ -2675,6 +2720,7 @@ function updateArmour(ch) {
 // The motion-capture body came with a trooper's helmet for a head. Those head vertices are folded away
 // inside the skull, and a human head is built in its place: a painted face on a head-shaped mesh,
 // with a sculpted nose, ears and hair.
+const HEAD_S = 1.32, HEAD_K = HEAD_S / 1.12;   // head scale (bigger, more heroic proportions); helmets and hats follow
 function prepareHeadCollapse(mesh) {
   const g = mesh.geometry;
   if (g.userData.headC) return g.userData.headC;
@@ -2767,7 +2813,7 @@ function makeHead(style, hc, up, fwd) {
   if (st.top === 'bowl') { const c = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), hairM); c.scale.set(0.084, 0.11, 0.098); c.position.y = 0.003; g.add(c); }
   // orient: +z of the group looks along the character's forward
   g.position.copy(hc); g.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd.clone().negate(), up));
-  g.scale.setScalar(1.12);   // the borrowed body is broad-shouldered; keep the head in proportion
+  g.scale.setScalar(HEAD_S);   // the borrowed body is broad-shouldered; a bigger head reads better
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
 }
@@ -2827,7 +2873,7 @@ function makeWarrior(model, animations, palette, face) {
 function dressVillager(model, rig, B, animations, palette, face, wp, hipsY) {
   const P = ARMOUR_PALETTES[palette], up = new THREE.Vector3(0, 1, 0), fwd = new THREE.Vector3(0, 0, 1);
   const attach = (bone, obj) => { rig.add(obj); bone.attach(obj); obj.userData.arm = true; return obj; };
-  const head = wp(B.Head), top = wp(B.HeadTop_End), hc = head.clone().lerp(top, 0.42), fc = hc.clone().addScaledVector(up, -0.04);
+  const head = wp(B.Head), top = wp(B.HeadTop_End), hc = head.clone().lerp(top, 0.42), fc = hc.clone().addScaledVector(up, -0.03);
   attach(B.Head, makeHead(face, fc, up, fwd));
   const cloth = new THREE.MeshStandardMaterial({ color: new THREE.Color(...P.under).multiplyScalar(2.2), roughness: 0.9, side: THREE.DoubleSide });
   const sash = new THREE.MeshStandardMaterial({ color: P.sash, roughness: 0.8 });
@@ -2840,7 +2886,7 @@ function dressVillager(model, rig, B, animations, palette, face, wp, hipsY) {
   }
   if (face === 'man') {   // a farmer's sedge hat
     const hat = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.14, 24, 1, true), TM(texStraw, 0.95, 0, { side: THREE.DoubleSide }));
-    hat.position.copy(fc).add(new THREE.Vector3(0, 0.15, 0)); attach(B.Head, hat);
+    hat.position.copy(fc).add(new THREE.Vector3(0, 0.15 * HEAD_K, 0)); hat.scale.setScalar(HEAD_K); attach(B.Head, hat);
   }
   mergeArmour(rig, { kusazuri: [] });
   const mixer = new THREE.AnimationMixer(model), act = {};
@@ -3037,7 +3083,11 @@ function campSpots() {
 }
 function spawnEnemies() {
   if (!soldierGLTF || enemies.length) return;
-  campSpots().forEach((home, i) => {
+  campSpots().forEach((home, i) => makeBandit(home, i));
+  window.__enemies = enemies;
+}
+function makeBandit(home, i) {
+  {
     const w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, 'bandit');
     const root = new THREE.Group(); root.add(w.rig); scene.add(root);
     const mats = []; w.rig.traverse(o => { if (o.isMesh && o.material && !mats.includes(o.material)) mats.push(o.material); });
@@ -3048,8 +3098,19 @@ function spawnEnemies() {
     e.onSlash = (k, sl) => { audio.slash(0.75); e.vel.x += Math.sin(e.yaw) * sl.lunge * 0.45; e.vel.z += Math.cos(e.yaw) * sl.lunge * 0.45; };
     e.stamp = () => { if (e.alive) stampFeet(e.B, e.vel.x, e.vel.z); };
     enemies.push(e);
-  });
-  window.__enemies = enemies;
+    return e;
+  }
+}
+// the bandits of the nine small camps come to life (one per frame) as you approach
+function wakeCamps() {
+  if (!soldierGLTF) return;
+  for (const cp of (window.__camps2 || [])) {
+    if ((cp.spawned || 0) >= 2 || Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z) > 230) continue;
+    const a = cp.yaw + 0.9 + (cp.spawned || 0) * 2.6;
+    makeBandit({ x: cp.x + Math.cos(a) * 3, z: cp.z + Math.sin(a) * 3 }, enemies.length);
+    cp.spawned = (cp.spawned || 0) + 1;
+    return;   // one per frame keeps the hitch small
+  }
 }
 function resetEnemy(e) {
   Object.assign(e, { hp: e.maxHp, alive: true, state: 'idle', stagger: 0, deathT: 0, wander: null, atkCool: 1.5 });
@@ -3157,8 +3218,10 @@ function updateEnemies(dt, t) {
   if (!enemies.length) return;
   player.invuln = Math.max(0, player.invuln - dt);
   if (!player.dead && player.hp < player.maxHp && clock.elapsedTime - lastHurt > 5) player.hp = Math.min(player.maxHp, player.hp + 7 * dt);
+  if ((frameNo & 7) === 0) wakeCamps();
   for (const e of enemies) {
-    const near = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z) < 70;
+    const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70;
+    e.root.visible = dP < 180 && (e.alive || e.deathT < 12);   // far bandits are not drawn at all
     if (near || e.state === 'chase') {
       updateEnemy(e, dt, t);
       const d = Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z);
@@ -3635,11 +3698,90 @@ function campfire(x, z) {
   const fireTex = canvasTex(64, (c, S) => { const gr = c.createRadialGradient(S / 2, S * 0.7, 0, S / 2, S * 0.6, S / 2); gr.addColorStop(0, 'rgba(255,240,200,1)'); gr.addColorStop(0.35, 'rgba(255,150,40,0.9)'); gr.addColorStop(1, 'rgba(255,60,0,0)'); c.fillStyle = gr; c.fillRect(0, 0, S, S); });
   const flames = [];
   for (let k = 0; k < 3; k++) { const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTex, color: new THREE.Color(3, 1.6, 0.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); f.position.y = 0.35; g.add(f); flames.push(f); }
-  const light = new THREE.PointLight(0xff8a3a, 10, 10, 1.6); light.position.y = 0.6; g.add(light);
   g.position.set(x, y, z); scene.add(g); COLLIDERS_INIT.push({ x, z, r: 0.55 });
-  campfires.push({ g, flames, light, x, y, z });
+  campfires.push({ g, flames, x, y, z });
 }
 campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c.x + Math.cos(a) * 2.6, c.z + Math.sin(a) * 2.6); } });
+// three fire lights shared by all the campfires: they follow the nearest ones (a fixed light count keeps every shader as it is)
+const FIRE_LIGHTS = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff8a3a, 0, 11, 1.6); scene.add(l); return l; });
+
+// ─────────────────────────── Nine small bandit camps across the island ───────────────────────────
+// Every tent, pole, bedroll, crate, barrel, log seat, sake jar, spear and banner of every camp is drawn with
+// GPU instancing: one mesh per kind of prop, with a list of where each copy stands. The two bandits at each
+// camp are only brought to life when you come within reach.
+const EXTRA_CAMPS = [];
+{
+  const R = rng32(90210), roadPts = pathPts.filter((_, k) => k % 24 === 0), avoid = campSpots().map(c => [c.x, c.z]);
+  for (let tries = 0; tries < 6000 && EXTRA_CAMPS.length < 9; tries++) {
+    const a = R() * 6.283, d = 120 + Math.sqrt(R()) * 470, x = Math.cos(a) * d, z = Math.sin(a) * d * 1.05 - 40, h = terrainH(x, z);
+    if (h < 2.5 || h > 45 || riverWet(x, z) > 0 || _rd < _rw + 14) continue;
+    if (Math.abs(terrainH(x + 6, z) - terrainH(x - 6, z)) > 2.2 || Math.abs(terrainH(x, z + 6) - terrainH(x, z - 6)) > 2.2) continue;   // fairly level
+    if (Math.hypot(x - VILLAGE[0], z - VILLAGE[1]) < 170 || Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 200) continue;
+    if (avoid.some(([ax, az]) => Math.hypot(ax - x, az - z) < 150) || EXTRA_CAMPS.some(c => Math.hypot(c.x - x, c.z - z) < 175)) continue;
+    let road = 1e9; for (const p of roadPts) road = Math.min(road, Math.hypot(p[0] - x, p[1] - z));
+    if (road < 16 || road > 90) continue;                                                   // just off a road, where travellers can be robbed
+    if (mapleSpots.some(t => Math.hypot(t[0] - x, t[1] - z) < 9)) continue;
+    EXTRA_CAMPS.push({ x, z, spawned: false, yaw: R() * 6.283 });
+  }
+  const weave = makeTex(256, (u, v) => { const N = 64, t = Math.sin(fract(u * N) * Math.PI) * 0.5 + Math.sin(fract(v * N) * Math.PI) * 0.5, n = pfbm(u, v, 6, 4), k = (0.72 + 0.25 * t) * (0.8 + 0.3 * n); return [k, k, k, t * 0.4 + n * 0.3]; }, [2, 2], 2);
+  const MT = {
+    tent: new THREE.MeshStandardMaterial({ map: weave.map, normalMap: weave.normalMap, roughness: 0.95, side: THREE.DoubleSide }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.85 }), bark: TM(texBark, 0.9),
+    cloth: new THREE.MeshStandardMaterial({ roughness: 0.9, side: THREE.DoubleSide }), clay: new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.6 }),
+    iron: new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 0.4, metalness: 0.8 }),
+  };
+  const tentGeo = (() => {   // an A-frame tent, open at the front
+    const L = 2.6, W = 2.3, H = 1.55, P = [], idx = [];
+    const v = (x, y, z, u, w) => { P.push([x, y, z, u, w]); return P.length - 1; };
+    const a = v(-W / 2, 0, -L / 2, 0, 0), b = v(0, H, -L / 2, 0.5, 1), c = v(W / 2, 0, -L / 2, 1, 0), a2 = v(-W / 2, 0, L / 2, 0, 0), b2 = v(0, H, L / 2, 0.5, 1), c2 = v(W / 2, 0, L / 2, 1, 0);
+    const la = v(-W / 2, 0, -L / 2, 0, 0), lb = v(0, H, -L / 2, 0, 1), la2 = v(-W / 2, 0, L / 2, 1, 0), lb2 = v(0, H, L / 2, 1, 1);
+    const ra = v(W / 2, 0, -L / 2, 0, 0), rb = v(0, H, -L / 2, 0, 1), ra2 = v(W / 2, 0, L / 2, 1, 0), rb2 = v(0, H, L / 2, 1, 1);
+    idx.push(a, b, c, la, la2, lb, lb, la2, lb2, ra, rb, ra2, rb, rb2, ra2);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P.flatMap(p => p.slice(0, 3)), 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(P.flatMap(p => p.slice(3)), 2));
+    g.setIndex(idx); g.computeVertexNormals(); return g;
+  })();
+  const KINDS = {
+    tent: [tentGeo, 'tent'], pole: [new THREE.CylinderGeometry(0.035, 0.04, 1, 6).translate(0, 0.5, 0), 'wood'], bed: [new THREE.CylinderGeometry(0.18, 0.18, 1.7, 10).rotateZ(Math.PI / 2), 'cloth'],
+    crate: [new THREE.BoxGeometry(0.7, 0.55, 0.55).translate(0, 0.275, 0), 'wood'], barrel: [new THREE.CylinderGeometry(0.3, 0.27, 0.75, 12).translate(0, 0.375, 0), 'wood'],
+    log: [new THREE.CylinderGeometry(0.2, 0.22, 1.8, 9).rotateZ(Math.PI / 2).translate(0, 0.2, 0), 'bark'], jar: [new THREE.SphereGeometry(0.18, 10, 8).scale(1, 1.25, 1).translate(0, 0.22, 0), 'clay'],
+    spear: [new THREE.CylinderGeometry(0.018, 0.018, 2.3, 5).translate(0, 1.15, 0), 'wood'], tip: [new THREE.ConeGeometry(0.035, 0.22, 5).translate(0, 2.4, 0), 'iron'],
+    flag: [new THREE.PlaneGeometry(0.55, 1.6).translate(0.3, 2.2, 0), 'cloth'], mast: [new THREE.CylinderGeometry(0.03, 0.035, 3.2, 6).translate(0, 1.6, 0), 'wood'],
+  };
+  const LIST = Object.fromEntries(Object.keys(KINDS).map(k => [k, []]));
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
+  const put = (kind, x, z, yaw, opts = {}) => { const y = terrainH(x, z) + (opts.dy || 0); q.setFromEuler(e.set(opts.rx || 0, yaw, opts.rz || 0, 'YXZ')); LIST[kind].push([m4.compose(new THREE.Vector3(x, y, z), q, opts.s ? new THREE.Vector3(...opts.s) : one).clone(), opts.c]); };
+  const TENT_COL = [0x8a7b62, 0x6b6556, 0x4a4f5e, 0x7a5a42], BED_COL = [0x6a2a20, 0x2a3346, 0x5a5242];
+  EXTRA_CAMPS.forEach((cp, ci) => {
+    const R2 = rng32(777 + ci * 31);
+    campfire(cp.x, cp.z);
+    const nT = 2 + (ci % 2);
+    for (let k = 0; k < nT; k++) {   // tents round the fire, their open ends facing it
+      const a = cp.yaw + k * 6.283 / nT + (R2() - 0.5) * 0.4, r = 5.2 + R2() * 1.2, tx = cp.x + Math.cos(a) * r, tz = cp.z + Math.sin(a) * r, face = Math.atan2(cp.x - tx, cp.z - tz);
+      put('tent', tx, tz, face, { c: new THREE.Color(TENT_COL[(ci + k) % 4]) });
+      for (const sd of [-1, 1]) put('pole', tx + Math.sin(face) * sd * 1.3, tz + Math.cos(face) * sd * 1.3, 0, { s: [1, 1.62, 1] });
+      put('bed', tx + Math.sin(face) * 0.2, tz + Math.cos(face) * 0.2, face + Math.PI / 2, { dy: 0.12, c: new THREE.Color(BED_COL[(ci + k) % 3]) });
+      COLLIDERS_INIT.push({ x: tx, z: tz, r: 1.25 });
+    }
+    for (let k = 0; k < 3; k++) { const a = cp.yaw + 0.6 + k * 2.1, r = 2.2; put('log', cp.x + Math.cos(a) * r, cp.z + Math.sin(a) * r, -a); }
+    const sx = cp.x + Math.cos(cp.yaw + 3.4) * 7.5, sz = cp.z + Math.sin(cp.yaw + 3.4) * 7.5;   // a stash of loot
+    put('crate', sx, sz, R2() * 3); put('crate', sx + 0.8, sz + 0.2, R2() * 3); put('crate', sx + 0.4, sz + 0.1, R2() * 3, { dy: 0.55, s: [0.8, 0.8, 0.8] });
+    put('barrel', sx - 0.8, sz + 0.5, 0); put('barrel', sx - 0.6, sz - 0.4, 0);
+    for (let k = 0; k < 3; k++) put('jar', cp.x + Math.cos(cp.yaw + 1.9 + k * 0.3) * 1.5, cp.z + Math.sin(cp.yaw + 1.9 + k * 0.3) * 1.5, R2() * 3, { s: [1, 0.8 + R2() * 0.4, 1] });
+    COLLIDERS_INIT.push({ x: sx, z: sz, r: 1.3 });
+    const rx = cp.x + Math.cos(cp.yaw - 1.2) * 4.2, rz = cp.z + Math.sin(cp.yaw - 1.2) * 4.2;   // spears leaning on a rail
+    for (let k = 0; k < 4; k++) { const ox = (k - 1.5) * 0.25; put('spear', rx + ox, rz, cp.yaw, { rx: 0.25 }); put('tip', rx + ox, rz, cp.yaw, { rx: 0.25 }); }
+    const bx = cp.x + Math.cos(cp.yaw + 2.6) * 8.5, bz = cp.z + Math.sin(cp.yaw + 2.6) * 8.5;   // the gang's banner
+    put('mast', bx, bz, 0); put('flag', bx, bz, cp.yaw, { c: new THREE.Color(ci % 2 ? 0x1a1a1e : 0x7a1c16) });
+    COLLIDERS_INIT.push({ x: bx, z: bz, r: 0.25 });
+  });
+  for (const [k, [geo, mat]] of Object.entries(KINDS)) {
+    if (!LIST[k].length) continue;
+    const im = new THREE.InstancedMesh(geo, MT[mat], LIST[k].length);
+    LIST[k].forEach(([m, c], i) => { im.setMatrixAt(i, m); if (c || mat === 'cloth') im.setColorAt(i, c || new THREE.Color(0x777777)); });
+    im.computeBoundingSphere(); im.castShadow = im.receiveShadow = true; scene.add(im); REFL_HIDE.push(im);
+  }
+  window.__camps2 = EXTRA_CAMPS;
+}
 window.__map = { HMF, HM, HM_MIN, HM_SIZE, spawn: spawnPt, routes: ROUTES.map((_, ri) => routePts(ri).filter((p, k) => k % 6 === 0 && sampleHM(p[0], p[1], 0) > 0.3).map(p => [+p[0].toFixed(1), +p[1].toFixed(1), +p[2].toFixed(2)])), camps: campSpots(), fires: campfires.map(c => [c.x, c.z]) };  // for the printable map
 function updateFlora(dt, t) {
   for (const f of FLORA_LOD) { const v = Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < f.far; for (const o of f.objs) o.visible = v; }
@@ -3647,9 +3789,10 @@ function updateFlora(dt, t) {
   updateFallingLeaves(dt, t);
   const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
   for (const m of lanternGlow) m.color.setRGB(0.05 + night * 2.6, 0.03 + night * 1.5, 0.01 + night * 0.5);
+  const lit = campfires.map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
+  FIRE_LIGHTS.forEach((l, i) => { const f = lit[i]; if (!f || f[0] > 90) { l.intensity = 0; return; } l.position.set(f[1].x, f[1].y + 0.6, f[1].z); l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 29 + i) * 0.5) * (0.6 + night * 1.2) * (1 - smooth(60, 90, f[0])); });
   for (const c of campfires) {
     c.flames.forEach((f, k) => { const s = 0.55 + 0.25 * Math.sin(t * (9 + k * 3) + k) + 0.1 * Math.sin(t * 23 + k); f.scale.set(s * 0.8, s * 1.2, 1); f.position.set(Math.sin(t * 5 + k) * 0.05, 0.3 + s * 0.25, Math.cos(t * 4 + k) * 0.05); });
-    c.light.intensity = (4 + Math.sin(t * 13) * 0.8 + Math.sin(t * 29) * 0.5) * (0.6 + night * 1.2);
     if (Math.random() < dt * 6 && Math.hypot(c.x - player.pos.x, c.z - player.pos.z) < 50) emit(new THREE.Vector3(c.x, c.y + 0.5, c.z), new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.2 + Math.random(), (Math.random() - 0.5) * 0.4), SPARK, 0.03, 1.4, -0.2, 0, 1, 0.5);
   }
 }
@@ -4143,7 +4286,7 @@ function drawMap() {
   for (const [mx, mz, si] of mapleSpots) dot(mx, mz, 2, SPECIES[si].map);
   const sh = window.__flora?.shrine; if (sh) { dot(sh[3], sh[4], 5, '#c0392b', '#f4e9d8'); label(sh[3], sh[4], 'Shrine'); }
   const seen = [];
-  for (const c of campSpots()) if (!seen.some(q => Math.hypot(q[0] - c.x, q[1] - c.z) < 70)) { seen.push([c.x, c.z]); label(c.x, c.z, 'Bandits'); }
+  for (const c of campSpots().concat(window.__camps2 || [])) if (!seen.some(q => Math.hypot(q[0] - c.x, q[1] - c.z) < 70)) { seen.push([c.x, c.z]); label(c.x, c.z, 'Bandits'); dot(c.x, c.z, 3, '#2b2b2b', '#e74c3c'); }
   for (const e of enemies) if (e.alive) dot(e.pos.x, e.pos.z, 3.5, '#e74c3c', '#200');
   label(0, -720, 'Snow Peaks'); if (window.__summit) { dot(window.__summit[0], window.__summit[1], 3.5, '#c0392b', '#f4e9d8'); label(window.__summit[0], window.__summit[1], 'Summit'); } if (window.__village) label(window.__village[0], window.__village[1] - 20, 'Village');
   for (const br of BRIDGES) dot(br.cx, br.cz, 2.5, '#8e2418', '#f4e9d8');
@@ -4171,6 +4314,9 @@ function loop() {
   update(dt, t);
   if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
   SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
+  FOGU.uFogSunV.value.copy(SH.uSunDir.value).transformDirection(camera.matrixWorldInverse);
+  FOGU.uFogUpV.value.set(0, 1, 0).transformDirection(camera.matrixWorldInverse); FOGU.uFogCamY.value = camera.position.y;
+  if (frameNo % 60 === 1) patchAllFog(scene);   // new characters and props pick up the atmosphere too
   if (GFX.post === false) renderer.render(scene, camera); else composer.render();
   fpsAcc += raw; fpsN++;
   if (mapEl.style.display === 'block' && (frameNo & 7) === 0) drawMap();
