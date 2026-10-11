@@ -1712,7 +1712,7 @@ function buildHorse() {
     const pa = lock.geometry.attributes.position; for (let k = 0; k < pa.count; k++) { const yy = pa.getY(k) - len / 2; pa.setX(k, pa.getX(k) + Math.sin(yy * 9 + i) * 0.01); pa.setY(k, yy); }   // a slight wave
     lock.rotation.set(-0.35 + Math.random() * 0.3, 0, -(layer ? 0.6 : 0.4) - Math.random() * 0.45);   // hangs down the right side of the neck
   }
-  for (let i = 0; i < 45; i++) { const fl = 0.16 + Math.random() * 0.1, f = part(new THREE.CylinderGeometry(0.008, 0.002, fl, 4), dark, neck, (Math.random() - 0.5) * 0.07, 1.95 - NP[1], 0.96 - NP[2]); f.geometry.translate(0, -fl / 2, 0); f.rotation.set(-0.6 + Math.random() * 0.3, 0, (Math.random() - 0.5) * 0.5);   // forelock falls over the forehead }
+  for (let i = 0; i < 45; i++) { const fl = 0.16 + Math.random() * 0.1, f = part(new THREE.CylinderGeometry(0.008, 0.002, fl, 4), dark, neck, (Math.random() - 0.5) * 0.07, 1.95 - NP[1], 0.96 - NP[2]); f.geometry.translate(0, -fl / 2, 0); f.rotation.set(-0.6 + Math.random() * 0.3, 0, (Math.random() - 0.5) * 0.5); }   // forelock falls over the forehead
   { // bridle: noseband, browband and reins
     const faceDir = new THREE.Vector3(0, -0.34, 0.22).normalize(), q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), faceDir);
     for (const [y, z, r] of [[1.6, 1.185, 0.088], [1.87, 1.0, 0.105]]) { const b = part(new THREE.TorusGeometry(r, 0.008, 6, 28), saddleM, neck, 0, y - NP[1], z - NP[2]); b.quaternion.copy(q); }
@@ -2857,7 +2857,17 @@ function spawnVillagers() {
     villagers.push(Object.assign(w, { root, face, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
 }
+const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 55, at: () => VILLAGE }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
+function updatePlaces() {   // the name of a place appears as you arrive
+  for (const pl of PLACES) {
+    const c = pl.at(); if (!c) continue;
+    const inside = Math.hypot(player.pos.x - c[0], player.pos.z - c[1]) < pl.r;
+    if (inside && !pl.in) toast(pl.name, 2600);
+    pl.in = inside;
+  }
+}
 function updateVillagers(dt, t) {
+  if ((frameNo & 15) === 0) updatePlaces();
   for (const v of villagers) {
     const dx = player.pos.x - v.pos.x, dz = player.pos.z - v.pos.z, dP = Math.hypot(dx, dz);
     if (dP > 160) { v.root.visible = false; continue; }
