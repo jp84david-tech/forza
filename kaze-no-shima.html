@@ -428,7 +428,7 @@ const GFX_PRESETS = {
 const GFX = (() => {
   let saved = null; try { saved = JSON.parse(localStorage.getItem('kns-gfx') || 'null'); } catch (e) {}
   const preset = params.get('q') ? (LOW ? 'low' : ULTRA ? 'high' : 'medium') : (saved?.preset || 'medium');
-  return Object.assign({ preset, fps: false, auto: true }, GFX_PRESETS[preset] || GFX_PRESETS.medium, saved && !params.get('q') ? saved : {});
+  return Object.assign({ preset, fps: false, auto: true, grassStyle: 'cards' }, GFX_PRESETS[preset] || GFX_PRESETS.medium, saved && !params.get('q') ? saved : {});
 })();
 // Uniforms shared by the grass, flower and cloud shaders (one object, so a single update reaches all of them)
 const SH = {
@@ -937,13 +937,129 @@ function makeCarpet(N, side, geo, wMin, wMax) {
 }
 const nearGrass = makeCarpet(LOW ? 90000 : ULTRA ? 1100000 : 200000, 24, blade, 0.035, 0.06);
 const midGrass = makeCarpet(LOW ? 90000 : ULTRA ? 900000 : 170000, 92, blade3, 0.045, 0.075);
+// ── Grass cards (the Red Dead Redemption 2 way) ──
+// Instead of modelling every blade, a painted tuft of grass (many blades with see-through gaps) is put
+// on three crossed cards. One card shows dozens of blades, so a field needs ~50x fewer vertices.
+const grassCardTex = (() => {
+  const S = LOW ? 256 : 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), R = rng32(77), k = S / 512;
+  for (let i = 0; i < 150; i++) {   // a rounded tuft: tall in the middle, short and leaning out at the sides
+    const u = (R() + R() + R() - 1.5) / 1.5, bx = S / 2 + u * S * 0.46, side = Math.abs(u);
+    const hgt = S * (0.35 + R() * 0.6) * (1 - 0.6 * side * side), lean = ((R() - 0.5) * 0.4 + u * 0.5) * hgt, w = (5 + R() * 5) * k, v = 120 + R() * 135 | 0;
+    const tx = bx + lean, ty = S - hgt, mx = bx + lean * 0.35, my = S - hgt * 0.55;
+    const gr = x.createLinearGradient(0, S, 0, ty); gr.addColorStop(0, `rgb(${v * 0.35 | 0},${v * 0.35 | 0},${v * 0.35 | 0})`); gr.addColorStop(1, `rgb(${v},${v},${v})`);
+    x.fillStyle = gr; x.beginPath(); x.moveTo(bx - w / 2, S); x.quadraticCurveTo(mx - w * 0.3, my, tx, ty); x.quadraticCurveTo(mx + w * 0.3, my, bx + w / 2, S); x.closePath(); x.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.anisotropy = ANISO; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t;
+})();
+const cardGeo = (() => {   // three quads crossed at 60°, two rows high so they can bend
+  const pos = [], uv = [], idx = [];
+  for (let q = 0; q < 3; q++) {
+    const a = q * Math.PI / 3, cx = Math.cos(a), cz = Math.sin(a), b = pos.length / 3;
+    for (let r = 0; r < 3; r++) for (const sx of [-0.5, 0.5]) { pos.push(cx * sx, r / 2, cz * sx); uv.push(sx + 0.5, r / 2); }
+    for (let r = 0; r < 2; r++) { const o = b + r * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
+})();
+function makeCardMaterial(patch) {
+  return new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  uniforms: { ...SH, uPatch: { value: patch }, uCardTex: { value: grassCardTex }, uTexSize: { value: grassCardTex.image.width } },
+  vertexShader: /* glsl */`
+    uniform float uTime, uCloudAmt, uPatch; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
+    ${NOISE_GLSL}
+    attribute vec3 aOffset; attribute vec4 aParams;
+    varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
+    vec2 pushFrom(vec4 P, vec2 root, float t, float h){
+      vec2 d = root - P.xy; float l = length(d) + 1e-4;
+      return d / l * (1.0 - smoothstep(P.z * 0.35, P.z, l)) * P.w * t * h * 1.1;
+    }
+    void main(){
+      float t = position.y, rot = aParams.x, r = aParams.w;
+      vec2 L = aOffset.xz, wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
+      vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
+      float edgeFade = 1.0 - smoothstep(uPatch * 0.16, uPatch * 0.49, distance(wxz, uCenter));
+      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * step(fract(r * 7.31 + aParams.y * 3.17), edgeFade);
+      vec3 root = vec3(wxz.x, hm.r - 0.03, wxz.y);
+      float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.7 + 0.5 * aParams.y) * keep;
+      vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+      if (h < 0.004 || dot(root - cameraPosition, camF) < -2.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec3 trm = texture2D(uTrample, root.xz / uTrSize).xyz;
+      vec2 tv = (trm.xy - 0.5) * 2.0; float ta = length(tv);
+      h *= 1.0 - 0.75 * smoothstep(0.02, 0.6, trm.z);                       // cut down by the sword
+      float camD = distance(root.xz, cameraPosition.xz);
+      if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
+      float c = cos(rot), s = sin(rot), W = aParams.z;
+      vec3 lp = vec3(position.x * c - position.z * s, 0.0, position.x * s + position.z * c) * W;
+      vec3 wp = root + lp + vec3(0.0, t * h, 0.0);
+      vec2 wdir = normalize(vec2(1.0, 0.35));
+      float g = gustAt(root.xz, uTime), flutter = sin(uTime * 3.0 + r * 30.0) * 0.05;
+      vec2 disp = wdir * (0.1 + g * 0.45 + flutter) * t * t * h * (0.7 + 0.6 * fract(r * 5.3));   // stiffer and softer tufts
+      disp *= 1.0 - ta * 0.8;
+      disp += pushFrom(uPush0, root.xz, t, h) + pushFrom(uPush1, root.xz, t, h);
+      disp += tv * (t * 0.55 + t * t * 0.5) * h * 1.25;
+      float dl = length(disp);
+      wp.xz += disp; wp.y -= min(dl * dl / max(h, 0.05) * 0.6 + ta * t * h * 0.35, t * h * 0.93);
+      vUv = uv; vT = t; vWorld = wp; vRand = r;
+      vCardN = normalize(vec3(-lp.z, 0.0, lp.x) + vec3(1e-4));
+      vUp = normalize(vec3(disp.x * 2.2, max(h, 0.02), disp.y * 2.2));
+      vTip = meadowTip(root.xz, vnoise2(root.xz * 0.19 + 7.0), vnoise2(root.xz * 0.035), r * 0.15) * vec3(1.0 + (fract(r * 7.1) - 0.5) * 0.12, 1.0, 1.0 - (fract(r * 3.7) - 0.5) * 0.15);
+      vCloud = cloudShadowAt(root.xz, uTime, uCloudAmt);
+      vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
+      gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+    }`,
+  fragmentShader: '#include <packing>\n' + SHADOW_GLSL + /* glsl */`
+    uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTexSize; uniform sampler2D uCardTex;
+    varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
+    void main(){
+      vec4 tx = texture2D(uCardTex, vUv);
+      // mip levels average the gaps away; boost alpha with distance so far tufts stay full
+      vec2 dx = dFdx(vUv * uTexSize), dy = dFdy(vUv * uTexSize);
+      float lod = max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
+      if (tx.a * (1.0 + lod * 0.35) < 0.5) discard;
+      vec3 V = normalize(cameraPosition - vWorld), L = uSunDir, H = normalize(V + L);
+      vec3 Nc = vCardN * (dot(vCardN, V) < 0.0 ? -1.0 : 1.0);
+      vec3 N = normalize(Nc * 0.55 + vec3(0.0, 0.9, 0.0));
+      float lum = tx.r;                                                   // painted blade shading (dark roots, varied blades)
+      vec3 col = mix(vec3(0.012, 0.025, 0.006), vTip, smoothstep(0.0, 1.0, vT * 0.7 + lum * 0.5)) * (0.55 + 0.6 * lum) * (0.85 + 0.3 * vRand);
+      float vis = sunVisibility(vShadowCoord) * vCloud;
+      float ndl = max(dot(N, L), 0.0);
+      float trans = pow(max(dot(-V, L), 0.0), 6.0) * vT * 0.8;
+      float ao = mix(0.25, 1.0, smoothstep(0.0, 0.8, vT));
+      float th = dot(normalize(vUp), H), sinTH = sqrt(max(1.0 - th * th, 0.0));
+      float sheen = (pow(sinTH, 12.0) * 0.05 + pow(sinTH, 4.0) * 0.018) * smoothstep(0.2, 0.9, vT) * (0.4 + 0.6 * ndl) * lum;
+      vec3 lit = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao
+               + col * uSunCol * trans * 0.45 * vis
+               + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis;
+      float d = length(cameraPosition - vWorld), fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
+      gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  });
+}
+function makeCardCarpet(N, side, wMin, wMax) {
+  const g = new THREE.InstancedBufferGeometry();
+  g.index = cardGeo.index; g.attributes.position = cardGeo.attributes.position; g.attributes.uv = cardGeo.attributes.uv;
+  const off = new Float32Array(N * 3), prm = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    off[i * 3] = (Math.random() - 0.5) * side; off[i * 3 + 2] = (Math.random() - 0.5) * side;
+    prm.set([Math.random() * Math.PI * 2, Math.random(), wMin + Math.random() * (wMax - wMin), Math.random()], i * 4);
+  }
+  g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
+  g.setAttribute('aParams', new THREE.InstancedBufferAttribute(prm, 4));
+  g.instanceCount = N;
+  const m = new THREE.Mesh(g, makeCardMaterial(side)); m.frustumCulled = false; scene.add(m); return m;
+}
+const nearCards = makeCardCarpet(LOW ? 5000 : ULTRA ? 14000 : 7000, 24, 0.7, 1.05);
+const midCards = makeCardCarpet(LOW ? 14000 : ULTRA ? 45000 : 22000, 92, 0.9, 1.35);
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
+  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -3148,7 +3264,7 @@ function update(dt, t) {
   updateWorld(dt, t);
 }
 
-const grassFull = [nearGrass, midGrass].map(m => [m, m.geometry.instanceCount]);
+const grassFull = [nearGrass, midGrass, nearCards, midCards].map(m => [m, m.geometry.instanceCount]);
 let perfAcc = 0, perfN = 0, grassScale = 1;
 const basePR = renderer.getPixelRatio();
 function adaptQuality(rawDt) {
@@ -3161,8 +3277,12 @@ function adaptQuality(rawDt) {
   if (grassScale !== prev) applyGrassCount();
 }
 // ─────────────────────────── Graphics menu ───────────────────────────
-function applyGrassCount() { grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * grassScale * GFX.grass)); }
+function applyGrassCount() {   // cards are cheap, so they stay dense even on low grass settings
+  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards ? Math.min(1, 0.45 + 0.55 * GFX.grass) * Math.max(0.7, grassScale) : grassScale * GFX.grass)));
+}
 function applyGfx() {
+  const cards = GFX.grassStyle !== 'blades';
+  nearCards.visible = midCards.visible = cards; nearGrass.visible = midGrass.visible = !cards;
   const tm = GFX.post === false ? THREE.CustomToneMapping : THREE.ACESFilmicToneMapping;
   if (renderer.toneMapping !== tm) { renderer.toneMapping = tm; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); }
   sun.castShadow = GFX.shadows;
@@ -3179,6 +3299,7 @@ function renderGfxMenu() {
   const tog = (k, label) => `<div class="row"><span>${label}</span>${b(GFX[k], 'tog:' + k, GFX[k] ? 'On' : 'Off')}</div>`;
   gfxEl.innerHTML = `<h3>GRAPHICS</h3>
     <div class="row"><span>Preset</span><span>${['potato', 'low', 'medium', 'high'].map(p => b(GFX.preset === p, 'pre:' + p, p[0].toUpperCase() + p.slice(1))).join(' ')}</span></div>
+    <div class="row"><span>Grass style</span><span>${b(GFX.grassStyle !== 'blades', 'gs:cards', 'Cards (RDR2)')} ${b(GFX.grassStyle === 'blades', 'gs:blades', 'Blades (Tsushima)')}</span></div>
     <div class="row"><span>Grass amount</span><span>${[[0.45, 'Low'], [0.7, 'Med'], [1, 'High']].map(([v, l]) => b(GFX.grass === v, 'grass:' + v, l)).join(' ')}</span></div>
     <div class="row"><span>Resolution</span><span>${[[0.55, '55%'], [0.7, '70%'], [0.85, '85%'], [1, '100%']].map(([v, l]) => b(GFX.scale === v, 'scale:' + v, l)).join(' ')}</span></div>
     ${tog('post', 'Post effects (film look, glow)')}${tog('flowers', 'Flowers')}${tog('shadows', 'Shadows')}${tog('reflect', 'Live water reflections')}${tog('rays', 'Sun rays')}${tog('bloom', 'Glow')}${tog('fps', 'Show FPS')}
@@ -3187,7 +3308,8 @@ function renderGfxMenu() {
 gfxEl.addEventListener('click', e => {
   const a = e.target.dataset?.act; if (!a) return;
   const [k, v] = a.split(':');
-  if (k === 'pre') Object.assign(GFX, GFX_PRESETS[v], { preset: v, auto: false });
+  if (k === 'gs') GFX.grassStyle = v;
+  else if (k === 'pre') Object.assign(GFX, GFX_PRESETS[v], { preset: v, auto: false });
   else if (k === 'tog') { GFX[v] = !GFX[v]; GFX.preset = 'custom'; GFX.auto = false; }
   else { GFX[k] = +v; GFX.preset = 'custom'; GFX.auto = false; }
   applyGfx();
