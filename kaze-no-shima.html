@@ -772,6 +772,7 @@ function terrainCompile(sh) {
     float rockW = max(smoothstep(58.0, 85.0, altN), smoothstep(0.34, 0.52, slopeA) * smoothstep(12.0, 30.0, vWPos.y));
     float snowW = smoothstep(165.0, 195.0, altN + (vnoise2(vWPos.xz * 0.05 + 9.0) - 0.5) * 16.0) * (1.0 - smoothstep(0.3, 0.52, slopeA));
     grassy *= 1.0 - max(rockW, snowW);
+    float sandW = (1.0 - smoothstep(0.55, 1.15, vWPos.y + (vnoise2(vWPos.xz * 0.08) - 0.5) * 0.5)) * (1.0 - rockW), wetW = 1.0 - smoothstep(0.05, 0.38, vWPos.y);   // the beach, darker where the waves reach
     #ifdef COARSE
     if (all(greaterThan(vWPos.xz, uFineMin)) && all(lessThan(vWPos.xz, uFineMax))) discard;   // detailed tiles are drawn here
     vec4 hmS = texture2D(uHeightMap, ((vWPos.xz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
@@ -793,6 +794,12 @@ function terrainCompile(sh) {
     float rip = sin(dot(vWPos.xz, vec2(1.7, 0.7)) + vnoise2(vWPos.xz * 0.37) * 5.0) * 0.5 + 0.5, sn = vnoise2(mat2(0.8, -0.6, 0.6, 0.8) * vWPos.xz * 1.3) * 0.25 + rip * 0.75;   // wind-carved ripples
     vec3 snowC = mix(vec3(0.7, 0.77, 0.9), vec3(0.9, 0.92, 0.95), sn) * (0.95 + 0.05 * vnoise2(vWPos.xz * 0.4));
     diffuseColor.rgb = mix(diffuseColor.rgb, snowC, snowW); dH += rip * 0.022 * snowW;
+    if (sandW > 0.01) {   // fine sand with wind ripples instead of cracked soil
+      float sr = sin(dot(vWPos.xz, vec2(2.3, 1.1)) + vnoise2(vWPos.xz * 0.6) * 4.0) * 0.5 + 0.5;
+      vec3 sandC = vec3(0.47, 0.4, 0.29) * (0.88 + 0.16 * vnoise2(vWPos.xz * 0.9) + 0.06 * sr);
+      sandC = mix(sandC, vec3(0.22, 0.19, 0.145) * (0.9 + 0.2 * vnoise2(vWPos.xz * 0.5)), wetW);
+      diffuseColor.rgb = mix(diffuseColor.rgb, sandC, sandW); dH += sr * 0.01 * sandW * (1.0 - wetW);
+    }
     float pr = texture2D(uPrint, vWPos.xz / uPrintSize).r * (1.0 - smoothstep(uPrintSize * 0.38, uPrintSize * 0.44, max(abs(vWPos.x - uPrintC.x), abs(vWPos.z - uPrintC.y))));
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(vec3(0.62, 0.6, 0.58), vec3(0.72, 0.8, 0.95), snowW), pr);   // pressed, wetter, bluer in snow
     dH -= pr * (0.03 + 0.06 * snowW);
@@ -801,7 +808,7 @@ function terrainCompile(sh) {
     #endif`)
     .replace('#include <normal_fragment_maps>', `vec3 nGeo = normal;
     #include <normal_fragment_maps>
-    normal = normalize(mix(normal, nGeo, max(snowW, rockW) * 0.85));   // the dirt-crack normal map belongs to soil, not snow or rock
+    normal = normalize(mix(normal, nGeo, max(max(snowW, rockW), sandW) * 0.85));   // the dirt-crack normal map belongs to soil, not snow or rock
     { vec3 vp = -vViewPosition, dpx = dFdx(vp), dpy = dFdy(vp); float hx = dFdx(dH), hy = dFdy(dH);   // bump from the fine relief
       vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx); float det = dot(dpx, r1);
       normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2)); }`)
@@ -1215,15 +1222,15 @@ Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector
       float inside = step(0.0, hu.x) * step(hu.x, 1.0) * step(0.0, hu.y) * step(hu.y, 1.0);
       float depth = max(-mix(-6.0, texture2D(uHeightMap, clamp(hu, 0.0, 1.0)).r, inside), 0.0) + smoothstep(650.0, 1250.0, length(wp)) * 60.0;
       // ripples: calmer over the shallows, smoothed with distance so the sea never glitters
-      float far = smoothstep(60.0, 900.0, dist), calm = mix(0.5, 1.0, smoothstep(0.3, 3.0, depth)) * (1.0 - 0.55 * far);
+      float far = smoothstep(60.0, 900.0, dist), calm = mix(0.5, 1.0, smoothstep(0.3, 3.0, depth)) * (1.0 - 0.3 * far);
       vec4 nz = getNoise(wp * size);
       vec3 N = normalize(nz.xzy * vec3(1.5 * calm, 1.0, 1.5 * calm));
       float sh = mix(1.0, mix(1.0, getShadowMask(), 0.7), 1.0 - smoothstep(16.0, 27.0, length(wp - uPlayer))) * cloudShadowAt(wp, uT, uCloudAmt), sunUp = max(L.y, 0.0);   // the shadow map's reach fades out softly
       vec3 light = uAmb * 0.5 + sunColor * (0.25 + sunUp * 0.9) * sh;
       // reflection of the sky and the island, wobbled by the waves
       vec2 distortion = N.xz * (0.001 + 1.0 / dist) * distortionScale;
-      vec3 refl = texture2D(mirrorSampler, mirrorCoord.xy / mirrorCoord.w + distortion).rgb;
-      float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      vec3 refl = texture2D(mirrorSampler, mirrorCoord.xy / mirrorCoord.w + distortion).rgb * 0.9;
+      float F = min(0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0), 0.68);   // rough water never turns into a full mirror: the sea keeps its colour
       // looking into the water: sand and caustics fade out through turquoise into the deep colour
       float pathL = depth / max(V.y, 0.22);
       vec3 T = exp(-pathL * vec3(0.62, 0.17, 0.13));
@@ -1243,7 +1250,7 @@ Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector
       float sw = fract(depth * 0.85 + uT * 0.14 + vnoise2(wp * 0.04) * 0.8);
       float br = vnoise2(wp * 0.9 + uT * vec2(0.2, -0.1)) * vnoise2(wp * 2.6 - uT * 0.3);
       float foam = smoothstep(0.0, 0.05, sw) * smoothstep(0.3, 0.05, sw) * (1.0 - smoothstep(0.25, 1.5, depth)) * smoothstep(0.06, 0.32, br)
-                 + (1.0 - smoothstep(0.0, 0.22, depth)) * smoothstep(0.12, 0.5, br);
+                 + (1.0 - smoothstep(0.0, 0.15, depth)) * smoothstep(0.2, 0.55, br) * 0.6;
       foam = clamp(foam, 0.0, 1.0) * (1.0 - smoothstep(120.0, 420.0, dist));
       col = mix(col, vec3(0.9, 0.93, 0.95) * (uAmb * 0.85 + sunColor * (0.3 + sunUp) * sh), foam * 0.85);
       gl_FragColor = vec4(col, alpha);
