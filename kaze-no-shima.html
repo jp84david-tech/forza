@@ -3781,6 +3781,7 @@ function buildCanopy() {
   canopyTex.needsUpdate = true;
 }
 buildCanopy();
+window.__world.buildCanopy = buildCanopy;
 // Petals and leaves blown off the nearby crowns, carried on the wind, settling on the ground
 const fallingLeaves = (() => {
   const N = 700, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), ph = [];
