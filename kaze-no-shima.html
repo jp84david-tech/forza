@@ -1186,11 +1186,11 @@ Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector
 //    wave lines rolling in along the depth contours, light through the wave crests, real (Schlick) fresnel ──
 {
   const wm = water.material;
-  Object.assign(wm.uniforms, { uHeightMap: SH.uHeightMap, uHm: SH.uHm, uT: SH.uTime, uAmb: SH.uAmb, uCloudAmt: SH.uCloudAmt, uDay: { value: 1 } });
+  Object.assign(wm.uniforms, { uHeightMap: SH.uHeightMap, uHm: SH.uHm, uT: SH.uTime, uAmb: SH.uAmb, uCloudAmt: SH.uCloudAmt, uDay: { value: 1 }, uPlayer: SH.uCanopyC });
   wm.fragmentShader = /* glsl */`
     uniform sampler2D mirrorSampler, normalSampler, uHeightMap;
     uniform float alpha, time, size, distortionScale, uT, uCloudAmt, uDay;
-    uniform vec3 sunColor, sunDirection, eye, waterColor, uHm, uAmb;
+    uniform vec3 sunColor, sunDirection, eye, waterColor, uHm, uAmb; uniform vec2 uPlayer;
     varying vec4 mirrorCoord, worldPosition;
     vec4 getNoise(vec2 uv) {
       vec2 uv0 = (uv / 103.0) + vec2(time / 17.0, time / 29.0), uv1 = uv / 107.0 - vec2(time / -19.0, time / 31.0);
@@ -1218,7 +1218,7 @@ Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector
       float far = smoothstep(60.0, 900.0, dist), calm = mix(0.5, 1.0, smoothstep(0.3, 3.0, depth)) * (1.0 - 0.55 * far);
       vec4 nz = getNoise(wp * size);
       vec3 N = normalize(nz.xzy * vec3(1.5 * calm, 1.0, 1.5 * calm));
-      float sh = getShadowMask() * cloudShadowAt(wp, uT, uCloudAmt), sunUp = max(L.y, 0.0);
+      float sh = mix(1.0, mix(1.0, getShadowMask(), 0.7), 1.0 - smoothstep(16.0, 27.0, length(wp - uPlayer))) * cloudShadowAt(wp, uT, uCloudAmt), sunUp = max(L.y, 0.0);   // the shadow map's reach fades out softly
       vec3 light = uAmb * 0.5 + sunColor * (0.25 + sunUp * 0.9) * sh;
       // reflection of the sky and the island, wobbled by the waves
       vec2 distortion = N.xz * (0.001 + 1.0 / dist) * distortionScale;
@@ -1229,8 +1229,8 @@ Object.assign(SH, { uHeightMap: { value: hmTex }, uHm: { value: new THREE.Vector
       vec3 T = exp(-pathL * vec3(0.62, 0.17, 0.13));
       vec2 cp = wp * 0.55 + N.xz * 0.8;
       float caus = pow(1.0 - abs(vnoise2(cp + uT * vec2(0.31, 0.22)) - vnoise2(cp * 1.31 - uT * vec2(0.27, 0.36))), 8.0) * (1.0 - smoothstep(25.0, 110.0, dist));
-      vec3 sand = vec3(0.4, 0.34, 0.23) * (light + sunColor * sh * caus * (0.6 + 1.6 * sunUp) * uDay);
-      vec3 inscat = mix(vec3(0.016, 0.16, 0.15), waterColor * 3.2, smoothstep(3.0, 30.0, depth)) * light;
+      vec3 sand = vec3(0.6, 0.52, 0.37) * (light + sunColor * sh * caus * (0.6 + 1.6 * sunUp) * uDay);
+      vec3 inscat = mix(vec3(0.03, 0.27, 0.24), waterColor * 3.4, smoothstep(3.0, 30.0, depth)) * light;
       vec3 body = sand * T + inscat * (1.0 - T);
       // sunlight shining through the backs of the waves
       float crest = clamp((1.0 - N.y) * 9.0, 0.0, 1.0) * (1.0 - far);
