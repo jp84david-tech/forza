@@ -363,7 +363,7 @@ function mountainH(x, z) {
   const m = 1 - smooth(50, 400, ridgeDist(x, z));
   if (m <= 0) return 0;
   const ridged = (f, o) => { const n = 1 - Math.abs(2 * fbm(x * f + o, z * f - o, 5) - 1); return n * n; };
-  return m * m * (80 + 400 * ridged(0.0032, 7) * (0.55 + 0.45 * m) + 70 * ridged(0.011, 3) * m);
+  return m * m * (80 + 400 * ridged(0.0032, 7) * (0.55 + 0.45 * m) + 70 * ridged(0.011, 3) * m + 28 * ridged(0.034, 11) * m * m);   // crags and gullies on the high ground
 }
 function terrainBase(x, z, pm) {
   const t = Math.hypot(x, z) / islandRadius(x, z);
@@ -712,8 +712,8 @@ function terrainCompile(sh) {
     float grassy = vGrassy;
     // alpine bands: tufts give way to bare rock, then snowfields; steep faces stay rocky
     float slopeA = 1.0 - normalize(vWNrm).y, altN = vWPos.y + (vnoise2(vWPos.xz * 0.02) - 0.5) * 22.0;
-    float rockW = max(smoothstep(58.0, 85.0, altN), smoothstep(0.42, 0.6, slopeA) * smoothstep(12.0, 30.0, vWPos.y));
-    float snowW = smoothstep(165.0, 195.0, altN + (vnoise2(vWPos.xz * 0.05 + 9.0) - 0.5) * 16.0) * (1.0 - smoothstep(0.5, 0.75, slopeA));
+    float rockW = max(smoothstep(58.0, 85.0, altN), smoothstep(0.34, 0.52, slopeA) * smoothstep(12.0, 30.0, vWPos.y));
+    float snowW = smoothstep(165.0, 195.0, altN + (vnoise2(vWPos.xz * 0.05 + 9.0) - 0.5) * 16.0) * (1.0 - smoothstep(0.3, 0.52, slopeA));
     grassy *= 1.0 - max(rockW, snowW);
     #ifdef COARSE
     if (all(greaterThan(vWPos.xz, uFineMin)) && all(lessThan(vWPos.xz, uFineMax))) discard;   // detailed tiles are drawn here
