@@ -338,12 +338,30 @@ function pathMask(x, z) {
 // Island radius ≈ 620 m, rolling hills and a few higher downs.
 function islandRadius(x, z) {
   const r = Math.hypot(x, z) + 1e-5, dx = x / r, dz = z / r;
-  return 196 * WS + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 170;
+  return 196 * WS + (fbm(dx * 1.4 + 11, dz * 1.4 + 7) - 0.5) * 170 + 190 * smooth(0.45, 0.9, -dz);   // the north reaches out for the mountains
+}
+// ── Snowy mountains: a ridged range along the north of the island ──
+const RIDGE = [[-430, -690], [-120, -760], [200, -740], [400, -660]];
+function ridgeDist(x, z) {
+  let d = 1e9;
+  for (let i = 0; i < RIDGE.length - 1; i++) {
+    const [ax, az] = RIDGE[i], [bx, bz] = RIDGE[i + 1], ex = bx - ax, ez = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez)));
+    d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t));
+  }
+  return d + (fbm(x * 0.006 + 31, z * 0.006 - 17) - 0.5) * 140;   // ragged foothills, not a straight wall
+}
+function mountainH(x, z) {
+  const m = 1 - smooth(40, 300, ridgeDist(x, z));
+  if (m <= 0) return 0;
+  const ridged = (f, o) => { const n = 1 - Math.abs(2 * fbm(x * f + o, z * f - o, 5) - 1); return n * n; };
+  return m * m * (80 + 400 * ridged(0.0032, 7) * (0.55 + 0.45 * m) + 70 * ridged(0.011, 3) * m);
 }
 function terrainHp(x, z, pm) {
   const t = Math.hypot(x, z) / islandRadius(x, z);
   const land = 1 - smooth(0.6, 1.0, t);
   let h = lerp(-6, 0.35, 1 - smooth(0.93, 1.35, t));
+  h += land * mountainH(x, z);
   h += land * (24 * smooth(0.2, 0.8, fbm(x * 0.0022 + 1, z * 0.0022 + 4)) + 1.2 + 16 * fbm(x * 0.0065 + 3, z * 0.0065 - 5) + 3 * fbm(x * 0.025 + 9, z * 0.025) + 1.3 * fbm(x * 0.05, z * 0.05) + 0.35 * fbm(x * 0.17, z * 0.17));
   if (pm > 0) {
     h -= land * pm * (0.08 + 0.14 * vnoise(x * 0.2, z * 0.2));                  // worn into the ground, deeper in places
@@ -387,7 +405,7 @@ Object.keys(su).forEach(k => skyClone.material.uniforms[k].value = su[k].value);
 envScene.add(skyClone);
 scene.environment = pmrem.fromScene(envScene).texture;
 
-scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0022);
+scene.fog = new THREE.FogExp2(new THREE.Color(0xd6a883), 0.0014);
 
 // Surreal: a colossal pale moon rising opposite the sun
 const moonDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 11), THREE.MathUtils.degToRad(SUN_AZ + 150));
@@ -580,6 +598,11 @@ function terrainCompile(sh) {
   sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform vec3 uSunDir, uSunCol, uAmb; uniform float uWaves, uTuftGain; uniform sampler2D uPaint, uHeightMap, uTuft; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + sh.fragmentShader
     .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
     float grassy = vGrassy;
+    // alpine bands: tufts give way to bare rock, then snowfields; steep faces stay rocky
+    float slopeA = 1.0 - normalize(vWNrm).y, altN = vWPos.y + (vnoise2(vWPos.xz * 0.02) - 0.5) * 22.0;
+    float rockW = max(smoothstep(42.0, 62.0, altN), smoothstep(0.42, 0.6, slopeA) * smoothstep(12.0, 30.0, vWPos.y));
+    float snowW = smoothstep(100.0, 125.0, altN + (vnoise2(vWPos.xz * 0.05 + 9.0) - 0.5) * 16.0) * (1.0 - smoothstep(0.5, 0.75, slopeA));
+    grassy *= 1.0 - max(rockW, snowW);
     #ifdef COARSE
     if (all(greaterThan(vWPos.xz, uFineMin)) && all(lessThan(vWPos.xz, uFineMax))) discard;   // detailed tiles are drawn here
     vec4 hmS = texture2D(uHeightMap, ((vWPos.xz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
@@ -587,6 +610,10 @@ function terrainCompile(sh) {
     grassy *= 1.0 - pmS;
     #endif`)
     .replace('#include <color_fragment>', `#include <color_fragment>
+    vec3 rockC = mix(vec3(0.16, 0.15, 0.14), vec3(0.3, 0.28, 0.25), vnoise2(vWPos.xz * 0.15) * 0.6 + vnoise2(vWPos.xz * 0.9) * 0.4);
+    rockC *= 0.75 + 0.45 * vnoise2(vec2(dot(vWPos.xz, vec2(0.03, 0.02)), vWPos.y * 0.35));   // layered strata down the cliffs
+    diffuseColor.rgb = mix(diffuseColor.rgb, rockC, rockW);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.94) * (0.92 + 0.08 * vnoise2(vWPos.xz * 0.4)), snowW);
     #ifdef COARSE
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.22, 0.14, 0.08) * (0.85 + 0.3 * vnoise2(vWPos.xz * 1.7)), pmS * smoothstep(0.45, 1.0, hmS.r));
     #endif`)
@@ -869,7 +896,7 @@ function makeGrassMaterial(near, patch) {
       vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
       // thin out blade-by-blade (dithered) towards the carpet edge, so there is no visible ring
       float edgeFade = 1.0 - smoothstep(uPatch * 0.16, uPatch * 0.49, distance(wxz, uCenter));
-      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * step(fract(r * 7.31 + aParams.y * 3.17), edgeFade);
+      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * (1.0 - smoothstep(36.0, 52.0, hm.r)) * step(fract(r * 7.31 + aParams.y * 3.17), edgeFade);
       vec3 root = vec3(wxz.x, hm.r - 0.02, wxz.y);
       h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.65 + 0.5 * h) * keep;
       #else
@@ -1034,7 +1061,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       float dC = distance(wxz, uCenter), rr = fract(r * 13.7 + aParams.y * 5.1);
       float fadeD = mix(uFade.x, uFade.y, rr), growD = mix(uGrow.x, uGrow.y, fract(rr * 3.3 + 0.17));
       float grow = (1.0 - smoothstep(fadeD - 5.0, fadeD + 5.0, dC)) * smoothstep(growD - 5.0, growD + 5.0, dC);
-      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * grow;
+      float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * (1.0 - smoothstep(36.0, 52.0, hm.r)) * grow;
       vec3 root = vec3(wxz.x, hm.r - 0.03, wxz.y);
       float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.7 + 0.5 * aParams.y) * keep;
       vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
@@ -1896,13 +1923,13 @@ const audio = (() => {
 const deg = THREE.MathUtils.degToRad;
 const PRESETS = [
   { name: 'GOLDEN HOUR', elev: 5.5, az: 205, turb: 3.2, ray: 3.2, mie: 0.003, mieG: 0.78, exp: 0.42, sun: [1, 0.72, 0.45], sunI: 5.5, grassSun: 5,
-    hemi: [0xa9b8e0, 0x3a2a14, 0.9], fog: 0xd6a883, fogD: 0.0022, amb: [0.55, 0.6, 0.85], cLit: [3.2, 2.0, 1.2], cShade: [0.35, 0.22, 0.3], cover: 0.45,
+    hemi: [0xa9b8e0, 0x3a2a14, 0.9], fog: 0xd6a883, fogD: 0.0014, amb: [0.55, 0.6, 0.85], cLit: [3.2, 2.0, 1.2], cShade: [0.35, 0.22, 0.3], cover: 0.45,
     stars: 0, moon: [1.6, 1.45, 1.35], ff: 0, petals: 1, water: 0x042a33, waterSun: 0xffc890, rays: 0.3, motes: 1 },
   { name: 'MISTY DAWN', elev: 13, az: 100, turb: 2.2, ray: 1.6, mie: 0.0025, mieG: 0.76, exp: 0.5, sun: [1, 0.88, 0.74], sunI: 4.2, grassSun: 4,
-    hemi: [0xbfd0e8, 0x2f3a2a, 1.1], fog: 0xaebfc9, fogD: 0.0055, amb: [0.65, 0.75, 0.95], cLit: [3.0, 2.8, 2.6], cShade: [0.55, 0.6, 0.7], cover: 0.55,
+    hemi: [0xbfd0e8, 0x2f3a2a, 1.1], fog: 0xaebfc9, fogD: 0.0034, amb: [0.65, 0.75, 0.95], cLit: [3.0, 2.8, 2.6], cShade: [0.55, 0.6, 0.7], cover: 0.55,
     stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 0.6, water: 0x0a3440, waterSun: 0xfff0dd, rays: 0.35, motes: 0.5 },
   { name: 'BLOOD MOON', fromMoon: true, elev: -14, az: 205, turb: 1, ray: 0.3, mie: 0.002, mieG: 0.8, exp: 0.8, sun: [1.0, 0.4, 0.33], sunI: 1.8, grassSun: 1.7,
-    hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.003, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
+    hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.002, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
     stars: 1, moon: [3.4, 0.5, 0.3], ff: 1, petals: 0, water: 0x020b10, waterSun: 0xff5a40, rays: 0.3, motes: 0 },
 ];
 let presetIdx = 0, godRayAmt = 0.3;
@@ -2756,7 +2783,7 @@ const swayAttr = (arr) => new THREE.InstancedBufferAttribute(new Float32Array(ar
 // ── Red Japanese maples ──
 const mapleSpots = [];
 {
-  const okSpot = (x, z, gap) => sampleHM(x, z, 0) > 1.1 && pathMask(x, z) < 0.05 && Math.hypot(x, z) < 590 && Math.hypot(x - spawnPt[0], z - spawnPt[1]) > 9 && mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
+  const okSpot = (x, z, gap) => sampleHM(x, z, 0) > 1.1 && sampleHM(x, z, 0) < 34 && pathMask(x, z) < 0.05 && Math.hypot(x, z) < 590 && Math.hypot(x - spawnPt[0], z - spawnPt[1]) > 9 && mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
   const tryAround = (cx, cz, r, n, gap, seed) => { const R = rng32(seed); for (let i = 0; i < 400 && n > 0; i++) { const a = R() * 6.28, d = Math.sqrt(R()) * r, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d; if (okSpot(x, z, gap)) { mapleSpots.push([x, z]); n--; } } };
   tryAround(116 * WS, 18 * WS, 40, 14, 6.5, 11);                                    // maple grove in the east
   tryAround(-260, 300, 36, 12, 6.5, 12); tryAround(150, -380, 36, 10, 6.5, 13);      // more groves on the far sides
