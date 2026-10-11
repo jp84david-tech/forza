@@ -3452,7 +3452,7 @@ const VILLAGE_HOUSES = [];
 buildLanterns();
 // ── Trees: red maples (most), golden maples, green zelkovas, pink and deep-red cherries ──
 // A handful of branching skeletons are grown once and reused. Each tree is one of them, scaled and turned;
-// foliage is painted clusters of leaves or blossom on cards. Trees are bundled into 160 m blocks so whole
+// foliage is painted clusters of leaves or blossom on cards. Trees are bundled into 260 m blocks so whole
 // blocks are skipped when off-screen or far away. Fallen petals and leaves carpet the ground beneath.
 const mapleSpots = [];   // [x, z, species, scale, template]
 const SPECIES = [
@@ -3537,7 +3537,7 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
     TEMPLATES.push({ kind, geo, clusters });
   }
   // build the blocks
-  const CELL = 160, cells = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+  const CELL = 260, cells = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
   for (const t of mapleSpots) { const k = Math.floor(t[0] / CELL) + ',' + Math.floor(t[1] / CELL); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
   for (const list of cells.values()) {
     const trunks = [], leaves = [[], []], ground = { leaf: [], petal: [] };
