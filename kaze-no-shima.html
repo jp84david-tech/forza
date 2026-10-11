@@ -961,12 +961,21 @@ const cardGeo = (() => {   // three quads crossed at 60°, two rows high so they
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
 })();
-function makeCardMaterial(patch, fadeA, fadeB) {
+const cardGeoFar = (() => {   // two crossed quads, one row: plenty for tufts tens of metres away
+  const pos = [], uv = [], idx = [];
+  for (let q = 0; q < 2; q++) {
+    const a = q * Math.PI / 2 + 0.4, cx = Math.cos(a), cz = Math.sin(a), b = pos.length / 3;
+    for (let r = 0; r < 2; r++) for (const sx of [-0.5, 0.5]) { pos.push(cx * sx, r, cz * sx); uv.push(sx + 0.5, r); }
+    idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
+})();
+function makeCardMaterial(patch, fadeA, fadeB, growA, growB) {
   return new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
-  uniforms: { ...SH, uPatch: { value: patch }, uFade: { value: new THREE.Vector2(fadeA, fadeB) }, uCardTex: { value: grassCardTex }, uTexSize: { value: grassCardTex.image.width } },
+  uniforms: { ...SH, uPatch: { value: patch }, uFade: { value: new THREE.Vector2(fadeA, fadeB) }, uGrow: { value: new THREE.Vector2(growA, growB) }, uCardTex: { value: grassCardTex }, uTexSize: { value: grassCardTex.image.width } },
   vertexShader: /* glsl */`
-    uniform float uTime, uCloudAmt, uPatch; uniform vec2 uFade; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
+    uniform float uTime, uCloudAmt, uPatch; uniform vec2 uFade, uGrow; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
     ${NOISE_GLSL}
     attribute vec3 aOffset; attribute vec4 aParams;
     varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
@@ -979,7 +988,9 @@ function makeCardMaterial(patch, fadeA, fadeB) {
       vec2 L = aOffset.xz, wxz = L + uPatch * floor((uCenter - L) / uPatch + 0.5);
       vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
       // tufts grow up out of the ground towards the player and sink back with distance: nothing pops in
-      float grow = 1.0 - smoothstep(uFade.x, uFade.y, distance(wxz, uCenter));
+      // each layer rises where the nearer one still covers the ground, and sinks where the next one does
+      float dC = distance(wxz, uCenter);
+      float grow = (1.0 - smoothstep(uFade.x, uFade.y, dC)) * smoothstep(uGrow.x, uGrow.y, dC);
       float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * grow;
       vec3 root = vec3(wxz.x, hm.r - 0.03, wxz.y);
       float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.7 + 0.5 * aParams.y) * keep;
@@ -1039,9 +1050,9 @@ function makeCardMaterial(patch, fadeA, fadeB) {
     }`,
   });
 }
-function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB) {
+function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -1, geo = cardGeo) {
   const g = new THREE.InstancedBufferGeometry();
-  g.index = cardGeo.index; g.attributes.position = cardGeo.attributes.position; g.attributes.uv = cardGeo.attributes.uv;
+  g.index = geo.index; g.attributes.position = geo.attributes.position; g.attributes.uv = geo.attributes.uv;
   const off = new Float32Array(N * 3), prm = new Float32Array(N * 4);
   for (let i = 0; i < N; i++) {
     off[i * 3] = (Math.random() - 0.5) * side; off[i * 3 + 2] = (Math.random() - 0.5) * side;
@@ -1050,17 +1061,18 @@ function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB) {
   g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
   g.setAttribute('aParams', new THREE.InstancedBufferAttribute(prm, 4));
   g.instanceCount = N;
-  const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB)); m.frustumCulled = false; scene.add(m); return m;
+  const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB)); m.frustumCulled = false; scene.add(m); return m;
 }
 const nearCards = makeCardCarpet(LOW ? 5000 : ULTRA ? 14000 : 7000, 40, 0.7, 1.05, 11, 19.5);    // dense layer round the player
-const midCards = makeCardCarpet(LOW ? 20000 : ULTRA ? 55000 : 30000, 160, 0.9, 1.35, 48, 79);    // wide layer out to ~80 m
+const midCards = makeCardCarpet(LOW ? 20000 : ULTRA ? 55000 : 30000, 160, 0.9, 1.35, 60, 79);    // wide layer out to ~80 m
+const farCards = makeCardCarpet(LOW ? 16000 : ULTRA ? 50000 : 28000, 520, 1.7, 2.5, 200, 258, 42, 58, cardGeoFar);   // big sparse tufts to ~250 m
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
+  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -3265,7 +3277,7 @@ function update(dt, t) {
   updateWorld(dt, t);
 }
 
-const grassFull = [nearGrass, midGrass, nearCards, midCards].map(m => [m, m.geometry.instanceCount]);
+const grassFull = [nearGrass, midGrass, nearCards, midCards, farCards].map(m => [m, m.geometry.instanceCount]);
 let perfAcc = 0, perfN = 0, grassScale = 1;
 const basePR = renderer.getPixelRatio();
 function adaptQuality(rawDt) {
@@ -3279,11 +3291,11 @@ function adaptQuality(rawDt) {
 }
 // ─────────────────────────── Graphics menu ───────────────────────────
 function applyGrassCount() {   // cards are cheap, so they stay dense even on low grass settings
-  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards ? Math.min(1, 0.75 + 0.25 * GFX.grass) * Math.max(0.85, grassScale) : grassScale * GFX.grass)));
+  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards || m === farCards ? Math.min(1, 0.75 + 0.25 * GFX.grass) * Math.max(0.85, grassScale) : grassScale * GFX.grass)));
 }
 function applyGfx() {
   const cards = GFX.grassStyle !== 'blades';
-  nearCards.visible = midCards.visible = cards; nearGrass.visible = midGrass.visible = !cards;
+  nearCards.visible = midCards.visible = farCards.visible = cards; nearGrass.visible = midGrass.visible = !cards;
   const tm = GFX.post === false ? THREE.CustomToneMapping : THREE.ACESFilmicToneMapping;
   if (renderer.toneMapping !== tm) { renderer.toneMapping = tm; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); }
   sun.castShadow = GFX.shadows;
@@ -3347,7 +3359,7 @@ function loop() {
   }
   requestAnimationFrame(loop);
 }
-window.__game = { enemies, hitEnemy, beginSlash: k => beginSlash(soldier, k), terrainH, dbg: { scene, camera, renderer, SH, terrain, fineMin, fineMax, water, clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
+window.__game = { enemies, hitEnemy, beginSlash: k => beginSlash(soldier, k), terrainH, dbg: { scene, camera, renderer, SH, cards: [nearCards, midCards, farCards], terrain, fineMin, fineMax, water, clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
 loop();
 </script>
 </body>
