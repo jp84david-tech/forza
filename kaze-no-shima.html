@@ -1396,7 +1396,7 @@ scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...REFL_HIDE], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
+  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...REFL_HIDE, ...enemies.map(e => e.root), ...villagers.map(v => v.root)], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -3573,7 +3573,7 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
     }
     cx /= list.length; cz /= list.length;
     const objs = [];
-    const trunkMesh = new THREE.Mesh(mergeGeometries(trunks), barkM); trunkMesh.castShadow = trunkMesh.receiveShadow = true; scene.add(trunkMesh); objs.push(trunkMesh);
+    const trunkMesh = new THREE.Mesh(mergeGeometries(trunks), barkM); trunkMesh.castShadow = trunkMesh.receiveShadow = true; scene.add(trunkMesh); objs.push(trunkMesh); REFL_HIDE.push(trunkMesh);
     FLORA_LOD.push({ objs: [trunkMesh], x: cx, z: cz, far: 300 });
     for (let L = 0; L < 2; L++) {
       if (!leaves[L].length) continue;
