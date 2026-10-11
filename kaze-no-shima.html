@@ -2579,6 +2579,7 @@ function stoneLantern(x, z, yaw) {
   add(new THREE.SphereGeometry(0.07, 10, 8), 1.6);
   g.position.set(x, y, z); g.rotation.y = yaw; scene.add(g);
   lanternGlow.push(glow); COLLIDERS_INIT.push({ x, z, r: 0.35 });
+  (window.__lanterns ||= []).push([x, z]);
 }
 {
   for (let ri = 0; ri < ROUTES.length; ri++) {
@@ -2622,6 +2623,7 @@ function campfire(x, z) {
   campfires.push({ g, flames, light, x, y, z });
 }
 campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c.x + Math.cos(a) * 2.6, c.z + Math.sin(a) * 2.6); } });
+window.__map = { HMF, HM, HM_MIN, HM_SIZE, spawn: spawnPt, camps: campSpots(), fires: campfires.map(c => [c.x, c.z]) };  // for the printable map
 function updateFlora(dt, t) {
   for (const f of FLORA_LOD) { const v = Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < f.far; for (const o of f.objs) o.visible = v; }
   FLORA.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
