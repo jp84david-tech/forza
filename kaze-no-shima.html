@@ -2760,6 +2760,7 @@ function makeHead(style, hc, up, fwd) {
   if (st.top === 'bowl') { const c = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), hairM); c.scale.set(0.084, 0.11, 0.098); c.position.y = 0.003; g.add(c); }
   // orient: +z of the group looks along the character's forward
   g.position.copy(hc); g.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd.clone().negate(), up));
+  g.scale.setScalar(1.12);   // the borrowed body is broad-shouldered; keep the head in proportion
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
 }
