@@ -2749,7 +2749,7 @@ function makeHead(style, hc, up, fwd) {
   const skin = new THREE.MeshStandardMaterial({ map: faceTexture(style), roughness: 0.62, metalness: 0 });
   const plain = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.skin[0] / 255, st.skin[1] / 255, st.skin[2] / 255).convertSRGBToLinear(), roughness: 0.65 });
   const hairM = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.hair[0] / 255, st.hair[1] / 255, st.hair[2] / 255).convertSRGBToLinear(), roughness: 0.55 });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 28), skin); head.scale.set(0.079, 0.108, 0.093); g.add(head);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), skin); head.scale.set(0.079, 0.108, 0.093); g.add(head);
   const nose = new THREE.Mesh(new THREE.ConeGeometry(0.017, 0.045, 10), plain); nose.rotation.x = Math.PI * 0.62; nose.position.set(0, -0.012, 0.094); nose.scale.set(1, 1, 0.75); g.add(nose);
   const tip = new THREE.Mesh(new THREE.SphereGeometry(0.0125, 12, 8), plain); tip.position.set(0, -0.03, 0.104); g.add(tip);
   const brow = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), plain); brow.scale.set(0.06, 0.012, 0.03); brow.position.set(0, 0.012, 0.072); g.add(brow);
@@ -3556,7 +3556,7 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
     cx /= list.length; cz /= list.length;
     const objs = [];
     const trunkMesh = new THREE.Mesh(mergeGeometries(trunks), barkM); trunkMesh.castShadow = trunkMesh.receiveShadow = true; scene.add(trunkMesh); objs.push(trunkMesh);
-    FLORA_LOD.push({ objs: [trunkMesh], x: cx, z: cz, far: 420 });
+    FLORA_LOD.push({ objs: [trunkMesh], x: cx, z: cz, far: 300 });
     for (let L = 0; L < 2; L++) {
       if (!leaves[L].length) continue;
       const g = new THREE.PlaneGeometry(1, 1); g.setAttribute('aSway', swayAttr(leaves[L].flatMap(l => l[2])));
