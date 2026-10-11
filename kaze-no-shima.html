@@ -43,6 +43,7 @@
   #hp { position: fixed; left: 36px; bottom: 48px; width: 220px; height: 6px; background: rgba(0,0,0,0.45); border: 1px solid rgba(244,233,216,0.35); transition: opacity 0.6s; opacity: 0.25; pointer-events: none; }
   #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg, #6e120e, #c8321e); transition: width 0.15s; }
   #hurt { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,0.65) 100%); opacity: 0; transition: opacity 0.35s; }
+  #map { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(86vh, 92vw); height: min(86vh, 92vw); display: none; z-index: 30; border: 1px solid rgba(244,233,216,0.35); box-shadow: 0 10px 60px rgba(0,0,0,0.6); }
   #gfx { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(14,10,8,0.88); border: 1px solid rgba(244,233,216,0.3);
     color: #f4e9d8; padding: 22px 28px; font-family: 'Segoe UI', sans-serif; font-size: 13px; letter-spacing: 1px; display: none; min-width: 300px; z-index: 10; }
   #gfx h3 { font-family: Georgia, serif; font-weight: 400; letter-spacing: 6px; margin-bottom: 14px; }
@@ -79,10 +80,11 @@
 <div id="toast"></div>
 <div id="hurt"></div>
 <div id="gfx"></div>
+<canvas id="map" width="720" height="720"></canvas>
 <div id="fps"></div>
 <div id="hp"><div id="hpfill"></div></div>
 <div id="fade"></div>
-<div id="hint">G graphics · Space jump · F katana · Click ×3 combo · T time of day · P photo mode · M sound</div>
+<div id="hint">Tab map · G graphics · Space jump · F katana · Click ×3 combo · T time of day · P photo mode · M sound</div>
 <div id="loading">GROWING GRASS…</div>
 <div id="start">
   <h2>KAZE NO SHIMA</h2>
@@ -3410,6 +3412,63 @@ addEventListener('keydown', e => {
   if (open) document.exitPointerLock?.();
   applyGfx();
 });
+// ─────────────────────────── Map (Tab) ───────────────────────────
+// The island is painted once from the height grid; markers are drawn on top while the map is open.
+const mapEl = document.getElementById('map'), mapCx = mapEl.getContext('2d'), MAP_E = 960;
+const mapBase = (() => {
+  const N = 720, c = document.createElement('canvas'); c.width = c.height = N;
+  const x = c.getContext('2d'), img = x.createImageData(N, N), d = img.data;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const wx = -MAP_E + (i + 0.5) / N * 2 * MAP_E, wz = -MAP_E + (j + 0.5) / N * 2 * MAP_E;
+    const h = sampleHM(wx, wz, 0), pm = sampleHM(wx, wz, 1), o = (j * N + i) * 4;
+    const sh = Math.max(-1, Math.min(1, (sampleHM(wx - 3, wz - 3, 0) - h) * 0.35));   // hill shading from the north-west
+    let r, g, b;
+    if (h < 0) { const k = Math.max(0, 1 + h / 6); r = 28 + 40 * k; g = 66 + 50 * k; b = 84 + 40 * k; }
+    else if (h < 1) { r = 196; g = 178; b = 140; }
+    else if (h > 105 + (fbm(wx * 0.02, wz * 0.02) - 0.5) * 30) { r = g = 232; b = 240; }
+    else if (h > 48) { const k = 0.8 + 0.4 * fbm(wx * 0.05, wz * 0.05); r = 108 * k; g = 102 * k; b = 96 * k; }
+    else if (pm > 0.4) { r = 150; g = 118; b = 76; }
+    else { const k = fbm(wx * 0.009 + 3, wz * 0.009, 3); r = 92 + 70 * k; g = 112 + 30 * k; b = 44 + 10 * k; }
+    const f = 1 + sh * 0.5; d[o] = r * f; d[o + 1] = g * f; d[o + 2] = b * f; d[o + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  x.strokeStyle = 'rgba(214,186,132,0.95)'; x.lineWidth = 2; x.lineJoin = x.lineCap = 'round';   // dirt paths
+  for (let ri = 0; ri < ROUTES.length; ri++) {
+    x.beginPath(); let on = false;
+    for (const p of routePts(ri).filter((_, k) => k % 4 === 0)) {
+      const px = (p[0] + MAP_E) / (2 * MAP_E) * N, py = (p[1] + MAP_E) / (2 * MAP_E) * N;
+      if (sampleHM(p[0], p[1], 0) < 0.3) { on = false; continue; }
+      on ? x.lineTo(px, py) : x.moveTo(px, py); on = true;
+    }
+    x.stroke();
+  }
+  return c;
+})();
+const mapXY = (wx, wz) => [(wx + MAP_E) / (2 * MAP_E) * 720, (wz + MAP_E) / (2 * MAP_E) * 720];
+function drawMap() {
+  const x = mapCx; x.drawImage(mapBase, 0, 0);
+  const dot = (wx, wz, r, fill, stroke) => { const [px, py] = mapXY(wx, wz); x.beginPath(); x.arc(px, py, r, 0, 6.283); x.fillStyle = fill; x.fill(); if (stroke) { x.strokeStyle = stroke; x.lineWidth = 1.5; x.stroke(); } };
+  const label = (wx, wz, t) => { const [px, py] = mapXY(wx, wz); x.font = '600 12px Georgia, serif'; x.textAlign = 'center'; x.lineWidth = 3; x.strokeStyle = 'rgba(0,0,0,0.6)'; x.strokeText(t, px, py - 9); x.fillStyle = '#f4e9d8'; x.fillText(t, px, py - 9); };
+  for (const [mx, mz] of mapleSpots) dot(mx, mz, 2.2, '#d8452f');
+  const sh = window.__flora?.shrine; if (sh) { dot(sh[3], sh[4], 5, '#c0392b', '#f4e9d8'); label(sh[3], sh[4], 'Shrine'); }
+  const seen = [];
+  for (const c of campSpots()) if (!seen.some(q => Math.hypot(q[0] - c.x, q[1] - c.z) < 70)) { seen.push([c.x, c.z]); label(c.x, c.z, 'Bandits'); }
+  for (const e of enemies) if (e.alive) dot(e.pos.x, e.pos.z, 3.5, '#e74c3c', '#200');
+  label(0, -720, 'Snow Peaks');
+  if (!player.mounted) dot(hs.pos.x, hs.pos.z, 4, '#8b5a2b', '#f4e9d8');
+  // you: an arrow pointing where you face
+  const [px, py] = mapXY(player.pos.x, player.pos.z), yaw = player.mounted ? hs.yaw : player.yaw;
+  x.save(); x.translate(px, py); x.rotate(-yaw + Math.PI);
+  x.beginPath(); x.moveTo(0, -10); x.lineTo(6.5, 7); x.lineTo(0, 3.5); x.lineTo(-6.5, 7); x.closePath();
+  x.fillStyle = '#f2b705'; x.fill(); x.strokeStyle = '#1a1208'; x.lineWidth = 1.5; x.stroke(); x.restore();
+  x.font = '600 14px Georgia, serif'; x.fillStyle = 'rgba(244,233,216,0.85)'; x.textAlign = 'left'; x.fillText('N ↑   ·   Tab to close', 14, 24);
+}
+addEventListener('keydown', e => {
+  if (e.code !== 'Tab') return;
+  e.preventDefault();
+  const open = mapEl.style.display !== 'block'; mapEl.style.display = open ? 'block' : 'none';
+  if (open) drawMap();
+});
 const fpsEl = document.getElementById('fps'); let fpsAcc = 0, fpsN = 0, autoSlow = 0;
 applyGfx();
 
@@ -3422,6 +3481,7 @@ function loop() {
   SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
   if (GFX.post === false) renderer.render(scene, camera); else composer.render();
   fpsAcc += raw; fpsN++;
+  if (mapEl.style.display === 'block' && (frameNo & 7) === 0) drawMap();
   if (fpsAcc > 0.5) {
     const fps = fpsN / fpsAcc; fpsEl.textContent = Math.round(fps) + ' FPS'; fpsAcc = fpsN = 0;
     if (started && GFX.auto && !params.get('fixed')) {
