@@ -286,12 +286,12 @@ const ROUTES = [
   { pts: [[22, 50], [30, 64], [42, 76], [50, 90]], wander: 8 },                 // down to the south cove
   { pts: [[-27, 18], [-36, 31], [-42, 47], [-45, 62]], wander: 10 },        // north-west hills
   { pts: [[31, -9], [47, -20], [62, -27], [76, -31]], wander: 10 },          // east headland
-  // trails out to the far coasts of the enlarged island
-  { pts: [[-50, -66], [-64, -82], [-74, -100], [-86, -114]], wander: 12 },     // far north-west
-  { pts: [[50, 90], [38, 104], [18, 116], [-6, 122]], wander: 12 },            // south shore
-  { pts: [[98, 30], [112, 12], [124, -10], [128, -34]], wander: 12 },         // east cliffs
-  { pts: [[-45, 62], [-66, 72], [-90, 76], [-112, 70]], wander: 12 },         // south-west downs
-].map((rt, i) => ({ ...rt, wander: rt.wander * 1.8, pts: rt.pts.map(([x, z]) => i === 0 ? [x * WS, z * WS] : [x * 2.24 * WS, z * 2.24 * WS]) }));
+  // trails across the outer downs of the enlarged island (already in world metres)
+  { pts: [[-150, -330], [-60, -420], [40, -470], [120, -520]], wander: 12, world: true },   // north downs
+  { pts: [[150, 380], [40, 450], [-80, 480], [-200, 450]], wander: 12, world: true },       // south shore
+  { pts: [[440, 160], [500, 40], [520, -80], [500, -200]], wander: 12, world: true },       // east cliffs
+  { pts: [[-319, 439], [-420, 380], [-500, 300], [-540, 200]], wander: 12, world: true },   // south-west downs
+].map((rt, i) => ({ ...rt, wander: rt.wander * 1.8, pts: rt.world ? rt.pts : rt.pts.map(([x, z]) => i === 0 ? [x * WS, z * WS] : [x * 2.24 * WS, z * 2.24 * WS]) }));
 const pathPts = []; // [x, z, width]
 const PG = 1.5, PMIN = -950, PN = 1268;
 const pathGrid = new Float32Array(PN * PN).fill(99), pathW = new Float32Array(PN * PN).fill(1), pathMed = new Float32Array(PN * PN);
@@ -440,7 +440,7 @@ const SH = {
   uFogCol: { value: scene.fog.color }, uFogDen: { value: scene.fog.density },
   uShadowMap: { value: null }, uShadowMatrix: { value: sun.shadow.matrix }, uHasShadow: { value: 0 },
   uCloudAmt: { value: 1 },
-  uPx: { value: 0.001 }, uDbg: { value: 0 },   // world size of one screen pixel at 1 m (keeps grass blades from going sub-pixel)
+  uPx: { value: 0.001 }, uWaves: { value: 1 },   // world size of one screen pixel at 1 m (keeps grass blades from going sub-pixel)
 };
 
 // ─────────────────────────── Grass physics: trample + cut map ───────────────────────────
@@ -488,13 +488,13 @@ function updateTrample(dt, px, pz) {
   trTex.needsUpdate = true;
 }
 const NOISE_GLSL = /* glsl */`
-  float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float hash2(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }   // stable at large coordinates
   float vnoise2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash2(i), hash2(i + vec2(1, 0)), f.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), f.x), f.y); }
   float fbm5(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise2(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
   // colour of the upper grass blades at a spot (shared by the blades and the painted far field)
   vec3 meadowTip(vec2 xz, float mid, float big, float patchJit){
-    float pt = smoothstep(0.35, 0.75, sin(xz.x * 0.07) * sin(xz.y * 0.06 + 1.3) * 0.5 + 0.5 + patchJit);
+    float pt = smoothstep(0.35, 0.75, vnoise2(mat2(0.8, -0.6, 0.6, 0.8) * xz * 0.009 + 3.1) * 0.7 + vnoise2(mat2(0.6, 0.8, -0.8, 0.6) * xz * 0.03 + 8.3) * 0.3 + patchJit - 0.04);   // irregular meadows of green and dry gold
     vec3 tipG = mix(vec3(0.11, 0.25, 0.04), vec3(0.2, 0.32, 0.05), mid);
     vec3 tipD = mix(vec3(0.48, 0.38, 0.12), vec3(0.4, 0.41, 0.12), mid);
     return mix(tipG, tipD, clamp(pt * 0.8 + (big - 0.5) * 0.7, 0.0, 1.0));
@@ -573,10 +573,10 @@ const grassPaint = (() => {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; return t;
 })();
 function terrainCompile(sh) {
-  Object.assign(sh.uniforms, { uTime: SH.uTime, uCloudAmt: SH.uCloudAmt, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uPaint: { value: grassPaint },
+  Object.assign(sh.uniforms, { uTime: SH.uTime, uCloudAmt: SH.uCloudAmt, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uWaves: SH.uWaves, uPaint: { value: grassPaint },
     uHeightMap: SH.uHeightMap, uHm: SH.uHm, uFineMin: { value: fineMin }, uFineMax: { value: fineMax } });
   sh.vertexShader = 'attribute float aGrassy; varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vGrassy = aGrassy; vWNrm = normalize(mat3(modelMatrix) * objectNormal);');
-  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform vec3 uSunDir, uSunCol, uAmb; uniform sampler2D uPaint, uHeightMap; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + sh.fragmentShader
+  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform vec3 uSunDir, uSunCol, uAmb; uniform float uWaves; uniform sampler2D uPaint, uHeightMap; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + sh.fragmentShader
     .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
     float grassy = vGrassy;
     #ifdef COARSE
@@ -598,7 +598,7 @@ function terrainCompile(sh) {
     if (grassy > 0.01) {
       vec2 xz = vWPos.xz; float dist = distance(vWPos, cameraPosition);
       vec3 V = normalize(cameraPosition - vWPos), L = uSunDir, H = normalize(V + L);
-      float g = gustAt(xz, uTime);
+      float g = mix(0.4, gustAt(xz, uTime), uWaves);
       vec2 wdir = normalize(vec2(1.0, 0.35));
       // brush strokes at two scales, swaying with the gusts
       vec2 sway = wdir * (g * 0.12 + sin(uTime * 2.3 + xz.x * 0.4) * 0.015);
@@ -879,7 +879,7 @@ function makeGrassMaterial(near, patch) {
       gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
     }`,
   fragmentShader: '#include <packing>\n' + SHADOW_GLSL + /* glsl */`
-    uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt, uDbg;
+    uniform vec3 uSunDir, uSunCol, uAmb, uFogCol; uniform float uFogDen, uTime, uCloudAmt;
     centroid varying float vT; varying vec3 vWorld; varying vec3 vN; varying float vRand; varying vec3 vTip; varying vec4 vShadowCoord; varying float vCut;
     centroid varying float vSide; varying vec3 vTng; varying vec3 vUp; varying float vCloud; centroid varying float vCov;
     void main(){
@@ -913,9 +913,6 @@ function makeGrassMaterial(near, patch) {
                + uSunCol * sheen * mix(vec3(1.0, 0.97, 0.9), col * 4.0, 0.35) * vis;
       float d = length(cameraPosition - vWorld);
       float fog = 1.0 - exp(-d * d * uFogDen * uFogDen);
-      if (uDbg == 1.0) lit = col * (uSunCol * (ndl * 0.85 + 0.1) * vis + uAmb * 0.85) * ao;
-      if (uDbg == 2.0) lit = vec3(vCov);
-      if (uDbg == 3.0) lit = col * 3.0;
       gl_FragColor = vec4(mix(lit, uFogCol, fog), 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
@@ -2712,7 +2709,7 @@ function campfire(x, z) {
   campfires.push({ g, flames, light, x, y, z });
 }
 campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c.x + Math.cos(a) * 2.6, c.z + Math.sin(a) * 2.6); } });
-window.__map = { HMF, HM, HM_MIN, HM_SIZE, spawn: spawnPt, camps: campSpots(), fires: campfires.map(c => [c.x, c.z]) };  // for the printable map
+window.__map = { HMF, HM, HM_MIN, HM_SIZE, spawn: spawnPt, routes: ROUTES.map((_, ri) => routePts(ri).filter((p, k) => k % 6 === 0 && sampleHM(p[0], p[1], 0) > 0.3).map(p => [+p[0].toFixed(1), +p[1].toFixed(1), +p[2].toFixed(2)])), camps: campSpots(), fires: campfires.map(c => [c.x, c.z]) };  // for the printable map
 function updateFlora(dt, t) {
   for (const f of FLORA_LOD) { const v = Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < f.far; for (const o of f.objs) o.visible = v; }
   FLORA.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
