@@ -5619,6 +5619,42 @@ function updateWeather(dt) {
   const fl = WET.flash > 0.5 ? 1 : WET.flash * 1.6;
   hemi.intensity = PRESETS[presetIdx].hemi[2] * (1 + fl * 3 * (Math.random() < 0.7 ? 1 : 0.3)); rain.material.uniforms.uFlash.value = fl;
 }
+// ─────────────────────────── Smoke columns: Mongol camps (dark, until taken), village chimneys, the beacon ───────────────────────────
+let smoke = null;
+function buildSmoke() {
+  const src = [];   // [x, y, z, height, darkness, width]
+  for (const cp of window.__camps2 || []) if (!cp.castle) src.push([cp.x, groundH(cp.x, cp.z) + 0.5, cp.z, 70, 0.85, 1.4, cp]);
+  VILLAGE_HOMES.forEach((H, i) => { if (i % 3 === 0) src.push([H.x, H.base + H.top + 2.5, H.z, 22, 0.25, 0.7]); });
+  if (window.__beacon) src.push([window.__beacon[0], window.__beacon[1] + 1.5, window.__beacon[2], 45, 0.5, 1.0]);
+  const PER = 34, N = src.length * PER, pos = new Float32Array(N * 3), prm = new Float32Array(N * 4);
+  src.forEach((sv, k) => { for (let j = 0; j < PER; j++) { const i = k * PER + j; pos.set([sv[0], sv[1], sv[2]], i * 3); prm.set([sv[3], sv[4], sv[5], j / PER + Math.random() * 0.02], i * 4); } });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aP', new THREE.BufferAttribute(prm, 4));
+  const tex = canvasTex(64, (x, S) => { const gr = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2); gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, S, S); });
+  const m = new THREE.Points(g, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, uniforms: { uTime: SH.uTime, uTex: { value: tex }, uAmb: SH.uAmb, uSunCol: SH.uSunCol, uFogCol: SH.uFogCol, uPx: { value: 1 } },
+    vertexShader: `attribute vec4 aP; uniform float uTime, uPx; varying float vA; varying float vDark;
+      void main(){ float h = fract(uTime * 0.035 * (30.0 / aP.x) + aP.w), y = h * aP.x;
+        vec3 p = position + vec3(sin(aP.w * 40.0 + uTime * 0.3) * 1.5 * h + y * 0.35, y, cos(aP.w * 31.0) * 1.2 * h + y * 0.12);   // drifts downwind as it climbs
+        vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
+        float sz = aP.z * (1.5 + h * 9.0); gl_PointSize = clamp(sz * uPx / -mv.z, 1.0, 400.0);
+        vA = smoothstep(0.0, 0.08, h) * (1.0 - smoothstep(0.55, 1.0, h)) * (aP.y > 0.0 ? 1.0 : 0.0); vDark = aP.y; }`,
+    fragmentShader: `uniform sampler2D uTex; uniform vec3 uAmb, uSunCol, uFogCol; varying float vA; varying float vDark;
+      void main(){ vec4 t = texture2D(uTex, gl_PointCoord); vec3 c = mix(uAmb * 0.9 + uSunCol * 0.05, vec3(0.05, 0.045, 0.04), vDark); c = mix(c, uFogCol, 0.25);
+        gl_FragColor = vec4(c, t.a * vA * mix(0.22, 0.45, vDark));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment> }`,
+  }));
+  m.frustumCulled = false; scene.add(m); REFL_HIDE.push(m); m.userData.src = src; smoke = m;
+}
+function updateSmoke() {
+  if (!smoke) { if (frameNo > 30 && window.__camps2) buildSmoke(); return; }
+  smoke.material.uniforms.uPx.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+  if ((frameNo % 90) === 0) {   // a taken camp's fire is put out: its smoke column fades away
+    const a = smoke.geometry.attributes.aP, PER = 34; let dirty = false;
+    smoke.userData.src.forEach((sv, k) => { if (sv[6] && STORY.cleared.has(sv[6].x.toFixed(0) + ',' + sv[6].z.toFixed(0)) && a.getY(k * PER) > 0) { for (let j = 0; j < PER; j++) a.setY(k * PER + j, -1); dirty = true; } });
+    if (dirty) a.needsUpdate = true;
+  }
+}
 // ─────────────────────────── Story: cutscenes, the elder's quest, objectives, resting, bows, the controls card ───────────────────────────
 const storyUI = (() => {
   const mk = (css, parent = document.body) => { const d = document.createElement('div'); d.style.cssText = css; parent.appendChild(d); return d; };
@@ -5810,7 +5846,7 @@ function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve();
+  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve(); updateSmoke();
   if (started) audio.music(Math.min(raw, 0.1), CINE.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt); updateArrows(dt);
