@@ -673,7 +673,7 @@ function rasterPrints(cx, cz) {
 // How far feet sink here (snowfields deep, mud a little), and how much it slows you
 function snowAt(x, z) { return smooth(158, 190, terrainH(x, z)); }
 function groundSoft(x, z) {
-  const sn = snowAt(x, z), mud = Math.max(pathMask(x, z) * 0.45, riverWet(x, z));
+  const sn = snowAt(x, z), mud = Math.max(pathMask(x, z) * 0.45, villageMud(x, z) * 0.55, riverWet(x, z));
   riverInfo(x, z); const water = _rd < _rw ? smooth(0.2, 0.8, _rl - terrainH(x, z)) : 0;
   return { sink: sn * 0.13 + mud * 0.035, slow: 1 - 0.32 * sn - 0.12 * mud - 0.38 * water };
 }
@@ -720,11 +720,24 @@ const SHADOW_GLSL = `#define SHADOW_RES ${SHADOW_RES}
 // Far terrain is one coarse mesh (every 2nd height sample). Around the player, detailed tiles are
 // built straight from the height function (cart ruts, lumps, ragged path edges), and the coarse mesh
 // cuts itself away underneath them. Keeps the big island about as cheap to draw as the small one was.
+// The village's footprint: inside its fence the ground is trodden mud, not meadow
+const VMUD = { cx: 340, cz: 326, ux: 0.76, uz: 0.65, U: 92, V: 46 };
+function villageMud(x, z) {
+  const dx = x - VMUD.cx, dz = z - VMUD.cz, u = dx * VMUD.ux + dz * VMUD.uz, v = -dx * VMUD.uz + dz * VMUD.ux;
+  if (Math.abs(u) > VMUD.U + 10 || Math.abs(v) > VMUD.V + 10) return 0;
+  const e = (vnoise(x * 0.08, z * 0.08) - 0.5) * 6;
+  return (1 - smooth(VMUD.U - 3, VMUD.U + 4, Math.abs(u) + e)) * (1 - smooth(VMUD.V - 3, VMUD.V + 4, Math.abs(v) + e));
+}
 function groundAttrs(x, z, h, pm, col, gr, k) {
+  const vm = villageMud(x, z);
   const n = vnoise(x * 1.7, z * 1.7), n2 = fbm(x * 0.3, z * 0.3);
   let r = 0.032 + 0.02 * n2, g = 0.058 + 0.03 * n2, b = 0.014;                // mossy soil under grass
   const dr = (0.15 + 0.06 * n) , dg = (0.095 + 0.04 * n), db = 0.055 + 0.02 * n;  // packed dirt
   r = lerp(r, dr, pm); g = lerp(g, dg, pm); b = lerp(b, db, pm);
+  if (vm > 0) {   // village mud: dark and wet in the hollows, drier and paler where feet keep it packed
+    const wet = smooth(0.45, 0.75, vnoise(x * 0.35 + 7, z * 0.35 - 3)), mr = lerp(0.13 + 0.03 * n, 0.075, wet), mg = lerp(0.09 + 0.02 * n, 0.055, wet), mb = lerp(0.055, 0.04, wet);
+    r = lerp(r, mr, vm); g = lerp(g, mg, vm); b = lerp(b, mb, vm); pm = Math.max(pm, vm);
+  }
   const s = 1 - smooth(0.45, 1.0, h);                                           // beach sand
   r = lerp(r, 0.40 + 0.05 * n, s); g = lerp(g, 0.33 + 0.04 * n, s); b = lerp(b, 0.23, s);
   const w = 1 - smooth(-0.1, 0.25, h);                                          // wet sand
@@ -1150,7 +1163,7 @@ function bridgeH(x, z) {
   return best;
 }
 // Houses you can walk into: raised floors (and the veranda and step stone in front) are ground too
-const HOUSES = [], HEARTHS = [], DOORS = [];
+const HOUSES = [], HEARTHS = [], DOORS = [], FLOORS = [];   // FLOORS: oriented walkable platforms { x, z, c, s, hw, hd0, hd1, y }
 function houseLocal(H, x, z) { const dx = x - H.x, dz = z - H.z; return [dx * H.c - dz * H.s, dx * H.s + dz * H.c]; }
 function houseAt(x, z, pad = 0) {   // the house whose walls enclose (x, z)
   for (const H of HOUSES) {
@@ -1162,6 +1175,11 @@ function houseAt(x, z, pad = 0) {   // the house whose walls enclose (x, z)
 }
 function houseFloorH(x, z) {
   let best = -Infinity;
+  for (const F of FLOORS) {
+    const dx = x - F.x, dz = z - F.z; if (dx * dx + dz * dz > 80) continue;
+    const lx = dx * F.c - dz * F.s, lz = dx * F.s + dz * F.c;
+    if (Math.abs(lx) < F.hw && lz > F.hd0 && lz < F.hd1) best = Math.max(best, F.y);
+  }
   for (const H of HOUSES) {
     if ((x - H.x) ** 2 + (z - H.z) ** 2 > H.R2) continue;
     const [lx, lz] = houseLocal(H, x, z);
@@ -1171,7 +1189,7 @@ function houseFloorH(x, z) {
   return best;
 }
 // Where feet and hooves stand: the ground, a bridge deck or a house floor
-function groundH(x, z) { const t = terrainH(x, z), b = bridgeH(x, z), f = HOUSES.length ? houseFloorH(x, z) : -Infinity; return Math.max(t, b, f); }
+function groundH(x, z) { const t = terrainH(x, z), b = bridgeH(x, z), f = HOUSES.length || FLOORS.length ? houseFloorH(x, z) : -Infinity; return Math.max(t, b, f); }
 
 // ─────────────────────────── Grass ───────────────────────────
 const blade = new THREE.BufferGeometry();
@@ -3224,7 +3242,7 @@ function spawnVillagers() {
     villagers.push(Object.assign(w, { root, face, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
 }
-const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 120, at: () => VILLAGE }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
+const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 95, at: () => VILLAGE }, { name: 'KAWABE SHRINE · 川辺神社', r: 14, at: () => window.__shrine }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
 function updatePlaces() {   // the name of a place appears as you arrive
   for (const pl of PLACES) {
     const c = pl.at(); if (!c) continue;
@@ -3803,6 +3821,12 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     ember: new THREE.MeshStandardMaterial({ color: 0x220800, emissive: new THREE.Color(2.2, 0.55, 0.12), roughness: 1 }),
     lamp: new THREE.MeshStandardMaterial({ map: shoji, emissive: new THREE.Color(1.1, 0.72, 0.38), emissiveMap: shoji, roughness: 0.9 }),
     iron: new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.55, metalness: 0.6 }),
+    tile: TM(makeTex(256, (u, v) => {   // grey kawara tiles: rounded courses, overlapping rows
+      const cu = fract(u * 10), rv = fract(v * 7), round = Math.sin(cu * Math.PI), n = pfbm(u, v, 8, 3);
+      const k = (0.16 + 0.1 * round + 0.04 * n) * (0.7 + 0.3 * smooth(0, 0.2, rv)) * (rv > 0.93 ? 0.45 : 1);
+      return [k * 0.95, k, k * 1.08, round * 0.7 + (rv > 0.93 ? -0.4 : 0)];
+    }, [2, 2], 5), 0.55),
+    red: new THREE.MeshStandardMaterial({ color: 0xa8281a, roughness: 0.45 }),
   };
   let G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
   const _th = THREE.DataUtils.toHalfFloat;
@@ -3819,7 +3843,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     G[mat].push(geo.applyMatrix4(m4.compose(new THREE.Vector3(H.x + lx * c + lz * sn, H.base + ly, H.z - lx * sn + lz * c), q, one)));
   };
   const box = (H, mat, w, h, d, lx, ly, lz, rx, ry, rz) => piece(H, mat, new THREE.BoxGeometry(w, h, d), lx, ly, lz, rx, ry, rz);
-  function minka(x, z, yaw, w, d, big, R = rng32(Math.round(x * 13 + z * 7))) {
+  function minka(x, z, yaw, w, d, big, R = rng32(Math.round(x * 13 + z * 7)), two = false) {
     const c = Math.cos(yaw), sn = Math.sin(yaw);
     let lo = Infinity, hi = -Infinity;
     for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) { const gx = x + a * w / 2 * c + b * d / 2 * sn, gz = z - a * w / 2 * sn + b * d / 2 * c, gy = terrainH(gx, gz); lo = Math.min(lo, gy); hi = Math.max(hi, gy); }
@@ -3880,15 +3904,27 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     COLLIDERS_INIT.push({ x: x + w * 0.28 * c + (-d / 2 + 0.35) * sn, z: z - w * 0.28 * sn + (-d / 2 + 0.35) * c, r: 0.5 });
     box(H, 'wood', 0.95, 0.06, 0.6, -w * 0.05, ft + 0.3, d * 0.28); for (const a of [-1, 1]) for (const b of [-1, 1]) box(H, 'wood', 0.06, 0.26, 0.06, -w * 0.05 + a * 0.4, ft + 0.14, d * 0.28 + b * 0.24);
     box(H, 'paper', 0.5, 1.1, 0.02, -w * 0.12, ft + 1.4, -d / 2 + 0.06);
-    // steep thatched roof: two thick slabs, a ridge with crossed riders, and wooden gable ends
-    const half = d / 2 + ov, pitch = big ? 0.85 : 0.8, rise = half * Math.tan(pitch), slab = half / Math.cos(pitch) + 0.15, thick = 0.5;
-    for (const sd of [-1, 1]) box(H, 'thatch', w + ov * 2, thick, slab, 0, eave + rise / 2 - 0.05, sd * half / 2, sd * pitch, 0, 0);
-    box(H, 'thatch', w + ov * 2 - 0.4, 0.45, 0.9, 0, eave + rise + 0.05, 0);
-    box(H, 'wood', w + ov * 2 + 0.2, 0.18, 0.5, 0, eave + rise + 0.33, 0);
-    for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) box(H, 'wood', 0.08, 0.7, 0.08, -w / 2 - ov + 0.3 + i * (w + ov * 2 - 0.6) / 4, eave + rise + 0.45, 0, sd * 0.55, 0, 0);
+    let top = eave;
+    if (two) {   // a second storey: plastered walls with slatted windows, a pent roof over the street front, a board ceiling inside
+      const up = 2.3; top = eave + up;
+      box(H, 'wood', w - 0.2, 0.08, d - 0.2, 0, eave + 0.02, 0);
+      for (const sd of [-1, 1]) { box(H, 'plaster', w, up, 0.08, 0, eave + up / 2, sd * d / 2); box(H, 'plaster', 0.08, up, d, sd * w / 2, eave + up / 2, 0); }
+      for (const sd of [-1, 1]) for (let i = 0; i <= nx; i++) box(H, 'wood', 0.14, up, 0.14, -w / 2 + i * w / nx, eave + up / 2, sd * d / 2);
+      for (const y of [eave + 0.05, top - 0.06]) for (const sd of [-1, 1]) { box(H, 'wood', w + 0.1, 0.13, 0.16, 0, y, sd * d / 2); box(H, 'wood', 0.16, 0.13, d + 0.1, sd * w / 2, y, 0); }
+      for (let i = 0; i < nx; i++) { const px = -w / 2 + (i + 0.5) * w / nx; for (let k = 0; k < 7; k++) box(H, 'wood', 0.045, 0.8, 0.05, px - 0.42 + k * 0.14, eave + 1.2, d / 2 + 0.05); }   // mushiko lattice windows
+      const ph = 1.25; box(H, 'tile', w + 0.5, 0.12, ph, 0, eave + 0.3, d / 2 + ph / 2 - 0.1, 0.42, 0, 0);
+    }
+    // roof: steep thatch on farmhouses, lower grey tile on the townhouses; ridge, riders and wooden gable ends
+    const half = d / 2 + ov, pitch = two ? 0.55 : big ? 0.85 : 0.8, rise = half * Math.tan(pitch), slab = half / Math.cos(pitch) + 0.15, thick = two ? 0.2 : 0.5, roofM = two ? 'tile' : 'thatch';
+    for (const sd of [-1, 1]) box(H, roofM, w + ov * 2, thick, slab, 0, top + rise / 2 - 0.05, sd * half / 2, sd * pitch, 0, 0);
+    box(H, roofM, w + ov * 2 - 0.4, two ? 0.3 : 0.45, two ? 0.5 : 0.9, 0, top + rise + 0.05, 0);
+    if (!two) {
+      box(H, 'wood', w + ov * 2 + 0.2, 0.18, 0.5, 0, top + rise + 0.33, 0);
+      for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) box(H, 'wood', 0.08, 0.7, 0.08, -w / 2 - ov + 0.3 + i * (w + ov * 2 - 0.6) / 4, top + rise + 0.45, 0, sd * 0.55, 0, 0);
+    } else for (const sd of [-1, 1]) box(H, 'tile', 0.4, 0.5, 0.4, sd * (w / 2 + ov - 0.3), top + rise + 0.3, 0);   // onigawara end tiles
     for (const sd of [-1, 1]) {
       const tri = new THREE.Shape([new THREE.Vector2(-d / 2, 0), new THREE.Vector2(d / 2, 0), new THREE.Vector2(0, rise * d / 2 / half)]);
-      piece(H, 'wood', new THREE.ExtrudeGeometry(tri, { depth: 0.08, bevelEnabled: false }).translate(0, 0, -0.04), sd * w / 2, eave, 0, 0, Math.PI / 2, 0);
+      piece(H, two ? 'plaster' : 'wood', new THREE.ExtrudeGeometry(tri, { depth: 0.08, bevelEnabled: false }).translate(0, 0, -0.04), sd * w / 2, top, 0, 0, Math.PI / 2, 0);
     }
     // a few barrels, firewood and a rice-straw bundle by the door
     for (let k = 0; k < 2; k++) piece(H, 'wood', new THREE.CylinderGeometry(0.28, 0.25, 0.65, 12), -w / 2 - 0.5, 0.3 - fl + 0.2, d / 2 - 0.5 - k * 0.7);
@@ -3898,7 +3934,8 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     for (let a = -w / 2 - 1; a <= w / 2 + 1; a += 0.7) for (let b = -d / 2 - 1; b <= d / 2 + 1.6; b += 0.7) bareHM(x + a * c + b * sn, z - a * sn + b * c);
   }
   const PERP = [-VDIR[1], VDIR[0]], at = (u, v) => [VILLAGE[0] + VDIR[0] * u + PERP[0] * v, VILLAGE[1] + VDIR[1] * u + PERP[1] * v];
-  const layout = [[-34, 14, 7.5, 5.2], [-17, 15, 8.5, 5.6], [1, 15.5, 7.2, 5.2], [19, 14, 9, 5.8], [-32, -14, 8, 5.4], [-13, -15, 7.6, 5.2], [6, -15.5, 9.4, 6], [25, -13, 7.8, 5.4], [43, 1, 11, 6.5, true]];
+  const layout = [[-34, 12.5, 7.5, 5.2], [-17, 12.5, 8.5, 5.6], [1, 12.5, 7.2, 5.2], [19, 12.5, 9, 5.8], [-32, -12.5, 8, 5.4], [25, -12.5, 7.8, 5.4], [43, 1, 11, 6.5, true]];
+  const inPlaza = (u, v) => Math.abs(u) < 17 && v < -5 && v > -36;   // the shrine's square
   const placed = [];
   const fits = (x, z, yaw, w, d) => {
     const c = Math.cos(yaw), sn = Math.sin(yaw); let lo = 1e9, hi = -1e9;
@@ -3909,25 +3946,65 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
       lo = Math.min(lo, gy); hi = Math.max(hi, gy);
     }
     if (hi - lo > 2.4) return false;
-    const rad = Math.hypot(w, d) / 2 + 1.6;
+    const rad = Math.hypot(w, d) / 2 + 0.7;
     return placed.every(([px, pz, pr]) => Math.hypot(px - x, pz - z) > pr + rad);
   };
   const faceFor = v => Math.atan2(-(PERP[0] * Math.sign(v || 1)), -(PERP[1] * Math.sign(v || 1)));   // front looks towards the lane
   for (const [u, v, w, d, big] of layout) {
     const [x, z] = at(u, v);
     if (pathMask(x, z) > 0.05 || riverWet(x, z) > 0) continue;
-    minka(x, z, v === 1 ? Math.atan2(-VDIR[0], -VDIR[1]) : faceFor(v), w, d, big); placed.push([x, z, Math.hypot(w, d) / 2 + 1.6]);
+    minka(x, z, v === 1 ? Math.atan2(-VDIR[0], -VDIR[1]) : faceFor(v), w, d, big, undefined, Math.abs(u) < 25 && !big); placed.push([x, z, Math.hypot(w, d) / 2 + 0.7]);
   }
   { // the village grows along the river: more houses down the lane and along back lanes on both sides
     const RV = rng32(5150);
-    for (const v0 of [14.5, -14.5, 36, -36, 57, -57, 78, -78]) for (let u = -135; u <= 135; u += 12.5) {
-      if (HOUSES.length >= 46) break;
-      const big = RV() < 0.1, w = big ? 11 : 6.5 + RV() * 3.4, d = big ? 6.5 : 5 + RV() * 1.4, v = v0 + (RV() - 0.5) * 3, uu = u + (RV() - 0.5) * 4;
-      const [x, z] = at(uu, v), yaw = faceFor(v) + (RV() - 0.5) * 0.12;
+    for (const v0 of [12.5, -12.5, 25, -25, 37.5, -37.5]) for (let u = -84; u <= 84; u += 9.5) {
+      if (HOUSES.length >= 52) break;
+      const big = RV() < 0.08, w = big ? 10 : 6.2 + RV() * 2.6, d = big ? 6.3 : 5 + RV() * 1.1, v = v0 + (RV() - 0.5) * 1.5, uu = u + (RV() - 0.5) * 2;
+      if (inPlaza(uu, v) || inPlaza(uu + w / 2, v) || inPlaza(uu - w / 2, v)) continue;
+      const [x, z] = at(uu, v), yaw = faceFor(v) + (RV() - 0.5) * 0.06;
       if (!fits(x, z, yaw, w, d)) continue;
-      minka(x, z, yaw, w, d, big); placed.push([x, z, Math.hypot(w, d) / 2 + 1.6]);
+      minka(x, z, yaw, w, d, big, undefined, !big && (Math.abs(v0) < 13 ? RV() < 0.6 : RV() < 0.2)); placed.push([x, z, Math.hypot(w, d) / 2 + 0.7]);
       if (Math.abs(v0) === 14.5 && RV() < 0.5) { const [lx, lz] = at(uu + 6.5, v0 > 0 ? 3.3 : -3.3); if (pathMask(lx, lz) < 0.3) stoneLantern(lx, lz, Math.atan2(VDIR[0], VDIR[1])); }
     }
+  }
+  // ── the shrine on its square: stone terrace, vermilion hall with a tiled roof, offering box and bell, a torii at the street ──
+  {
+    const [sx, sz] = at(0, -24), yaw = faceFor(-24), sy = terrainH(sx, sz);
+    let lo = 1e9, hi = -1e9; for (const [a, b] of [[-5, -4], [5, -4], [-5, 4], [5, 4]]) { const gx = sx + a * Math.cos(yaw) + b * Math.sin(yaw), gz = sz - a * Math.sin(yaw) + b * Math.cos(yaw), gy = terrainH(gx, gz); lo = Math.min(lo, gy); hi = Math.max(hi, gy); }
+    const S = { x: sx, z: sz, yaw, base: hi + 0.1, c: Math.cos(yaw), s: Math.sin(yaw) }, tp = 0.7;
+    box(S, 'stone', 10.5, tp + hi - lo + 0.6, 8.5, 0, tp - (tp + hi - lo + 0.6) / 2, 0);                                   // terrace
+    for (let k = 0; k < 3; k++) box(S, 'stone', 3, 0.24, 0.5, 0, 0.12 + k * 0.23, 4.5 + (2 - k) * 0.42);                    // steps up to it
+    const fl = tp + 0.45, w = 6.4, d = 5, eave = fl + 2.7;
+    box(S, 'wood', w + 1.6, 0.14, d + 1.4, 0, fl, 0);                                                                       // raised floor with a gallery
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) box(S, 'red', 0.26, eave - tp, 0.26, a * w / 2, (eave + tp) / 2, b * d / 2);
+    for (const sd of [-1, 1]) box(S, 'red', 0.2, eave - fl, 0.2, sd * w / 2, (eave + fl) / 2, d / 2 + 1.2);                // front posts of the porch
+    box(S, 'plaster', w, eave - fl - 0.4, 0.1, 0, (eave + fl) / 2, -d / 2); for (const sd of [-1, 1]) box(S, 'plaster', 0.1, eave - fl - 0.4, d, sd * w / 2, (eave + fl) / 2, 0);
+    for (const y of [fl + 0.1, eave - 0.1]) { box(S, 'red', w + 0.3, 0.16, 0.2, 0, y, d / 2); box(S, 'red', w + 0.3, 0.16, 0.2, 0, y, -d / 2); }
+    box(S, 'wood', w - 0.6, eave - fl - 0.6, 0.05, 0, (eave + fl) / 2 - 0.1, -d / 2 + 0.2);                                 // the inner sanctum's doors
+    for (let k = 0; k < 6; k++) box(S, 'paper', 0.12, 0.6, 0.02, -0.75 + k * 0.3, eave - 0.6, d / 2 + 0.6, 0, 0, (k % 2 ? 1 : -1) * 0.25);   // shide streamers
+    piece(S, 'straw', new THREE.CylinderGeometry(0.11, 0.11, w + 0.4, 10).rotateZ(Math.PI / 2), 0, eave - 0.25, d / 2 + 0.6);   // shimenawa rope
+    box(S, 'wood', 1.4, 0.7, 0.8, 0, fl + 0.42, d / 2 + 1.6); box(S, 'wood', 1.5, 0.08, 0.9, 0, fl + 0.8, d / 2 + 1.6);   // offering box
+    piece(S, 'iron', new THREE.SphereGeometry(0.22, 14, 10), 0, eave - 0.55, d / 2 + 1.0); piece(S, 'red', new THREE.CylinderGeometry(0.035, 0.035, eave - fl - 1.3, 6), 0.06, fl + (eave - fl - 1.3) / 2 + 0.55, d / 2 + 1.05);   // bell and its rope
+    const half = d / 2 + 2.2, pitch = 0.5, rise = half * Math.tan(pitch), slab = half / Math.cos(pitch) + 0.3;
+    for (const sd of [-1, 1]) box(S, 'tile', w + 3.2, 0.26, slab, 0, eave + rise / 2, sd * half / 2 + (sd > 0 ? 0.6 : 0), sd * pitch, 0, 0);   // sweeping roof, longer at the front
+    box(S, 'tile', w + 2.8, 0.38, 0.6, 0, eave + rise + 0.12, 0);
+    for (const sd of [-1, 1]) for (const k of [-1, 1]) box(S, 'wood', 0.12, 1.3, 0.12, sd * (w / 2 + 1.5), eave + rise + 0.6, k * 0.25, k * 0.6, 0, 0);   // chigi: crossed finials
+    for (let i = 0; i < 4; i++) piece(S, 'wood', new THREE.CylinderGeometry(0.13, 0.13, 0.8, 8).rotateX(Math.PI / 2), -1.2 + i * 0.8, eave + rise + 0.4, 0);   // katsuogi logs on the ridge
+    for (const sd of [-1, 1]) { const tri = new THREE.Shape([new THREE.Vector2(-d / 2 - 0.4, 0), new THREE.Vector2(d / 2 + 0.4, 0), new THREE.Vector2(0, rise * 0.8)]);
+      piece(S, 'plaster', new THREE.ExtrudeGeometry(tri, { depth: 0.08, bevelEnabled: false }).translate(0, 0, -0.04), sd * w / 2, eave, 0, 0, Math.PI / 2, 0); }
+    // walk on the terrace and into the open front of the hall; walls and posts block
+    FLOORS.push({ x: sx, z: sz, c: S.c, s: S.s, hw: 5.25, hd0: -4.25, hd1: 4.25, y: S.base + tp }, { x: sx, z: sz, c: S.c, s: S.s, hw: w / 2 + 0.8, hd0: -d / 2 - 0.7, hd1: d / 2 + 0.7, y: S.base + fl + 0.07 });
+    for (let k = 0; k < 3; k++) FLOORS.push({ x: sx, z: sz, c: S.c, s: S.s, hw: 1.5, hd0: 4.25 + (2 - k) * 0.42 - 0.21, hd1: 4.25 + (2 - k) * 0.42 + 0.21, y: S.base + 0.24 + k * 0.23 });
+    const wc = (lx, lz) => COLLIDERS_INIT.push({ x: sx + lx * S.c + lz * S.s, z: sz - lx * S.s + lz * S.c, r: 0.3 });
+    for (let a = -w / 2; a <= w / 2; a += 0.5) wc(a, -d / 2); for (let b = -d / 2; b <= d / 2; b += 0.5) { wc(-w / 2, b); wc(w / 2, b); }
+    for (const sd of [-1, 1]) wc(sd * w / 2, d / 2 + 1.2); wc(0, d / 2 + 1.6);
+    // the torii where the square meets the street, lanterns either side
+    const [gx, gz] = at(0, -8.5), gy = terrainH(gx, gz), T = { x: gx, z: gz, yaw, base: gy, c: Math.cos(yaw), s: Math.sin(yaw) };
+    for (const sd of [-1, 1]) { piece(T, 'red', new THREE.CylinderGeometry(0.2, 0.24, 4.4, 14), sd * 1.9, 2.2, 0); piece(T, 'stone', new THREE.CylinderGeometry(0.3, 0.32, 0.35, 12), sd * 1.9, 0.17, 0); COLLIDERS_INIT.push({ x: gx + sd * 1.9 * T.c, z: gz - sd * 1.9 * T.s, r: 0.3 }); }
+    box(T, 'red', 4.6, 0.26, 0.3, 0, 3.6, 0); box(T, 'red', 5.6, 0.3, 0.45, 0, 4.45, 0); box(T, 'wood', 6.0, 0.2, 0.5, 0, 4.68, 0, 0, 0, 0);   // nuki, kasagi
+    box(T, 'wood', 0.35, 0.8, 0.12, 0, 4.0, 0.12);
+    for (const sd of [-1, 1]) { const [lx, lz] = at(sd * 3.2, -10.5); stoneLantern(lx, lz, yaw); }
+    window.__shrine = [sx, sz];
   }
   // the well in the square, stone lanterns along the lane, bamboo fences behind the houses, rice drying racks by the river
   { const [x, z] = at(-6, 5.5), y = terrainH(x, z), H = { x, z, yaw: 0.3, base: y };
@@ -3937,11 +4014,31 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     piece(H, 'thatch', new THREE.BoxGeometry(2.3, 0.12, 1.1), 0, 2.05, 0.4, 0.45); piece(H, 'thatch', new THREE.BoxGeometry(2.3, 0.12, 1.1), 0, 2.05, -0.4, -0.45);
     COLLIDERS_INIT.push({ x, z, r: 0.95 }); }
   for (const [u, v] of [[-46, 3.2], [-46, -3.2], [-22, 3.4], [12, -3.4], [33, 3.4]]) { const [x, z] = at(u, v); stoneLantern(x, z, Math.atan2(VDIR[0], VDIR[1])); }
-  for (const sv of [-1, 1]) for (let u = -40; u <= 32; u += 1.1) {
-    const [x, z] = at(u, sv * 22.5), y = terrainH(x, z); if (riverWet(x, z) > 0) continue;
-    const H = { x, z, yaw: Math.atan2(VDIR[0], VDIR[1]), base: y };
-    box(H, 'straw', 0.07, 1.2, 0.07, 0, 0.6, 0); box(H, 'straw', 0.05, 0.05, 1.12, 0, 0.45, 0); box(H, 'straw', 0.05, 0.05, 1.12, 0, 0.95, 0);
+  // ── a stout wooden fence round the village: posts, two rails and diagonal braces, gaps for the road and the river ──
+  {
+    const U = VMUD.U - 1, Vh = VMUD.V - 1, yawU = Math.atan2(VDIR[0], VDIR[1]), sides = [];
+    for (let u = -U; u <= U; u += 2.4) { sides.push([u, -Vh, 0]); sides.push([u, Vh, 0]); }
+    for (let v = -Vh + 2.4; v < Vh; v += 2.4) { sides.push([-U, v, 1]); sides.push([U, v, 1]); }
+    for (const [u, v, along] of sides) {
+      const [x, z] = at(u, v); if (riverWet(x, z) > 0 || pathMask(x, z) > 0.12 || houseAt(x, z, -1.2)) continue;
+      const y = terrainH(x, z), F = { x, z, yaw: along ? yawU + Math.PI / 2 : yawU, base: y };
+      // F's local x runs along the fence line
+      box(F, 'wood', 0.22, 2.3, 0.22, 0, 1.0, 0); box(F, 'wood', 0.12, 0.2, 0.12, 0, 2.2, 0, 0.3, 0, 0);
+      const [nx, nz] = along ? at(u, v + 2.4) : at(u + 2.4, v);
+      if (riverWet(nx, nz) > 0 || pathMask(nx, nz) > 0.12 || houseAt(nx, nz, -1.2)) continue;
+      const ny = terrainH(nx, nz), tilt = Math.atan2(ny - y, 2.4);
+      for (const ry of [0.65, 1.55]) box(F, 'wood', 2.45, 0.16, 0.1, 1.2, ry + (ny - y) / 2, 0.14, 0, 0, tilt);
+      box(F, 'wood', 2.6, 0.12, 0.08, 1.2, 1.1 + (ny - y) / 2, 0.22, 0, 0, tilt + 0.5);   // diagonal brace
+      for (let k = 0; k <= 5; k++) COLLIDERS_INIT.push({ x: x + (nx - x) * k / 5, z: z + (nz - z) * k / 5, r: 0.22 });
+    }
   }
+  // the village ground: trodden mud right up to the fence (no meadow grass between the houses)
+  { const i0 = Math.floor((VMUD.cx - 130 - HM_MIN) / HM_SIZE * (HM - 1)), i1 = Math.ceil((VMUD.cx + 130 - HM_MIN) / HM_SIZE * (HM - 1)), j0 = Math.floor((VMUD.cz - 130 - HM_MIN) / HM_SIZE * (HM - 1)), j1 = Math.ceil((VMUD.cz + 130 - HM_MIN) / HM_SIZE * (HM - 1));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = HM_MIN + i / (HM - 1) * HM_SIZE, z = HM_MIN + j / (HM - 1) * HM_SIZE, vm = villageMud(x, z), o = (j * HM + i) * 4 + 1;
+      if (vm > 0.01 && HMF[o] < vm && riverWet(x, z) === 0) { HMF[o] = vm; hmTex.image.data[o] = _th(vm); }
+    }
+    hmTex.needsUpdate = true; }
   for (let k = 0; k < 3; k++) {
     const [x, z] = at(30 + k * 6, 24), y = terrainH(x, z), H = { x, z, yaw: Math.atan2(VDIR[0], VDIR[1]) + Math.PI / 2, base: y };
     if (riverWet(x, z) > 0) continue;
@@ -3982,6 +4079,7 @@ const SPECIES = [
     const h = sampleHM(x, z, 0); if (h < 1.1 || h > 60) return false;
     if (pathMask(x, z) > 0.03 || riverWet(x, z) > 0 || _rd < _rw + 3) return false;
     if (Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 9) return false;
+    if (window.__shrine && Math.hypot(x - window.__shrine[0], z - window.__shrine[1]) < 17) return false;   // keep the shrine square open
     for (const hs of VILLAGE_HOUSES) if (Math.hypot(hs.x - x, hs.z - z) < hs.w / 2 + 7) return false;
     if (Math.abs(sampleHM(x + 2, z, 0) - sampleHM(x - 2, z, 0)) > 2.4) return false;   // not on cliffs
     return mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
