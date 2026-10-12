@@ -3549,7 +3549,7 @@ function updatePlaces() {   // the name of a place appears as you arrive
 function updateVillagers(dt, t) {
   if ((frameNo & 15) === 0) updatePlaces();
   if (!FAMILY.length && (frameNo & 63) === 0) spawnFamily();
-  updateFamily(dt); updatePrisoners(dt); updateDeer(dt); updateBamboo(dt); updateFleet(dt, t);
+  updateFamily(dt); updatePrisoners(dt); updateDeer(dt); updateBamboo(dt); updateFleet(dt, t); updateSkyLanterns(dt, t);
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
     const dx = player.pos.x - v.pos.x, dz = player.pos.z - v.pos.z, dP = Math.hypot(dx, dz);
@@ -4573,10 +4573,10 @@ const DEER = [];
   const tint = (g, r, gg, b, white) => { const p = g.attributes.position, c = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) { const w = white ? white(p.getX(i), p.getY(i), p.getZ(i)) : 0; c[i * 3] = lerp(r, 0.92, w); c[i * 3 + 1] = lerp(gg, 0.88, w); c[i * 3 + 2] = lerp(b, 0.8, w); } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g.index ? g.toNonIndexed() : g; };
   const torso = new THREE.CapsuleGeometry(0.21, 0.72, 4, 10).rotateX(Math.PI / 2).scale(0.85, 1, 1).translate(0, 0.98, 0);
   const rump = new THREE.SphereGeometry(0.17, 8, 6).scale(1, 1, 0.5).translate(0, 1.0, -0.5), tail = new THREE.ConeGeometry(0.05, 0.16, 5).rotateX(-2.4).translate(0, 1.06, -0.58);
-  const bodyGeo = mergeGeometries([tint(torso, 0.42, 0.26, 0.15, (x, y) => smooth(0.92, 0.82, y) * 0.8), tint(rump, 0.9, 0.86, 0.8), tint(tail, 0.3, 0.2, 0.12)]);
+  const bodyGeo = mergeGeometries([tint(torso, 0.58, 0.33, 0.17, (x, y) => smooth(0.92, 0.82, y) * 0.8), tint(rump, 0.9, 0.86, 0.8), tint(tail, 0.3, 0.2, 0.12)]);
   const neck = new THREE.CylinderGeometry(0.075, 0.11, 0.52, 7).translate(0, 0.26, 0).rotateX(0.55), skull = new THREE.ConeGeometry(0.085, 0.34, 7).rotateX(Math.PI / 2 + 0.35).translate(0, 0.5, 0.42);
   const earL = new THREE.ConeGeometry(0.045, 0.14, 4).rotateZ(0.9).translate(-0.08, 0.6, 0.25), earR = new THREE.ConeGeometry(0.045, 0.14, 4).rotateZ(-0.9).translate(0.08, 0.6, 0.25);
-  const headGeo = mergeGeometries([tint(neck, 0.4, 0.25, 0.14), tint(skull, 0.38, 0.24, 0.14), tint(earL, 0.32, 0.2, 0.12), tint(earR, 0.32, 0.2, 0.12)]);
+  const headGeo = mergeGeometries([tint(neck, 0.52, 0.31, 0.16), tint(skull, 0.5, 0.3, 0.16), tint(earL, 0.32, 0.2, 0.12), tint(earR, 0.32, 0.2, 0.12)]);
   const legGeo = tint(new THREE.CylinderGeometry(0.03, 0.022, 0.9, 5).translate(0, -0.45, 0), 0.34, 0.22, 0.13);
   const R = rng32(8080), herds = [];
   for (let i = 0; i < 9000 && herds.length < 5; i++) {
@@ -4588,7 +4588,7 @@ const DEER = [];
     for (let k = 0; k < 4 + (hi % 2); k++) {
       const root = new THREE.Group(), body = new THREE.Mesh(bodyGeo, coat), head = new THREE.Mesh(headGeo, coat); head.position.set(0, 1.08, 0.42); root.add(body, head);
       const legs = [[-0.12, 0.34], [0.12, 0.34], [-0.12, -0.36], [0.12, -0.36]].map(([lx, lz]) => { const m = new THREE.Mesh(legGeo, coat); m.position.set(lx, 0.92, lz); root.add(m); return m; });
-      body.castShadow = head.castShadow = true; const s = 0.85 + R() * 0.3; root.scale.setScalar(s);
+      body.castShadow = head.castShadow = true; const s = 1.12 + R() * 0.25; root.scale.setScalar(s);
       const x = hx + (R() - 0.5) * 14, z = hz + (R() - 0.5) * 14; scene.add(root); REFL_HIDE.push(root);
       DEER.push({ root, head, legs, herd: [hx, hz], pos: new THREE.Vector3(x, terrainH(x, z), z), yaw: R() * 6.28, vel: new THREE.Vector3(), state: 'graze', t: R() * 5, phase: R() * 6, fleeT: 0, look: 0, idx: DEER.length });
     }
@@ -5224,6 +5224,26 @@ const FLEET = [];
     g.position.set(x, 0, z); g.rotation.y = a + Math.PI / 2 + (Math.random() - 0.5) * 0.5; g.traverse(o => { if (o.isMesh) o.castShadow = false; });
     scene.add(g); FLEET.push({ g, x, z, ph: k * 1.3, leave: 0 });
   }
+}
+// ── Sky lanterns: once the island is free, Kawabe sends paper lanterns up into the night ──
+const SKY_LANTERNS = (() => {
+  const N = 70, g = new THREE.CylinderGeometry(0.2, 0.15, 0.5, 8, 1, true), m = new THREE.MeshStandardMaterial({ color: 0xffd9a0, emissive: 0xff9a3a, emissiveIntensity: 2.4, side: THREE.DoubleSide, roughness: 1, transparent: true, opacity: 0.92 });
+  const im = new THREE.InstancedMesh(g, m, N); im.frustumCulled = false; im.visible = false; scene.add(im); REFL_HIDE.push(im);
+  const L = Array.from({ length: N }, (_, i) => ({ x: 0, y: -999, z: 0, v: 0, ph: i * 1.7 }));
+  return { im, L };
+})();
+const _lm = new THREE.Matrix4(), _lq = new THREE.Quaternion(), _lp = new THREE.Vector3(), _ls = new THREE.Vector3(1, 1, 1), _le = new THREE.Euler();
+function updateSkyLanterns(dt, t) {
+  const P = PRESETS[presetIdx], on = STORY.done && (P.fromMoon || P.name === 'SUNSET') && !P.rain, S = SKY_LANTERNS;
+  S.im.visible = on || S.L.some(l => l.y > -900 && l.y < 260); if (!S.im.visible) return;
+  S.L.forEach((l, i) => {
+    if (l.y < -900 || l.y > 260) { if (!on || Math.random() > dt * 1.2) { l.y = -999; _lm.makeScale(0, 0, 0); S.im.setMatrixAt(i, _lm); return; }
+      const a = Math.random() * 6.28, r = Math.random() * 26; l.x = VILLAGE[0] + Math.cos(a) * r; l.z = VILLAGE[1] + Math.sin(a) * r; l.y = groundH(l.x, l.z) + 7; l.v = 0.7 + Math.random() * 0.6; }
+    l.y += l.v * dt; l.x += (0.6 + Math.sin(t * 0.3 + l.ph) * 0.4) * dt; l.z += Math.cos(t * 0.23 + l.ph) * 0.35 * dt;   // rising on the warm air, drifting with the wind
+    _lq.setFromEuler(_le.set(Math.sin(t * 0.9 + l.ph) * 0.08, l.ph, Math.cos(t * 0.7 + l.ph) * 0.08));
+    S.im.setMatrixAt(i, _lm.compose(_lp.set(l.x, l.y, l.z), _lq, _ls));
+  });
+  S.im.instanceMatrix.needsUpdate = true;
 }
 function updateFleet(dt, t) {
   for (const s of FLEET) {
