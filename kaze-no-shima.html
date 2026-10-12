@@ -2006,6 +2006,51 @@ addEventListener('mousemove', e => {
     lookPitch = Math.max(-0.35, Math.min(1.1, lookPitch + e.movementY * 0.0034));
   }
 });
+// ── Invisible touch controls (phones/tablets): nothing drawn on screen ──
+// Left half: drag to walk (drag far to sprint), double-tap to mount/dismount.
+// Right half: drag to look, tap to strike, double-tap to jump, hold still ~0.6 s to draw/sheathe. Three fingers: call the horse.
+{
+  const T = new Map(); let lastL = 0, lastR = 0;
+  const setMove = (dx, dy) => { const d = Math.hypot(dx, dy), on = d > 14;
+    keys.KeyW = on && dy < -d * 0.38; keys.KeyS = on && dy > d * 0.38; keys.KeyA = on && dx < -d * 0.38; keys.KeyD = on && dx > d * 0.38;
+    keys.ShiftLeft = on && d > 75; };
+  const opt = { passive: false };
+  renderer.domElement.style.touchAction = 'none';
+  addEventListener('touchstart', e => {
+    if (e.touches.length >= 3 && started) { hs.called = true; return; }
+    for (const t of e.changedTouches) {
+      const left = t.clientX < innerWidth / 2, now = performance.now();
+      T.set(t.identifier, { left, x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY, t0: now, moved: false });
+      if (!started) continue;
+      const r = T.get(t.identifier);
+      if (left) { if (now - lastL < 300) toggleMount(); lastL = now; }
+      else if (now - lastR < 300) { keys.Space = true; setTimeout(() => keys.Space = false, 150); lastR = 0; r.held = true; }
+      else lastR = now;
+      if (!left) r.hold = setTimeout(() => { if (!r.moved && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); r.held = true; } }, 600);
+    }
+    if (started) e.preventDefault();
+  }, opt);
+  addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      const r = T.get(t.identifier); if (!r) continue;
+      if (Math.hypot(t.clientX - r.x0, t.clientY - r.y0) > 10) r.moved = true;
+      if (r.left) setMove(t.clientX - r.x0, t.clientY - r.y0);
+      else { lookYaw -= (t.clientX - r.x) * 0.006; lookPitch = Math.max(-0.35, Math.min(1.1, lookPitch + (t.clientY - r.y) * 0.005)); }
+      r.x = t.clientX; r.y = t.clientY;
+    }
+    e.preventDefault();
+  }, opt);
+  const end = e => {
+    for (const t of e.changedTouches) {
+      const r = T.get(t.identifier); if (!r) continue;
+      clearTimeout(r.hold);
+      if (r.left) setMove(0, 0);
+      else if (started && !r.moved && !r.held && performance.now() - r.t0 < 300) startSlash();
+      T.delete(t.identifier);
+    }
+  };
+  addEventListener('touchend', end, opt); addEventListener('touchcancel', end, opt);
+}
 function toggleMount() {
   if (player.mounted) {
     player.mounted = false;
