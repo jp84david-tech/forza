@@ -103,7 +103,7 @@ addEventListener('unhandledrejection', e => { const g = document.getElementById(
   <div class="go" id="go">LOADING THE ISLAND…</div>
   <div class="keys">
     W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — sprint / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse &nbsp;·&nbsp; R — open doors &nbsp;·&nbsp; V — wave<br>
-    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; Q — block / parry &nbsp;·&nbsp; X — assassinate &nbsp;·&nbsp; 1–8 — time of day &amp; weather &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
+    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; Q — block / parry &nbsp;·&nbsp; X — assassinate &nbsp;·&nbsp; J — guiding wind &nbsp;·&nbsp; 1–8 — time of day &amp; weather &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
 </div>
@@ -4924,7 +4924,9 @@ function updateWorld(dt, t) {
       petalPal = tot > 0 ? Object.entries(near).flatMap(([k, w]) => Array(Math.max(1, Math.round(w / tot * 10))).fill(PETAL_COL[k]).flat()) : [0xf2b8c8, 0xfaf2f4, 0xb02a14];
       petals.userData.dens = Math.min(1, 0.35 + tot * 0.25);
     }
-    const P = petals.userData.p, wx = 0.94, wz = 0.33, sp = 1.6 + gust * 4.5, cam = camera.position, fw = camera.getWorldDirection(_pv1), mtx = _pm1, dens = petals.userData.dens ?? 0.6;
+    if (window.__guideWind && window.__guideWind.t > 0) { window.__guideWind.t -= dt; petals.userData.dens = 1; }
+    const GW = window.__guideWind, gk = GW && GW.t > 0 ? Math.min(1, GW.t / 1.5) : 0;
+    const wx = lerp(0.94, GW ? GW.x : 0.94, gk), wz = lerp(0.33, GW ? GW.z : 0.33, gk), P = petals.userData.p, sp = 1.6 + gust * 4.5 + gk * 3, cam = camera.position, fw = camera.getWorldDirection(_pv1), mtx = _pm1, dens = petals.userData.dens ?? 0.6;
     for (let i = 0; i < P.length; i++) {
       const q = P[i];
       if (i > P.length * dens) { if (q.pos.y > -900) { q.pos.y = -999; petals.setMatrixAt(i, mtx.makeScale(0, 0, 0)); } continue; }   // fewer petals away from blossom
@@ -5549,7 +5551,7 @@ const storyUI = (() => {
   const obj = mk('position:fixed;left:22px;top:104px;color:#f4e9d8;font:14px/1.5 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 6px #000;z-index:20;max-width:360px;opacity:0;transition:opacity .6s;pointer-events:none');
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
-    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>X</b> — assassinate from behind<br>
+    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>X</b> — assassinate from behind<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
     <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — call your horse<br><b>R</b> — open / close doors<br>
     <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
@@ -5653,6 +5655,21 @@ function assassinate() {
   if (!sword.drawn) { sword.drawn = true; audio.draw(); }
   startSlash(); hitEnemy(e, 99, new THREE.Vector3(e.pos.x, e.pos.y + 1.4, e.pos.z)); hitStop = 0.3; toast('ASSASSINATION', 1100);
 }
+// The guiding wind (J): the wind turns and carries the petals towards whatever you are seeking
+function objectiveTarget() {
+  if (STORY.step === 0 && villagers[2]) return villagers[2].pos;
+  const C = window.__castle;
+  if (STORY.guards || !C) return C ? new THREE.Vector3(C.x, C.y, C.z) : null;
+  let best = null, bd = 1e9;
+  for (const cp of window.__camps2 || []) { if (cp.castle || STORY.cleared.has(cp.x.toFixed(0) + ',' + cp.z.toFixed(0))) continue; const d = Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z); if (d < bd) { bd = d; best = new THREE.Vector3(cp.x, 0, cp.z); } }
+  return best || new THREE.Vector3(C.x, C.y, C.z);
+}
+function guidingWind() {
+  const T = objectiveTarget(); if (!T) return;
+  const dx = T.x - player.pos.x, dz = T.z - player.pos.z, l = Math.hypot(dx, dz) || 1;
+  window.__guideWind = { x: dx / l, z: dz / l, t: 7 };
+  audio.splash?.(0.2); toast(Math.round(l) + ' m', 1500);
+}
 function rest() {
   if (player.mounted || !nearHearth() || CINE.on) return;
   fadeEl.style.opacity = 1;
@@ -5669,6 +5686,7 @@ addEventListener('keydown', e => {
   if (e.code === 'F1' || e.code === 'KeyI') { e.preventDefault(); storyUI.help.style.display = storyUI.help.style.display === 'flex' ? 'none' : 'flex'; if (storyUI.help.style.display === 'flex') document.exitPointerLock?.(); }
   if (e.code === 'KeyZ') rest();
   if (e.code === 'KeyX') assassinate();
+  if (e.code === 'KeyJ') guidingWind();
   if (e.code === 'KeyQ' && !e.repeat) { BLOCK.on = true; BLOCK.t0 = clock.elapsedTime; }
   if (e.code === 'KeyB') bowHello();
   const d = /^Digit([1-8])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
