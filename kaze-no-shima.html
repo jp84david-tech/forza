@@ -2954,6 +2954,7 @@ const ARMOUR_PALETTES = {
   hero:   { plate: [0.1, 0.12, 0.16], cord: [0.5, 0.05, 0.04], knot: [0.9, 0.7, 0.28], under: [0.02, 0.024, 0.04], sash: 0x5a0e0c, trim: 0xc09a48 },
   bandit: { plate: [0.12, 0.09, 0.06], cord: [0.16, 0.2, 0.12], knot: [0.35, 0.3, 0.2], under: [0.05, 0.045, 0.04], sash: 0x3a3428, trim: 0x6a5a40, hat: 'kasa' },
   khan:   { plate: [0.62, 0.42, 0.12], cord: [0.45, 0.04, 0.03], knot: [0.95, 0.8, 0.35], under: [0.07, 0.025, 0.02], sash: 0x6a0e0a, trim: 0xe8b84a, hat: 'mongol', lamellar: true, face: 'mongol' },
+  ronin:  { plate: [0.07, 0.055, 0.065], cord: [0.36, 0.07, 0.32], knot: [0.82, 0.78, 0.72], under: [0.035, 0.03, 0.045], sash: 0x2a0c2e, trim: 0x9a9aa8, hat: 'kasa' },
   mongol: { plate: [0.4, 0.24, 0.11], cord: [0.06, 0.32, 0.34], knot: [0.9, 0.68, 0.22], under: [0.2, 0.05, 0.035], sash: 0x1d5a5e, trim: 0xc89a3a, hat: 'mongol', lamellar: true, face: 'mongol' },
 };
 const lacquer = (tex, rough = 0.38) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: rough, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2, side: THREE.DoubleSide, envMapIntensity: 0.8 });
@@ -3824,7 +3825,7 @@ function hitEnemy(e, dmg, p) {
   hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.hit();
   for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
-  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? 'JARGHAL KHAN FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35); }
+  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35); }
 }
 const BLOCK = { on: false, t0: -9 };
 let curFoe = null;   // whose blade is being checked against you
@@ -3884,7 +3885,7 @@ function updateEnemy(e, dt, t) {
     moveEnemy(e, dt, 0, 0, 0); if (dP < 25) e.yaw += angDiff(e.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 3);
   } else {
     const fromHome = Math.hypot(player.pos.x - e.home.x, player.pos.z - e.home.z);
-    const engaged = !player.dead && dP < (e.state === 'chase' ? 24 : 15) && fromHome < 48;
+    const engaged = !player.dead && !e.passive && dP < (e.state === 'chase' ? 24 : 15) && fromHome < 48;
     if (engaged) {
       if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); if (!subQueue.length && Math.random() < 0.6 && !e.boss) say([['Mongol: There! The samurai!', 'Mongol: Kill him!', 'Mongol: Surround him!', 'Mongol: For the Khan!', 'Mongol: Archers — loose!'][Math.floor(Math.random() * 5)]]); }
       e.sw.drawn = true;
@@ -6053,13 +6054,15 @@ function introShots() {
 }
 const STORY = { step: 0, said: false, cleared: new Set(), castleSeen: false, done: false };
 try { Object.assign(STORY, JSON.parse(localStorage.getItem('kns-story') || '{}'), { cleared: new Set(JSON.parse(localStorage.getItem('kns-story') || '{}').cleared || []) }); } catch (e) {}
+if (STORY.ronin) player.maxHp += 15;   // the duel's reward stays won
+(STORY.sp || []).forEach(i => { if (SPRINGS[i] && !SPRINGS[i].used) { SPRINGS[i].used = true; player.maxHp += 10; } }); player.hp = player.maxHp;
 (STORY.hk || []).forEach(i => { if (HAIKU[i]) HAIKU[i].done = true; }); RESOLVE.max = Math.min(6, 3 + (STORY.hk || []).length);   // poems you've written stay written
 const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); } catch (e) {} };
 let subQueue = [], subT = 0;
 function say(lines) { subQueue = lines.slice(); subT = 0; }
 // Jarghal Khan: waits in the keep's upper room with his prisoners once his guard has fallen
 const bossUI = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:50%;top:22px;transform:translateX(-50%);width:min(520px,70vw);text-align:center;color:#f4e9d8;font:13px Georgia,serif;letter-spacing:5px;z-index:21;opacity:0;transition:opacity .5s;pointer-events:none;text-shadow:0 2px 6px #000';
-  d.innerHTML = 'JARGHAL KHAN<div style="height:6px;margin-top:6px;background:rgba(0,0,0,.5);border:1px solid rgba(244,233,216,.4)"><div id="bossfill" style="height:100%;width:100%;background:linear-gradient(90deg,#7a1010,#c0301c)"></div></div>'; document.body.appendChild(d); return d; })();
+  d.innerHTML = '<span id="bossname">JARGHAL KHAN</span><div style="height:6px;margin-top:6px;background:rgba(0,0,0,.5);border:1px solid rgba(244,233,216,.4)"><div id="bossfill" style="height:100%;width:100%;background:linear-gradient(90deg,#7a1010,#c0301c)"></div></div>'; document.body.appendChild(d); return d; })();
 let KHAN = null;
 function spawnKhan() {
   if (KHAN || !soldierGLTF || !window.__castle) return;
@@ -6126,13 +6129,41 @@ function endingScene() {
       cam: () => [_V(C.x - C.s * 200, C.y + 90, C.z - C.c * 200), _V(C.x - C.s * 340, C.y + 150, C.z - C.c * 340), _V(C.x, C.y, C.z), _V(0, 20, 0)] });
   playCine(shots, () => { for (const f of FAMILY) f.talking = false; toast('THE ISLAND IS YOURS TO WANDER', 3000); }, 1);
 }
+// ── A duel at the summit shrine: Kuroda Sanjūrō, your father's old comrade, now the Khan's sword ──
+let RONIN = null;
+function updateRonin() {
+  const sm = window.__summit; if (!sm || STORY.ronin || !soldierGLTF) return;
+  const dS = Math.hypot(sm[0] - player.pos.x, sm[1] - player.pos.z);
+  if (!RONIN) { if (dS > 160) return;
+    let x = sm[0] + 3, z = sm[1] + 3; for (let k = 0; k < 12 && !walkable(x, z); k++) { x = sm[0] + Math.cos(k) * 4; z = sm[1] + Math.sin(k) * 4; }
+    RONIN = makeBandit({ x, z }, enemies.length, 'ronin'); Object.assign(RONIN, { hp: 12, maxHp: 12, brute: true, boss: true, bossName: 'KURODA SANJŪRŌ', passive: true, atkCool: 0.8 }); RONIN.root.scale.setScalar(1.05); }
+  const R = RONIN, d = R.pos.distanceTo(player.pos);
+  if (R.passive && R.alive && d < 11 && !CINE.on && !player.mounted && Math.abs(R.pos.y - player.pos.y) < 3) {
+    R.yaw = Math.atan2(player.pos.x - R.pos.x, player.pos.z - R.pos.z); player.yaw = R.yaw + Math.PI; player.vel.set(0, 0, 0);
+    if (d > 4.5) { player.pos.x = R.pos.x + Math.sin(R.yaw) * 4; player.pos.z = R.pos.z + Math.cos(R.yaw) * 4; player.pos.y = groundH(player.pos.x, player.pos.z); }
+    R.root.position.copy(R.pos); R.root.rotation.set(0, R.yaw, 0); R.root.updateMatrixWorld(true);
+    const actors = { 'Kuroda': { head: () => headOf(R) }, 'Kenshin': { head: () => headOf(soldier), talk: on => { soldier.talking = on; } } };
+    const shots = talkShots(actors, [
+      'Kuroda: Arata Kenshin. The Khan said you would climb this mountain one day.',
+      'Kenshin: Kuroda-san... You fought beside my father. Now you guard the Khan’s road?',
+      'Kuroda: Your father died waiting for a lord who never came. I chose to live.',
+      'Kenshin: Then live. Step aside.',
+      'Kuroda: Draw your sword, boy. Let the mountain decide which of us was right.',
+    ], { wideText: '' });
+    shots.push({ dur: 2.4, cut: true, fov: [40, 46], hand: 0.01, start: () => { R.sw.drawn = true; sword.drawn = true; audio.draw(); audio.draw(0.8); },
+      cam: () => { const a = headOf(R), b = headOf(soldier), m = a.clone().lerp(b, 0.5), dd = b.clone().sub(a); dd.y = 0; dd.normalize(); const n = _V(-dd.z, 0, dd.x); return [m.clone().addScaledVector(n, 3.4).add(_V(0, -0.6, 0)), m.clone().addScaledVector(n, 2.8).add(_V(0, -0.7, 0)), m.clone().add(_V(0, -0.4, 0)), m.clone().add(_V(0, -0.4, 0))]; } });
+    playCine(shots, () => { R.passive = false; R.state = 'chase'; });
+  }
+  if (!R.passive && (!KHAN || !KHAN.alive || KHAN.pos.distanceTo(player.pos) > 30)) { bossUI.style.opacity = d < 30 && R.alive ? 1 : 0; if (d < 30) { document.getElementById('bossname').textContent = 'KURODA SANJŪRŌ'; document.getElementById('bossfill').style.width = Math.max(0, R.hp / R.maxHp * 100) + '%'; } }
+  if (!R.alive) { STORY.ronin = true; saveStory(); bossUI.style.opacity = 0; player.maxHp += 15; player.hp = player.maxHp; say(['Kuroda: ...The mountain... chose well. Tell your father... I am sorry.']); toast('DUEL WON · MAXIMUM HEALTH +15', 3000); }
+}
 function objectiveText() {
   const n = (window.__camps2 || []).filter(c => !c.castle).length;
   if (STORY.done) return '<b>Your family is safe.</b><br>The island is yours to wander.';
   if (STORY.step === 0) return '<b>OBJECTIVE</b><br>Find Elder Genjirō in Kawabe village';
   if (STORY.guards && !STORY.khan) return '<b>OBJECTIVE</b><br>Climb the keep at Shirasagi. Jarghal Khan holds your family in the upper room — defeat him';
   if (STORY.guards) return '<b>OBJECTIVE</b><br>Go to Yuki and Hana in the upper room';
-  return `<b>OBJECTIVE</b><br>Free the island — Mongol camps taken: ${STORY.cleared.size} / ${n}<br>Climb to Shirasagi Castle and defeat the Khan's guard`;
+  return (STORY.ronin ? '' : '<span style="opacity:.7">A lone swordsman waits at the summit shrine</span><br>') + `<b>OBJECTIVE</b><br>Free the island — Mongol camps taken: ${STORY.cleared.size} / ${n}<br>Climb to Shirasagi Castle and defeat the Khan's guard`;
 }
 function updateStory(raw) {
   if (!started || CINE.on) return;
@@ -6168,11 +6199,12 @@ function updateStory(raw) {
   if (STORY.guards && !STORY.khan) {
     spawnKhan();
     if (KHAN) {
-      const d = KHAN.pos.distanceTo(player.pos); bossUI.style.opacity = d < 30 && KHAN.alive ? 1 : 0; document.getElementById('bossfill').style.width = Math.max(0, KHAN.hp / KHAN.maxHp * 100) + '%';
+      const d = KHAN.pos.distanceTo(player.pos); bossUI.style.opacity = d < 30 && KHAN.alive ? 1 : 0; if (d < 30) document.getElementById('bossname').textContent = 'JARGHAL KHAN'; document.getElementById('bossfill').style.width = Math.max(0, KHAN.hp / KHAN.maxHp * 100) + '%';
       if (d < 9 && !KHAN.taunted && Math.abs(KHAN.pos.y - player.pos.y) < 2) { KHAN.taunted = true; khanScene(); }
       if (!KHAN.alive) { STORY.khan = true; saveStory(); bossUI.style.opacity = 0; toast('JARGHAL KHAN IS DEAD', 3000); }
     }
   }
+  updateRonin();
   if (STORY.guards && STORY.khan && !STORY.done && FAMILY.length && FAMILY[0].pos.distanceTo(player.pos) < 3.2) {
     STORY.done = true; saveStory(); endingScene();
   }
@@ -6256,7 +6288,7 @@ function updateStandoff(raw) {
   const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
   if (S.phase === 'approach') {
     const mx = e.standMark.x - e.pos.x, mz = e.standMark.z - e.pos.z, md = Math.hypot(mx, mz);
-    if (md > 0.35 && S.t < 6) { e.vel.x = mx / md * 1.7; e.vel.z = mz / md * 1.7; e.yaw += angDiff(e.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * 5); }
+    if (md > 0.35 && S.t < 14) { e.vel.x = mx / md * 2.8; e.vel.z = mz / md * 2.8; e.yaw += angDiff(e.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * 5); }
     else { S.phase = 'wait'; S.t = 0; }
     standHint.innerHTML = S.hold ? 'WAIT FOR HIM…' : 'HOLD <b>LEFT MOUSE</b> OR <b>SPACE</b>'; standHint.style.opacity = 1;
   } else if (S.phase === 'wait') {
@@ -6277,7 +6309,7 @@ function updateStandoff(raw) {
   let pos, look, fov;
   if (S.phase === 'strike') { pos = hp.clone().addScaledVector(_V(ux, 0, uz), -1.5).addScaledVector(n, 0.6).add(_V(0, -0.15, 0)); look = eh; fov = 34; }
   else if (S.phase === 'after') { const k = smooth(0, 2.2, S.t); pos = m.clone().addScaledVector(n, -3.2 + k * 0.6).add(_V(0, -0.9 + k * 0.3, 0)).addScaledVector(_V(ux, 0, uz), 1.2); look = hp.clone().add(_V(0, -0.35, 0)); fov = 40 - k * 6; }
-  else { const k = S.phase === 'wait' ? smooth(0, S.strikeAt, S.t) : 0; pos = m.clone().addScaledVector(n, 4.2 - k * 1.2).add(_V(0, -0.35, 0)); look = m.clone().add(_V(0, -0.2, 0)); fov = 30 - k * 8; }
+  else { const k = S.phase === 'wait' ? smooth(0, S.strikeAt, S.t) : 0; pos = m.clone().addScaledVector(n, Math.max(4.2, d * 0.95) - k * 1.2).add(_V(0, -0.35, 0)); look = m.clone().add(_V(0, -0.2, 0)); fov = 30 - k * 8; }   // wide enough to hold both of you as he walks out
   pos.y = Math.max(pos.y, groundH(pos.x, pos.z) + 0.3);
   window.__freeCam = [pos, look, fov];
   if ((frameNo & 31) === 0 && S.phase !== 'strike') window.__guideWind = { x: n.x, z: n.z, t: 2 };   // the wind blows leaves between you
@@ -6320,7 +6352,7 @@ function nearSpring() { for (const sp of SPRINGS) if (Math.hypot(sp.x - player.p
 function bathe() {
   const sp = nearSpring(); if (!sp || player.mounted || CINE.on) return false;
   fadeEl.style.opacity = 1;
-  setTimeout(() => { if (!sp.used) { sp.used = true; player.maxHp += 10; toast('HOT SPRING · MAXIMUM HEALTH +10', 2600); } else toast('A WARM SOAK', 1600); player.hp = player.maxHp; fadeEl.style.opacity = 0; }, 900);
+  setTimeout(() => { if (!sp.used) { sp.used = true; player.maxHp += 10; STORY.sp = SPRINGS.map((q, i) => q.used ? i : -1).filter(i => i >= 0); saveStory(); toast('HOT SPRING · MAXIMUM HEALTH +10', 2600); } else toast('A WARM SOAK', 1600); player.hp = player.maxHp; fadeEl.style.opacity = 0; }, 900);
   return true;
 }
 function rest() {
