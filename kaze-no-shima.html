@@ -2240,7 +2240,21 @@ const promptEl = document.getElementById('prompt');
 function setPrompt(html) { if (promptEl.innerHTML !== html) promptEl.innerHTML = html; promptEl.style.opacity = html ? 1 : 0; }
 
 const angDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
-function walkable(x, z) { return groundH(x, z) > 0.35; }
+function walkable(x, z, floor = 0.35) { return groundH(x, z) > floor; }   // NPCs stay on land; you and the horse may wade and swim (lower floor)
+// The surface of the water at (x, z): a river's level, or the sea (0); -Infinity on dry land
+function waterAt(x, z) {
+  let lvl = -Infinity;
+  riverInfo(x, z); if (_rd < _rw + 0.6) lvl = _rl;
+  if (terrainH(x, z) < 0.3) lvl = Math.max(lvl, 0);
+  return lvl;
+}
+const SPLASH = new THREE.Color(0.85, 0.92, 0.98);
+let _splashT = 0;
+function splash(x, y, z, k) {   // spray and rings where legs cut the water
+  if (clock.elapsedTime - _splashT > 0.32) { _splashT = clock.elapsedTime; audio.splash?.(Math.min(1, k + 0.3)); }
+  for (let i = 0; i < 2 + k * 4; i++) emit(new THREE.Vector3(x + (Math.random() - 0.5) * 0.5, y + 0.05, z + (Math.random() - 0.5) * 0.5),
+    new THREE.Vector3((Math.random() - 0.5) * 1.6, 1.2 + Math.random() * 1.8 * k, (Math.random() - 0.5) * 1.6), SPLASH, 0.12 + 0.1 * k, 0.6, 9, 1.8, 0.55);
+}
 function tryMove(p, dx, dz) {
   if (walkable(p.x + dx, p.z + dz)) { p.x += dx; p.z += dz; return true; }
   if (walkable(p.x + dx, p.z)) { p.x += dx; return true; }
@@ -2533,6 +2547,7 @@ const audio = (() => {
   A.fall = () => { burst(320, 'lowpass', 1, 0.5, 0.6); tone(95, 40, 0.45, 0.5); };
   A.jump = () => burst(700, 'bandpass', 1, 0.12, 0.25, 250);
   A.land = (s = 1) => { tone(95, 38, Math.min(0.7, 0.3 + s * 0.3), 0.28); burst(380, 'lowpass', 1, Math.min(0.5, 0.2 + s * 0.2), 0.22); };
+  A.splash = (k = 1) => { burst(700 + Math.random() * 500, 'lowpass', 1.2, 0.15 * k, 0.25); burst(2400, 'bandpass', 2, 0.06 * k, 0.12); };
   A.door = () => { burst(900, 'bandpass', 2, 0.18, 0.35); tone(220, 180, 0.05, 0.25, 'triangle'); };   // a wooden door sliding in its track
   A.cut = () => { for (let i = 0; i < 4; i++) setTimeout(() => burst(3000 + Math.random() * 2000, 'highpass', 0.7, 0.15, 0.08), i * 25); };
   A.update = (dt, gust, speed, shore, night) => {
@@ -3433,6 +3448,8 @@ function animateSoldier(dt, t) {
   S.mixer.update(dt);
   S.rig.position.y = player.mounted ? 0.94 + 0.07 - S.hipsY : -0.08 * atk;
   if (player.mounted) S.rig.rotation.set(0, 0, 0); else S.rig.rotation.set(player.pitchLean, 0, player.lean);
+  S.swimK = lerp(S.swimK || 0, !player.mounted && player.swim ? 1 : 0, Math.min(1, dt * 4));
+  if (S.swimK > 0.01) { S.rig.rotation.x = lerp(S.rig.rotation.x, 1.2, S.swimK); S.rig.position.y += 1.12 * S.swimK; S.rig.position.z = -0.85 * S.swimK; } else S.rig.position.z = 0;   // lying along the water to swim
   (player.mounted ? horse.root : hero.root).updateMatrixWorld(true);
   const B = S.B;
   if (player.mounted) {
@@ -3445,7 +3462,8 @@ function animateSoldier(dt, t) {
   }
   applySwordPose(S, sw.last, sw.drawT);   // guard stance or the current cut, both hands on the grip
   if (!player.mounted) {
-    if (!player.onGround) { // airborne: knees up, arms out
+    if (player.swim) {}
+    else if (!player.onGround) { // airborne: knees up, arms out
       rotBone(B.LeftUpLeg, AX, -0.75); rotBone(B.RightUpLeg, AX, -0.3); rotBone(B.LeftLeg, AX, 1.25); rotBone(B.RightLeg, AX, 0.7);
       if (sw.drawT < 0.5) { rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45); }
     } else { lungeLegs(S, sw); footIK(); }
@@ -3454,6 +3472,12 @@ function animateSoldier(dt, t) {
     const k = aim.k * (1 - sw.drawT * 0.6), f = aim.throwT > 0 ? Math.sin((1 - aim.throwT / 0.3) * Math.PI) : 0;
     rotBone(B.RightArm, AZ, (-1.35 + f * 0.5) * k); rotBone(B.RightArm, AX, (0.55 - f * 1.6) * k); rotBone(B.RightForeArm, AZ, (-1.1 + f * 1.0) * k);
     rotBone(B.LeftArm, AX, -0.9 * k); rotBone(B.LeftArm, AZ, 0.3 * k); rotBone(B.Spine1, AY, -0.35 * k);
+  }
+  if (S.swimK > 0.01) {   // breaststroke arms and a scissor kick
+    const k = S.swimK, ph = clock.elapsedTime * (player.speed > 0.3 ? 3.2 : 1.6);
+    rotBone(B.LeftArm, AX, (-1.5 + Math.sin(ph) * 1.1) * k); rotBone(B.RightArm, AX, (-1.5 + Math.sin(ph) * 1.1) * k);
+    rotBone(B.LeftArm, AZ, (0.6 + Math.cos(ph) * 0.5) * k); rotBone(B.RightArm, AZ, (-0.6 - Math.cos(ph) * 0.5) * k);
+    rotBone(B.LeftUpLeg, AX, Math.sin(ph * 2) * 0.35 * k); rotBone(B.RightUpLeg, AX, -Math.sin(ph * 2) * 0.35 * k); rotBone(B.Neck, AX, -0.7 * k);
   }
   if (S.bowT > 0) { S.bowT -= dt; const b = Math.sin(Math.min(1, (1.6 - S.bowT) / 1.6) * Math.PI) * 0.6 * (1 - sw.drawT * 0.5); rotBone(B.Spine, AX, b); rotBone(B.Neck, AX, b * 0.4); }
   if (S.waveT > 0) {   // a big friendly wave (V)
@@ -4937,29 +4961,40 @@ Object.assign(player, { vel: new THREE.Vector3(), onGround: true, jumpHeld: fals
 function updatePlayer(dt, moving, wantYaw, sprint) {
   const p = player, v = p.vel, dirX = Math.sin(wantYaw), dirZ = Math.cos(wantYaw);
   const soft = groundSoft(p.pos.x, p.pos.z); p.sink = soft.sink;
-  let top = (moving ? (sprint ? 6.4 : 1.8) : 0) * soft.slow;
+  const wl = waterAt(p.pos.x, p.pos.z), depth = wl - groundH(p.pos.x, p.pos.z, p.pos.y);
+  p.swim = depth > 1.25; p.wade = depth > 0.2 ? Math.min(1, depth / 1.25) : 0;
+  let top = (moving ? (p.swim ? (sprint ? 1.9 : 1.2) : sprint ? 6.4 : 1.8) : 0) * soft.slow * (p.swim ? 1 : 1 - 0.55 * p.wade);   // water drags at your legs, then you swim
+  if (p.swim && sword.drawn) { sword.drawn = false; }
+  if (p.wade > 0 && moving && Math.random() < 0.25 + p.wade * 0.3) splash(p.pos.x, wl, p.pos.z, p.swim ? 0.6 : p.wade);
   if (moving) { const s = slopeAlong(p.pos.x, p.pos.z, dirX, dirZ, p.pos.y); top *= s > 0 ? 1 - Math.min(0.45, s * 0.9) : 1 + Math.min(0.2, -s * 0.35); if (s > 0.9) top *= Math.max(0.05, 1 - (s - 0.9) * 4); }   // cliffs are too steep to climb: find the trail
   const accel = p.onGround ? (moving ? 10 : 14) : 2.5;
   const ax = dirX * top - v.x, az = dirZ * top - v.z, al = Math.hypot(ax, az), step = Math.min(al, accel * dt);
   if (al > 1e-5) { v.x += ax / al * step; v.z += az / al * step; }
   // jump
-  if (keys.Space && !p.jumpHeld && p.onGround) { v.y = 6.4; p.onGround = false; audio.jump(); }
+  if (keys.Space && !p.jumpHeld && p.onGround && !p.swim) { v.y = 6.4 * (1 - 0.5 * p.wade); p.onGround = false; audio.jump(); }
   p.jumpHeld = !!keys.Space;
   v.y -= GRAV * dt;
   // horizontal move with island edge + colliders (incl. the horse's body)
   const nx = p.pos.x + v.x * dt, nz = p.pos.z + v.z * dt;
-  if (walkable(nx, p.pos.z)) p.pos.x = nx; else v.x *= -0.2;
-  if (walkable(p.pos.x, nz)) p.pos.z = nz; else v.z *= -0.2;
+  if (walkable(nx, p.pos.z, -4.5)) p.pos.x = nx; else v.x *= -0.2;
+  if (walkable(p.pos.x, nz, -4.5)) p.pos.z = nz; else v.z *= -0.2;
   const hx = Math.sin(hs.yaw), hz = Math.cos(hs.yaw);
   collideCircles(p.pos, 0.32, v, [{ x: hs.pos.x + hx * 0.5, z: hs.pos.z + hz * 0.5, r: 0.42 }, { x: hs.pos.x - hx * 0.45, z: hs.pos.z - hz * 0.45, r: 0.42 }, ...enemies.filter(e => e.alive).map(e => ({ x: e.pos.x, z: e.pos.z, r: 0.38 }))]);
   // vertical: gravity, ground snapping on slopes, landing
   const g = groundH(p.pos.x, p.pos.z, p.pos.y) - (p.sink || 0);   // feet sink into snow and mud
+  if (p.swim) {   // afloat: head and shoulders above the surface, bobbing with the stroke
+    const fy = wl - 1.32 + Math.sin(clock.elapsedTime * 2.6) * 0.04;
+    v.y += (fy - p.pos.y) * 9 * dt; v.y *= Math.exp(-dt * 5); p.pos.y += v.y * dt; if (p.pos.y < g) p.pos.y = g; p.onGround = false; p.fallFrom = null;
+  } else {
   p.pos.y += v.y * dt;
+  const steep = (groundH(p.pos.x, p.pos.z, p.pos.y) - groundH(p.pos.x + v.x * 0.08, p.pos.z + v.z * 0.08, p.pos.y)) / Math.max(0.02, Math.hypot(v.x, v.z) * 0.08) > 1.6;   // a drop ahead: step off it
   if (p.pos.y <= g) {
-    if (!p.onGround && v.y < -6) landImpact(p.pos, (-v.y - 6) / 5);
+    if (!p.onGround && v.y < -6 && p.wade < 0.4) landImpact(p.pos, (-v.y - 6) / 5);
+    if (!p.onGround && v.y < -13 && p.wade < 0.6) { player.hp -= (-v.y - 13) * 11; hurtEl.style.opacity = 0.9; setTimeout(() => hurtEl.style.opacity = 0, 200); lastHurt = clock.elapsedTime; if (player.hp <= 0) playerDown(); }   // a long fall hurts — or kills
     p.pos.y = g; v.y = 0; p.onGround = true;
-  } else if (p.onGround && p.pos.y - g < 0.35 && v.y <= 0) { p.pos.y = g; v.y = 0; }
+  } else if (p.onGround && p.pos.y - g < 0.35 && v.y <= 0 && !steep) { p.pos.y = g; v.y = 0; }
   else p.onGround = false;
+  }
   // facing follows velocity; lean into turns and acceleration
   const hsp = Math.hypot(v.x, v.z), prevYaw = p.yaw;
   if (hsp > 0.25) p.yaw += angDiff(p.yaw, Math.atan2(v.x, v.z)) * Math.min(1, dt * (p.onGround ? 11 : 4));
@@ -4978,6 +5013,9 @@ function updateHorse(dt, target, wantYaw, steer, jump) {
     const s = slopeAlong(hs.pos.x, hs.pos.z, Math.sin(hs.yaw), Math.cos(hs.yaw));
     target *= target > 0 ? (s > 0 ? 1 - Math.min(0.4, s * 0.7) : 1 + Math.min(0.15, -s * 0.3)) : 1;
     target *= groundSoft(hs.pos.x, hs.pos.z).slow * 0.5 + 0.5;
+    const hw = waterAt(hs.pos.x, hs.pos.z), hd = hw - groundH(hs.pos.x, hs.pos.z); hs.wade = hd > 0.3 ? Math.min(1, hd / 1.7) : 0; hs.swim = hd > 1.7;
+    if (hs.swim) target = Math.sign(target) * Math.min(Math.abs(target), 2.4); else target *= 1 - 0.6 * hs.wade;   // the river fights a horse's legs; deep water it must swim
+    if (hs.wade > 0 && Math.abs(sp) > 0.8 && Math.random() < 0.5) splash(hs.pos.x + Math.sin(hs.yaw) * 0.8, hw, hs.pos.z + Math.cos(hs.yaw) * 0.8, Math.min(1, Math.abs(sp) / 8) + 0.3);
     if (target > 0 && s > 0.75) target *= Math.max(0.05, 1 - (s - 0.75) * 4);   // a horse won't climb a cliff either
     const rate = target > sp ? (sp < 4 ? 3.2 : 2.2) : (target < sp - 3 ? 7 : 3);
     hs.speed += Math.max(-rate * dt, Math.min(rate * dt, target - sp));
@@ -4988,11 +5026,11 @@ function updateHorse(dt, target, wantYaw, steer, jump) {
     hs.yawRate = lerp(hs.yawRate, wantRate, Math.min(1, dt * (hs.onGround ? 5 : 1)));
   } else hs.yawRate = lerp(hs.yawRate, 0, Math.min(1, dt * 5));
   hs.yaw += hs.yawRate * dt;
-  if (jump && hs.onGround && sp > 2.5) { hs.vy = 5.6; hs.onGround = false; audio.jump(); }
+  if (jump && hs.onGround && sp > 2.5 && !hs.swim) { hs.vy = 5.6 * (1 - 0.5 * (hs.wade || 0)); hs.onGround = false; audio.jump(); }
   // move + collide
   const vx = Math.sin(hs.yaw) * hs.speed, vz = Math.cos(hs.yaw) * hs.speed;
   const nx = hs.pos.x + vx * dt, nz = hs.pos.z + vz * dt;
-  if (walkable(nx + Math.sin(hs.yaw) * 0.9 * Math.sign(hs.speed), nz + Math.cos(hs.yaw) * 0.9 * Math.sign(hs.speed))) { hs.pos.x = nx; hs.pos.z = nz; }
+  if (walkable(nx + Math.sin(hs.yaw) * 0.9 * Math.sign(hs.speed), nz + Math.cos(hs.yaw) * 0.9 * Math.sign(hs.speed), -3.2)) { hs.pos.x = nx; hs.pos.z = nz; }
   else { if (aSp > 5) { shake += 0.4; audio.land(0.6); } hs.speed *= -0.15; }
   const front = { x: hs.pos.x + Math.sin(hs.yaw) * 0.7, z: hs.pos.z + Math.cos(hs.yaw) * 0.7 };
   const hitF = collideCircles(front, 0.4, null), hitC = collideCircles(hs.pos, 0.5, null);
@@ -5003,10 +5041,19 @@ function updateHorse(dt, target, wantYaw, steer, jump) {
   }
   // vertical
   const g = (groundH(hs.pos.x + Math.sin(hs.yaw) * 0.75, hs.pos.z + Math.cos(hs.yaw) * 0.75) + groundH(hs.pos.x - Math.sin(hs.yaw) * 0.75, hs.pos.z - Math.cos(hs.yaw) * 0.75)) / 2;
+  if (hs.swim) {   // swimming: only the head, neck and back above the water
+    const fy = waterAt(hs.pos.x, hs.pos.z) - 1.55 + Math.sin(clock.elapsedTime * 2.2) * 0.05; hs.vy += (fy - hs.y) * 7 * dt; hs.vy *= Math.exp(-dt * 4); hs.y += hs.vy * dt; if (hs.y < g) hs.y = g; hs.onGround = false;
+  } else {
   hs.vy -= GRAV * dt; hs.y += hs.vy * dt;
-  if (hs.y <= g) { if (!hs.onGround && hs.vy < -4) landImpact(hs.pos, (-hs.vy - 3) / 4); hs.y = g; hs.vy = 0; hs.onGround = true; }
-  else if (hs.onGround && hs.y - g < 0.4 && hs.vy <= 0) { hs.y = g; hs.vy = 0; }
+  const ahead = groundH(hs.pos.x + vx * 0.1, hs.pos.z + vz * 0.1), steep = (g - ahead) / Math.max(0.05, Math.abs(hs.speed) * 0.1) > 1.3;   // over the edge of a cliff: it falls
+  if (hs.y <= g) {
+    if (!hs.onGround && hs.vy < -4) landImpact(hs.pos, (-hs.vy - 3) / 4);
+    if (!hs.onGround && hs.vy < -14 && player.mounted) { player.hp -= (-hs.vy - 14) * 8; lastHurt = clock.elapsedTime; hurtEl.style.opacity = 0.9; setTimeout(() => hurtEl.style.opacity = 0, 200); hs.speed *= 0.2; if (player.hp <= 0) playerDown(); }
+    hs.y = g; hs.vy = 0; hs.onGround = true;
+  }
+  else if (hs.onGround && hs.y - g < 0.4 && hs.vy <= 0 && !steep) { hs.y = g; hs.vy = 0; }
   else hs.onGround = false;
+  }
   hs.pos.y = hs.y;
   hs.lean = lerp(hs.lean, Math.max(-0.28, Math.min(0.28, -hs.yawRate * hs.speed * 0.028)), Math.min(1, dt * 4));
 }
