@@ -2147,7 +2147,7 @@ player.yaw = camYaw + Math.PI;
 const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyE') toggleMount();
-  if (e.code === 'KeyR') useDoor();
+  if (e.code === 'KeyR' && !freePrisoner()) useDoor();
   if (e.code === 'KeyV') waveHello();
   if (e.code === 'KeyH' && !player.mounted) { hs.called = true; audio.whistle(); const d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z); setTimeout(() => audio.horse('whinny', Math.max(0.15, 1 - d / 250)), 700); }
   if (e.code === 'KeyN') patHorse();
@@ -3391,6 +3391,48 @@ function spawnVillagers() {
     const H = VILLAGE_HOMES[(i * 7) % VILLAGE_HOMES.length], fr = H.d / 2 + 2.6, x = H.x + H.s * fr + (Math.random() - 0.5) * 3, z = H.z + H.c * fr + (Math.random() - 0.5) * 3;   // each by a different doorstep
     villagers.push(Object.assign(w, { root, face, home: H, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
+  (STORY.freed || []).forEach((k, n) => { const [pal, face] = VILLAGER_DEFS[(n * 5 + 3) % VILLAGER_DEFS.length]; addVillager(pal, face === 'boy' ? 'man' : face); });   // the ones you freed are home
+}
+// villagers the Mongols took: one tied up in every camp. Take the camp, cut them free (R), and they go home to Kawabe
+function addVillager(pal, face) {
+  const i = villagers.length, w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, pal, face);
+  const root = new THREE.Group(); root.add(w.rig); scene.add(root); if (face === 'boy') root.scale.setScalar(0.78);
+  const H = VILLAGE_HOMES[(i * 7) % VILLAGE_HOMES.length], fr = H.d / 2 + 2.6, x = H.x + H.s * fr, z = H.z + H.c * fr;
+  villagers.push(Object.assign(w, { root, face, home: H, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
+}
+const campKey = cp => cp.x.toFixed(0) + ',' + cp.z.toFixed(0);
+function nearPrisoner() { for (const cp of window.__camps2 || []) { const P = cp.pris; if (P && !P.freed && STORY.cleared.has(campKey(cp)) && Math.hypot(P.pos.x - player.pos.x, P.pos.z - player.pos.z) < 2.6) return P; } return null; }
+function freePrisoner() {
+  const P = nearPrisoner(); if (!P || player.mounted) return false;
+  P.freed = true; P.freeT = 0; (STORY.freed = STORY.freed || []).push(P.key); saveStory();
+  player.yaw = Math.atan2(P.pos.x - player.pos.x, P.pos.z - player.pos.z); soldier.bowT = 1.6;
+  say([['Villager: You came for me... thank you, Kenshin-sama. I will go home to Kawabe.', 'Villager: The gods sent you. My family is in Kawabe — I will go to them.', 'Villager: I thought I would die here. Thank you, samurai.'][STORY.freed.length % 3]]);
+  toast('PRISONER FREED · ' + STORY.freed.length + ' HAVE GONE HOME', 2600);
+  return true;
+}
+function updatePrisoners(dt) {
+  if (!soldierGLTF) return;
+  for (const cp of window.__camps2 || []) {
+    if (!cp.prisoner) continue;
+    const key = campKey(cp), d = Math.hypot(cp.prisoner[0] - player.pos.x, cp.prisoner[1] - player.pos.z);
+    if (!cp.pris) {
+      if (d > 110 || (STORY.freed || []).includes(key)) continue;
+      const [pal, face] = VILLAGER_DEFS[(Math.abs(Math.round(cp.x)) + Math.abs(Math.round(cp.z))) % VILLAGER_DEFS.length], w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, pal, face === 'boy' ? 'man' : face);
+      const root = new THREE.Group(); root.add(w.rig); scene.add(root);
+      const [x, z] = cp.prisoner, ax = x + Math.cos(cp.yaw - 2.2) * 0.45, az = z + Math.sin(cp.yaw - 2.2) * 0.45;   // kneeling just in front of the stake, facing the fire
+      cp.pris = Object.assign(w, { root, pal, face: face === 'boy' ? 'man' : face, key, pos: new THREE.Vector3(ax, groundH(ax, az), az), yaw: Math.atan2(cp.x - ax, cp.z - az), freed: false, freeT: 0 });
+    }
+    const P = cp.pris; if (P.gone) continue;
+    P.root.visible = d < 150; if (d > 70) continue;
+    P.mixer.update(dt); const up = P.freed ? smooth(0.2, 1.4, P.freeT) : 0;
+    if (P.freed) { P.freeT += dt; P.yaw += angDiff(P.yaw, Math.atan2(player.pos.x - P.pos.x, player.pos.z - P.pos.z)) * Math.min(1, dt * 3);
+      if (P.freeT > 6) { P.gone = true; P.root.visible = false; scene.remove(P.root); addVillager(P.pal, P.face); continue; } }   // off home: they'll be in the village next time you're there
+    P.root.position.set(P.pos.x, P.pos.y - 0.5 * (1 - up), P.pos.z); P.root.rotation.set(0, P.yaw, 0); P.root.updateMatrixWorld(true);
+    const k = 1 - up;
+    rotBoneRig(P.rig, P.B.LeftUpLeg, AX, -1.5 * k); rotBoneRig(P.rig, P.B.RightUpLeg, AX, -1.5 * k); rotBoneRig(P.rig, P.B.LeftLeg, AX, 2.5 * k); rotBoneRig(P.rig, P.B.RightLeg, AX, 2.5 * k);
+    rotBoneRig(P.rig, P.B.LeftArm, AX, 0.55 * k); rotBoneRig(P.rig, P.B.RightArm, AX, 0.55 * k); rotBoneRig(P.rig, P.B.Spine, AX, 0.45 * k); rotBoneRig(P.rig, P.B.Neck, AX, 0.5 * k);   // hands bound behind, head hung
+    if (P.freed && P.freeT > 1.4 && P.freeT < 3.2) { const b = Math.sin((P.freeT - 1.4) / 1.8 * Math.PI) * 0.6; rotBoneRig(P.rig, P.B.Spine, AX, b); rotBoneRig(P.rig, P.B.Neck, AX, b * 0.4); }   // a deep bow
+  }
 }
 const FAMILY = [];   // your wife and daughter, held in the keep
 function spawnFamily() {
@@ -3431,7 +3473,7 @@ function updatePlaces() {   // the name of a place appears as you arrive
 function updateVillagers(dt, t) {
   if ((frameNo & 15) === 0) updatePlaces();
   if (!FAMILY.length && (frameNo & 63) === 0) spawnFamily();
-  updateFamily(dt);
+  updateFamily(dt); updatePrisoners(dt); updateDeer(dt);
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
     const dx = player.pos.x - v.pos.x, dz = player.pos.z - v.pos.z, dP = Math.hypot(dx, dz);
@@ -3524,7 +3566,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : (assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -3742,6 +3784,28 @@ function wakeCamps() {
     return;   // one per frame keeps the hitch small
   }
 }
+// Mongol patrols: three or four men walking the island's roads
+const PATROLS = [];
+{
+  const R = rng32(2468), routes = [...new Set(pathPts.map(p => p[3]))];
+  for (let k = 0; k < 4 && routes.length; k++) {
+    const ri = routes[k % routes.length], pts = pathPts.filter((p, n) => p[3] === ri && n % 4 === 0 && terrainH(p[0], p[1]) > 1).map(p => [p[0], p[1]]);
+    if (pts.length < 30) continue;
+    const i = Math.floor(pts.length * (0.25 + R() * 0.5));
+    if (Math.hypot(pts[i][0] - spawnPt[0], pts[i][1] - spawnPt[1]) < 160) continue;   // not on top of you at the start
+    PATROLS.push({ pts, i, dir: R() < 0.5 ? 1 : -1, n: 3 + (k % 2), spawned: false });
+  }
+}
+function wakePatrols() {
+  for (const P of PATROLS) {
+    if (P.spawned) continue; const w = P.pts[P.i];
+    if (Math.hypot(w[0] - player.pos.x, w[1] - player.pos.z) > 200) continue;
+    P.spawned = true;
+    for (let m = 0; m < P.n; m++) { const q = P.pts[Math.max(0, Math.min(P.pts.length - 1, P.i - m * 2 * P.dir))], e = makeBandit({ x: q[0], z: q[1] }, enemies.length);
+      if (e) { e.patrol = P; e.pm = m; e.archer = m === P.n - 1; e.shotT = 2 + Math.random() * 2; if (m === 1 && P.n > 3) { e.brute = true; e.hp = e.maxHp = 6; e.root.scale.setScalar(1.17); } } }
+    return;
+  }
+}
 function spawnCampOne(cp) {
   const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
   const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) { nb.camp = cp; nb.archer = (cp.spawned || 0) % 3 === 1; nb.shotT = 1.5 + Math.random() * 2; nb.yaw = a + Math.PI;
@@ -3813,7 +3877,7 @@ function updateEnemy(e, dt, t) {
   const dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, dP = Math.hypot(dx, dz);
   if (!e.alive) {
     e.deathT += dt; e.vel.multiplyScalar(Math.exp(-dt * 4)); moveEnemy(e, dt, 0, 0, 0);
-    if (e.deathT > 25 && !e.camp && !e.boss) resetEnemy(e);   // a camp you have taken stays taken
+    if (e.deathT > 25 && !e.camp && !e.boss && !e.patrol) resetEnemy(e);   // a camp you have taken stays taken
   } else if (e.stagger > 0) {
     e.stagger -= dt; moveEnemy(e, dt, 0, 0, 0);
   } else if ((CINE.on || STANDOFF.on) && !e.cineWalk) {   // in a cutscene or a standoff everyone holds their mark, eyes on you
@@ -3839,6 +3903,12 @@ function updateEnemy(e, dt, t) {
       }
     } else {
       if (e.state === 'chase') { e.state = 'idle'; e.sw.drawn = false; e.wander = null; }
+      if (e.patrol) {   // marching single file along the road, the leader setting the pace
+        const P = e.patrol, j = Math.max(0, Math.min(P.pts.length - 1, P.i - e.pm * 2 * P.dir)), w = P.pts[j], wx = w[0] - e.pos.x, wz = w[1] - e.pos.z, wd = Math.hypot(wx, wz);
+        if (e.pm === 0 && wd < 1.8) { P.i += P.dir; if (P.i >= P.pts.length - 1 || P.i <= 0) P.dir *= -1; }
+        if (wd > 0.9) { e.yaw += angDiff(e.yaw, Math.atan2(wx, wz)) * Math.min(1, dt * 4); moveEnemy(e, dt, wx / wd, wz / wd, e.pm === 0 ? 1.25 : 1.45); } else moveEnemy(e, dt, 0, 0, 0);
+        e.home.set(e.pos.x, 0, e.pos.z);
+      } else {
       e.wait -= dt;
       if (!e.wander && e.wait <= 0) { const a = Math.random() * 6.28, r = Math.random() * 6; e.wander = { x: e.home.x + Math.cos(a) * r, z: e.home.z + Math.sin(a) * r }; }
       if (e.wander) {
@@ -3846,6 +3916,7 @@ function updateEnemy(e, dt, t) {
         if (wd < 0.6) { e.wander = null; e.wait = 2 + Math.random() * 4; moveEnemy(e, dt, 0, 0, 0); }
         else { e.yaw += angDiff(e.yaw, Math.atan2(wx, wz)) * Math.min(1, dt * 4); moveEnemy(e, dt, wx / wd, wz / wd, 1.1); }
       } else moveEnemy(e, dt, 0, 0, 0);
+      }
     }
   }
   tickSword(e, dt * (e.brute ? 0.52 : 0.62));                           // bandits cut slower: you can see it coming
@@ -3879,6 +3950,7 @@ function updateEnemies(dt, t) {
   player.invuln = Math.max(0, player.invuln - dt);
   if (!player.dead && player.hp < player.maxHp && clock.elapsedTime - lastHurt > 5) player.hp = Math.min(player.maxHp, player.hp + 7 * dt);
   if ((frameNo & 7) === 0) wakeCamps();
+  if ((frameNo & 31) === 4) wakePatrols();
   for (const e of enemies) {
     const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70 || (CINE.on && Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z) < 90);   // a cutscene can look at a far camp
     e.root.visible = (dP < 180 || near) && (e.alive || e.deathT < 12);   // far bandits are not drawn at all
@@ -4370,6 +4442,64 @@ const HAIKU = [];
   window.__haiku = HAIKU;
 }
 
+// ─────────────────────────── Wildlife: herds of sika deer graze the meadows, look up when you come, and bolt ───────────────────────────
+const DEER = [];
+{
+  const coat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 });
+  const tint = (g, r, gg, b, white) => { const p = g.attributes.position, c = new Float32Array(p.count * 3); for (let i = 0; i < p.count; i++) { const w = white ? white(p.getX(i), p.getY(i), p.getZ(i)) : 0; c[i * 3] = lerp(r, 0.92, w); c[i * 3 + 1] = lerp(gg, 0.88, w); c[i * 3 + 2] = lerp(b, 0.8, w); } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g.index ? g.toNonIndexed() : g; };
+  const torso = new THREE.CapsuleGeometry(0.21, 0.72, 4, 10).rotateX(Math.PI / 2).scale(0.85, 1, 1).translate(0, 0.98, 0);
+  const rump = new THREE.SphereGeometry(0.17, 8, 6).scale(1, 1, 0.5).translate(0, 1.0, -0.5), tail = new THREE.ConeGeometry(0.05, 0.16, 5).rotateX(-2.4).translate(0, 1.06, -0.58);
+  const bodyGeo = mergeGeometries([tint(torso, 0.42, 0.26, 0.15, (x, y) => smooth(0.92, 0.82, y) * 0.8), tint(rump, 0.9, 0.86, 0.8), tint(tail, 0.3, 0.2, 0.12)]);
+  const neck = new THREE.CylinderGeometry(0.075, 0.11, 0.52, 7).translate(0, 0.26, 0).rotateX(0.55), skull = new THREE.ConeGeometry(0.085, 0.34, 7).rotateX(Math.PI / 2 + 0.35).translate(0, 0.5, 0.42);
+  const earL = new THREE.ConeGeometry(0.045, 0.14, 4).rotateZ(0.9).translate(-0.08, 0.6, 0.25), earR = new THREE.ConeGeometry(0.045, 0.14, 4).rotateZ(-0.9).translate(0.08, 0.6, 0.25);
+  const headGeo = mergeGeometries([tint(neck, 0.4, 0.25, 0.14), tint(skull, 0.38, 0.24, 0.14), tint(earL, 0.32, 0.2, 0.12), tint(earR, 0.32, 0.2, 0.12)]);
+  const legGeo = tint(new THREE.CylinderGeometry(0.03, 0.022, 0.9, 5).translate(0, -0.45, 0), 0.34, 0.22, 0.13);
+  const R = rng32(8080), herds = [];
+  for (let i = 0; i < 9000 && herds.length < 5; i++) {
+    const x = (R() - 0.5) * 1100, z = (R() - 0.5) * 1100, h = terrainH(x, z);
+    if (h < 4 || h > 70 || pathMask(x, z) > 0.02 || riverWet(x, z) > 0 || Math.hypot(x - 340, z - 326) < 160 || herds.some(q => Math.hypot(q[0] - x, q[1] - z) < 200)) continue;
+    herds.push([x, z]);
+  }
+  herds.forEach(([hx, hz], hi) => {
+    for (let k = 0; k < 4 + (hi % 2); k++) {
+      const root = new THREE.Group(), body = new THREE.Mesh(bodyGeo, coat), head = new THREE.Mesh(headGeo, coat); head.position.set(0, 1.08, 0.42); root.add(body, head);
+      const legs = [[-0.12, 0.34], [0.12, 0.34], [-0.12, -0.36], [0.12, -0.36]].map(([lx, lz]) => { const m = new THREE.Mesh(legGeo, coat); m.position.set(lx, 0.92, lz); root.add(m); return m; });
+      body.castShadow = head.castShadow = true; const s = 0.85 + R() * 0.3; root.scale.setScalar(s);
+      const x = hx + (R() - 0.5) * 14, z = hz + (R() - 0.5) * 14; scene.add(root); REFL_HIDE.push(root);
+      DEER.push({ root, head, legs, herd: [hx, hz], pos: new THREE.Vector3(x, terrainH(x, z), z), yaw: R() * 6.28, vel: new THREE.Vector3(), state: 'graze', t: R() * 5, phase: R() * 6, fleeT: 0, look: 0, idx: DEER.length });
+    }
+  });
+  window.__deer = DEER;
+}
+function updateDeer(dt) {
+  for (const d of DEER) {
+    const dx = player.pos.x - d.pos.x, dz = player.pos.z - d.pos.z, dP = Math.hypot(dx, dz);
+    d.root.visible = dP < 220; if (dP > 230) continue;
+    const loud = (player.mounted && Math.abs(hs.speed) > 7) || sword.drawn || enemies.some(e => e.state === 'chase' && e.pos.distanceTo(d.pos) < 40);
+    if (dP < (loud ? 38 : player.speed > 3 ? 22 : 13)) { if (d.state !== 'flee') for (const o of DEER) if (o.herd === d.herd && o !== d && o.pos.distanceTo(d.pos) < 30) { o.state = 'flee'; o.fleeT = 5 + Math.random() * 2; } d.state = 'flee'; d.fleeT = 5 + Math.random() * 2; }   // one bolts, the herd bolts
+    else if (d.state !== 'flee') d.state = dP < (loud ? 75 : 45) ? 'alert' : 'graze';
+    let sp = 0, want = d.yaw;
+    if (d.state === 'flee') { want = Math.atan2(-dx, -dz) + Math.sin(d.idx * 1.7 + d.fleeT) * 0.35; sp = 9.5; d.fleeT -= dt; if (d.fleeT < 0) { d.state = 'graze'; d.herd = [d.pos.x, d.pos.z]; } }
+    else if (d.state === 'alert') { want = Math.atan2(dx, dz); }
+    else { d.t -= dt; if (d.t < 0) { d.t = 3 + Math.random() * 6; d.walk = Math.random() < 0.45; d.wy = Math.atan2(d.herd[0] - d.pos.x + (Math.random() - 0.5) * 16, d.herd[1] - d.pos.z + (Math.random() - 0.5) * 16); } if (d.walk) { want = d.wy; sp = 0.55; } }
+    d.yaw += angDiff(d.yaw, want) * Math.min(1, dt * (d.state === 'flee' ? 4 : 2));
+    const fx = Math.sin(d.yaw), fz = Math.cos(d.yaw), cur = Math.hypot(d.vel.x, d.vel.z), ns = cur + (sp - cur) * Math.min(1, dt * (sp > cur ? 3 : 2));
+    d.vel.set(fx * ns, 0, fz * ns);
+    const nx = d.pos.x + d.vel.x * dt, nz = d.pos.z + d.vel.z * dt, gh = terrainH(nx, nz);
+    if (gh > 1.2 && riverWet(nx, nz) === 0 && Math.abs(gh - d.pos.y) < Math.max(0.6, ns * dt * 1.2)) { d.pos.x = nx; d.pos.z = nz; } else { d.yaw += 1.2 * dt * 4; d.t = 0; }   // turn away from water and cliffs
+    collideCircles(d.pos, 0.4, d.vel, []);
+    d.pos.y = groundH(d.pos.x, d.pos.z);
+    // body: gait, head down to graze or up to listen
+    const run = smooth(2, 7, ns), walkk = smooth(0.1, 0.5, ns) * (1 - run);
+    d.phase += dt * (run > 0.1 ? 11 : 5.5) * (0.4 + Math.min(1, ns));
+    const bound = run * Math.max(0, Math.sin(d.phase)) * 0.28;
+    d.root.position.set(d.pos.x, d.pos.y + bound, d.pos.z); d.root.rotation.set(-run * Math.cos(d.phase) * 0.12, d.yaw, 0);
+    d.legs.forEach((L, i) => { L.rotation.x = run ? Math.sin(d.phase + (i < 2 ? 0 : 2.2)) * 0.9 * run + Math.sin(d.phase + (i & 1) * Math.PI) * 0.5 * walkk : Math.sin(d.phase + ((i + (i >> 1)) & 1) * Math.PI) * 0.5 * walkk; });
+    const graze = d.state === 'graze' && !d.walk ? 0.5 + 0.5 * Math.sin(d.t * 0.7 + d.idx) : 0, wantH = graze > 0.35 ? 1.25 : d.state === 'alert' ? -0.25 : 0.05;
+    d.look = lerp(d.look, wantH, Math.min(1, dt * 3)); d.head.rotation.x = d.look;
+    d.head.rotation.y = d.state === 'alert' ? Math.max(-0.6, Math.min(0.6, angDiff(d.yaw, Math.atan2(dx, dz)))) : 0;
+  }
+}
 // ─────────────────────────── Village: thatched minka by the little river ───────────────────────────
 const VILLAGE = [340, 326], VDIR = [0.76, 0.65];   // centre, and the direction the lane runs through it
 window.__village = VILLAGE;
@@ -5021,6 +5151,7 @@ const EXTRA_CAMPS = [];
     COLLIDERS_INIT.push({ x: sx, z: sz, r: 1.3 });
     const rx = cp.x + Math.cos(cp.yaw - 1.2) * 4.2, rz = cp.z + Math.sin(cp.yaw - 1.2) * 4.2;   // spears leaning on a rail
     for (let k = 0; k < 4; k++) { const ox = (k - 1.5) * 0.25; put('spear', rx + ox, rz, cp.yaw, { rx: 0.25 }); put('tip', rx + ox, rz, cp.yaw, { rx: 0.25 }); }
+    { const px = cp.x + Math.cos(cp.yaw - 2.2) * 6.8, pz = cp.z + Math.sin(cp.yaw - 2.2) * 6.8; cp.prisoner = [px, pz]; put('pole', px, pz, 0, { s: [1.3, 1.1, 1.3] }); COLLIDERS_INIT.push({ x: px, z: pz, r: 0.2 }); }   // a villager, tied to a stake
     const bx = cp.x + Math.cos(cp.yaw + 2.6) * 8.5, bz = cp.z + Math.sin(cp.yaw + 2.6) * 8.5;   // the gang's banner
     put('mast', bx, bz, 0); put('flag', bx, bz, cp.yaw, { c: new THREE.Color(ci % 2 ? 0x1a1a1e : 0x7a1c16) });
     COLLIDERS_INIT.push({ x: bx, z: bz, r: 0.25 });
@@ -5810,7 +5941,7 @@ const storyUI = (() => {
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
     <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>Ctrl</b> — dodge (a red glint means a blow you can't block)<br><b>X</b> — assassinate from behind<br><b>Y</b> — standoff: challenge a camp (hold, release as they strike)<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
-    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors<br>
+    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors · cut a prisoner free<br>
     <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
   return { barT, barB, sub, skip, obj, help };
@@ -5845,7 +5976,8 @@ function updateCine(raw) {
   if (!CINE.on) return;
   for (const k in keys) keys[k] = false;
   const dt = Math.min(raw, 0.1), S = CINE.shots[CINE.i];
-  if (!S._c) { if (S.preset !== undefined) setPresetNow(S.preset); S.start?.(); S._c = S.cam(); }   // set the stage, then frame it
+  if (!S._c) { if (S.preset !== undefined) setPresetNow(S.preset); S.start?.(); S._f = 0; }   // set the stage, then frame it
+  if (S._f < 3) { S._c = S.cam(); S._f++; }   // (re-framed for the first frames, once the actors have taken their marks)
   CINE.t += dt; CINE.T += dt;
   const k = S.lin ? Math.min(1, CINE.t / S.dur) : easeCine(CINE.t / S.dur), [a0, a1, b0, b1] = S.track ? S.cam() : S._c;
   const pos = a0.clone().lerp(a1, k), look = b0.clone().lerp(b1, k), T = CINE.T, h = (S.hand ?? 0.004) * pos.distanceTo(look);   // a camera operator's breathing
@@ -5941,6 +6073,7 @@ function meetElder(elder) {
   if (d > 2.4 && walkable(elder.pos.x + dx / d * 2.3, elder.pos.z + dz / d * 2.3)) { player.pos.x = elder.pos.x + dx / d * 2.3; player.pos.z = elder.pos.z + dz / d * 2.3; player.pos.y = groundH(player.pos.x, player.pos.z, player.pos.y); }
   player.vel.set(0, 0, 0); sword.drawn = false; player.yaw = Math.atan2(elder.pos.x - player.pos.x, elder.pos.z - player.pos.z);
   elder.yaw = player.yaw + Math.PI; elder.target = null; elder.wait = 60; elder.bow = 1.6; elder.vel.set(0, 0, 0);
+  elder.root.visible = true; elder.root.position.copy(elder.pos); elder.root.rotation.set(0, elder.yaw, 0); elder.root.updateMatrixWorld(true);
   const actors = { 'Genjirō': { head: () => headOf(elder), talk: on => { elder.talking = on; } }, 'Kenshin': { head: () => headOf(soldier), talk: on => { soldier.talking = on; } } };
   playCine(talkShots(actors, [
     'Genjirō: Kenshin...? Gods above. We burned incense for you at the shrine.',
@@ -6014,7 +6147,7 @@ function updateStory(raw) {
   // camps freed
   for (const cp of window.__camps2 || []) {
     if (cp.castle || STORY.cleared.has(cp.x.toFixed(0) + ',' + cp.z.toFixed(0))) continue;
-    if ((cp.spawned || 0) >= (cp.max || 3) && enemies.every(e => e.camp !== cp || !e.alive)) { STORY.cleared.add(cp.x.toFixed(0) + ',' + cp.z.toFixed(0)); saveStory(); toast('MONGOL CAMP TAKEN', 2200); }
+    if ((cp.spawned || 0) >= (cp.max || 3) && enemies.every(e => e.camp !== cp || !e.alive)) { STORY.cleared.add(cp.x.toFixed(0) + ',' + cp.z.toFixed(0)); saveStory(); toast('MONGOL CAMP TAKEN — CUT THEIR PRISONER FREE (R)', 3000); }
   }
   // the castle
   const C = window.__castle;
@@ -6234,7 +6367,7 @@ const pauseEl = (() => {
 function setPaused(on) {
   PAUSED = on; pauseEl.style.display = on ? 'flex' : 'none';
   if (on) { const camps = (window.__camps2 || []).filter(c => !c.castle).length, hk = HAIKU.filter(h => h.done).length;
-    document.getElementById('pauseStat').innerHTML = `CAMPS TAKEN ${STORY.cleared.size} / ${camps} &nbsp;·&nbsp; HAIKU ${hk} / ${HAIKU.length} &nbsp;·&nbsp; HOT SPRINGS ${SPRINGS.filter(q => q.used).length} / ${SPRINGS.length}<br>${STORY.done ? 'YOUR FAMILY IS SAFE' : STORY.khan ? 'THE KHAN IS DEAD' : ''}`; }
+    document.getElementById('pauseStat').innerHTML = `CAMPS TAKEN ${STORY.cleared.size} / ${camps} &nbsp;·&nbsp; HAIKU ${hk} / ${HAIKU.length} &nbsp;·&nbsp; HOT SPRINGS ${SPRINGS.filter(q => q.used).length} / ${SPRINGS.length} &nbsp;·&nbsp; PRISONERS FREED ${(STORY.freed || []).length}<br>${STORY.done ? 'YOUR FAMILY IS SAFE' : STORY.khan ? 'THE KHAN IS DEAD' : ''}`; }
 }
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement) { if (PAUSED) setPaused(false); return; }
