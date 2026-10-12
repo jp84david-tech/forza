@@ -3392,9 +3392,16 @@ function spawnVillagers() {
     const H = VILLAGE_HOMES[(i * 7) % VILLAGE_HOMES.length], fr = H.d / 2 + 2.6, x = H.x + H.s * fr + (Math.random() - 0.5) * 3, z = H.z + H.c * fr + (Math.random() - 0.5) * 3;   // each by a different doorstep
     villagers.push(Object.assign(w, { root, face, home: H, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
+  if (STORY.done) familyHome();
   (STORY.freed || []).forEach((k, n) => { const [pal, face] = VILLAGER_DEFS[(n * 5 + 3) % VILLAGER_DEFS.length]; addVillager(pal, face === 'boy' ? 'man' : face); });   // the ones you freed are home
 }
 // villagers the Mongols took: one tied up in every camp. Take the camp, cut them free (R), and they go home to Kawabe
+const HOME_LINES = { Yuki: ['Yuki: Welcome home, Kenshin. Sit — I\u2019ll make tea.', 'Yuki: Hana has told the whole village how you climbed the mountain.', 'Yuki: Go and see the beacon. They light it every night now, for you.'],
+  Hana: ['Hana: Father! Can we ride Kage tomorrow?', 'Hana: I\u2019m going to be a samurai too. Watch!', 'Hana: Genjirō says you\u2019re a hero. Are you?'] };
+function familyHome() {   // after the Khan: Yuki and Hana live in Kawabe again
+  if (villagers.some(v => v.name === 'Yuki')) return;
+  [['vPlum', 'woman', 'Yuki'], ['vSage', 'boy', 'Hana']].forEach(([pal, face, name]) => { addVillager(pal, face); const v = villagers[villagers.length - 1]; v.name = name; v.lines = HOME_LINES[name]; });
+}
 function addVillager(pal, face) {
   const i = villagers.length, w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, pal, face);
   const root = new THREE.Group(); root.add(w.rig); scene.add(root); if (face === 'boy') root.scale.setScalar(0.78);
@@ -3447,6 +3454,7 @@ function spawnFamily() {
 }
 function updateFamily(dt) {
   for (const f of FAMILY) {
+    if (STORY.home) { f.root.visible = false; continue; }   // gone home to the village
     const d = f.pos.distanceTo(player.pos); f.root.visible = d < 140; if (d > 60) continue;
     f.act.Idle.setEffectiveWeight(1); f.act.Walk.setEffectiveWeight(0); f.mixer.update(dt);
     const sc = f.name === 'Hana' ? 0.78 : 1;
@@ -3493,7 +3501,7 @@ function updateVillagers(dt, t) {
       tx = ax; tz = az; sp = 1.6; v.afraid = 1;
     } else if (dP < 3.2 && !player.mounted) {   // stop, turn to you, and bow the first time you come close
       v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 4); v.target = null;
-      if (!v.greeted) { v.greeted = true; v.bow = 1.6; if (!subQueue.length && i !== 2) say([['Villager: Kenshin-sama, you live!', 'Villager: The gods be thanked — the lord\u2019s son.', 'Villager: Please... drive them off our island.', 'Villager: My brother was taken to the camp by the falls.', 'Villager: Be careful on the mountain road, samurai.', 'Villager: Rest by our hearth, if you need it.'][Math.floor(Math.random() * 6)]]); }
+      if (!v.greeted) { v.greeted = true; v.bow = 1.6; if (!subQueue.length && v.lines) say([v.lines[Math.floor(Math.random() * v.lines.length)]]); else if (!subQueue.length && i !== 2) say([['Villager: Kenshin-sama, you live!', 'Villager: The gods be thanked — the lord\u2019s son.', 'Villager: Please... drive them off our island.', 'Villager: My brother was taken to the camp by the falls.', 'Villager: Be careful on the mountain road, samurai.', 'Villager: Rest by our hearth, if you need it.'][Math.floor(Math.random() * 6)]]); }
     } else {
       if (dP > 8) v.greeted = false;
       v.wait -= dt;
@@ -6151,7 +6159,7 @@ function endingScene() {
     { dur: 8, fov: [38, 34], hand: 0.002, text: 'In Kawabe they lit the beacon. Its smoke could be seen from every shore of the island.', cam: () => { const b = window.__beacon || VILLAGE; const y = groundH(b[0], b[1]); return [_V(b[0] + 50, y + 18, b[1] + 40), _V(b[0] + 32, y + 22, b[1] + 26), _V(b[0], y + 8, b[1]), _V(b[0], y + 26, b[1])]; } },
     { dur: 10, fadeOut: true, fov: [44, 50], hand: 0.001, title: '<div style="font-size:30px;letter-spacing:30px;margin-bottom:10px;opacity:.85">風の島</div>KAZE NO SHIMA<div style="font-size:13px;letter-spacing:9px;margin-top:18px;opacity:.7">THE ISLAND IS FREE · THANK YOU FOR PLAYING</div>',
       cam: () => [_V(C.x - C.s * 200, C.y + 90, C.z - C.c * 200), _V(C.x - C.s * 340, C.y + 150, C.z - C.c * 340), _V(C.x, C.y, C.z), _V(0, 20, 0)] });
-  playCine(shots, () => { for (const f of FAMILY) f.talking = false; toast('THE ISLAND IS YOURS TO WANDER', 3000); }, 1);
+  playCine(shots, () => { for (const f of FAMILY) f.talking = false; STORY.home = true; saveStory(); familyHome(); toast('THE ISLAND IS YOURS TO WANDER · YUKI AND HANA ARE HOME IN KAWABE', 3600); }, 1);
 }
 // ── A duel at the summit shrine: Kuroda Sanjūrō, your father's old comrade, now the Khan's sword ──
 let RONIN = null;
