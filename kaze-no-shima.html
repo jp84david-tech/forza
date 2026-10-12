@@ -102,7 +102,7 @@ addEventListener('unhandledrejection', e => { const g = document.getElementById(
   <div class="go" id="go">LOADING THE ISLAND…</div>
   <div class="keys">
     W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — sprint / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse &nbsp;·&nbsp; R — open doors &nbsp;·&nbsp; V — wave<br>
-    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
+    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; 1–7 — time of day &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
 </div>
@@ -1193,13 +1193,14 @@ function houseAt(x, z, pad = 0) {   // the house whose walls enclose (x, z)
   }
   return null;
 }
-function houseFloorH(x, z) {
+function houseFloorH(x, z, y) {
   let best = -Infinity;
   for (const F of FLOORS) {
     if (F.r2 === undefined) F.r2 = F.hw * F.hw + Math.max(F.hd0 * F.hd0, F.hd1 * F.hd1) + 4;   // big platforms (castle courtyard, shrine terrace) reach their corners
     const dx = x - F.x, dz = z - F.z; if (dx * dx + dz * dz > F.r2) continue;
     const lx = dx * F.c - dz * F.s, lz = dx * F.s + dz * F.c;
-    if (Math.abs(lx) < F.hw && lz > F.hd0 && lz < F.hd1) best = Math.max(best, F.y);
+    if (y !== undefined && F.y > y + 0.62) continue;   // a floor above your head (upstairs) is not under your feet
+    if ((F.hx0 !== undefined ? lx > F.hx0 && lx < F.hx1 : Math.abs(lx) < F.hw) && lz > F.hd0 && lz < F.hd1) best = Math.max(best, F.y);
   }
   for (const H of HOUSES) {
     if ((x - H.x) ** 2 + (z - H.z) ** 2 > H.R2) continue;
@@ -1210,7 +1211,7 @@ function houseFloorH(x, z) {
   return best;
 }
 // Where feet and hooves stand: the ground, a bridge deck or a house floor
-function groundH(x, z) { const t = terrainH(x, z), b = bridgeH(x, z), f = HOUSES.length || FLOORS.length ? houseFloorH(x, z) : -Infinity; return Math.max(t, b, f); }
+function groundH(x, z, y) { const t = terrainH(x, z), b = bridgeH(x, z), f = HOUSES.length || FLOORS.length ? houseFloorH(x, z, y) : -Infinity; return Math.max(t, b, f); }
 
 // ─────────────────────────── Grass ───────────────────────────
 const blade = new THREE.BufferGeometry();
@@ -2158,6 +2159,8 @@ function beginGame() {
   if (started) return; started = true;
   startEl.style.opacity = 0; setTimeout(() => startEl.style.display = 'none', 600);   // hide first, so nothing below can leave it stuck
   try { audio.init(); } catch (e) {}
+  let seen = false; try { seen = localStorage.getItem('kns-intro') === '1'; localStorage.setItem('kns-intro', '1'); } catch (e) {}
+  if (!seen && !params.get('fixed')) setTimeout(() => playCine(introShots()), 700);   // the backstory, once (Enter skips)
   try { if (!TOUCH) renderer.domElement.requestPointerLock?.(); } catch (e) {}
 }
 startEl.addEventListener('click', beginGame);
@@ -2168,7 +2171,7 @@ startEl.addEventListener('pointerup', beginGame);
   if (TOUCH) startEl.querySelector('.keys').innerHTML = 'Left side: drag to walk (far to run) · double-tap to mount<br>Right side: drag to look · tap to strike · double-tap to jump · hold to draw katana<br>Three fingers: call your horse'; }
 renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock?.());
 let dragging = false;
-addEventListener('mousedown', e => { dragging = true; if (started && document.pointerLockElement && e.button === 0) { if (aim.on) throwKunai(); else startSlash(); } }); addEventListener('mouseup', () => dragging = false);
+addEventListener('mousedown', e => { dragging = true; if (started && !CINE.on && document.pointerLockElement && e.button === 0) { if (aim.on) throwKunai(); else startSlash(); } }); addEventListener('mouseup', () => dragging = false);
 addEventListener('mousemove', e => {
   if (document.pointerLockElement || dragging) {
     lookYaw -= e.movementX * 0.0042;
@@ -2559,6 +2562,18 @@ const PRESETS = [
   { name: 'BLOOD MOON', fromMoon: true, elev: -14, az: 205, turb: 1, ray: 0.3, mie: 0.002, mieG: 0.8, exp: 0.8, sun: [1.0, 0.4, 0.33], sunI: 1.8, grassSun: 1.7,
     hemi: [0x2a2440, 0x0a0608, 0.55], fog: 0x150d1a, fogD: 0.002, amb: [0.1, 0.09, 0.18], cLit: [0.9, 0.22, 0.18], cShade: [0.03, 0.025, 0.05], cover: 0.32,
     stars: 1, moon: [3.4, 0.5, 0.3], ff: 1, petals: 0, water: 0x020b10, waterSun: 0xff5a40, rays: 0.3, motes: 0 },
+  { name: 'CLEAR MORNING', elev: 24, az: 120, turb: 2.4, ray: 1.4, mie: 0.002, mieG: 0.78, exp: 0.4, sun: [1, 0.93, 0.82], sunI: 5.2, grassSun: 4.6,
+    hemi: [0xb6c8ea, 0x3a3420, 1.0], fog: 0xb9c7d6, fogD: 0.0017, amb: [0.6, 0.68, 0.9], cLit: [3.2, 3.0, 2.8], cShade: [0.5, 0.55, 0.65], cover: 0.4,
+    stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 1, water: 0x063846, waterSun: 0xfff2e0, rays: 0.25, motes: 0 },
+  { name: 'MIDDAY', elev: 58, az: 180, turb: 2.0, ray: 1.0, mie: 0.0018, mieG: 0.76, exp: 0.34, sun: [1, 0.97, 0.92], sunI: 5.6, grassSun: 4.4,
+    hemi: [0xc2d4f0, 0x3d3a28, 1.05], fog: 0xbfcbd8, fogD: 0.0014, amb: [0.62, 0.7, 0.92], cLit: [3.4, 3.3, 3.2], cShade: [0.55, 0.6, 0.7], cover: 0.35,
+    stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 1, water: 0x07404e, waterSun: 0xffffff, rays: 0.15, motes: 0 },
+  { name: 'SUNSET', elev: 2.2, az: 255, turb: 4.2, ray: 3.8, mie: 0.004, mieG: 0.82, exp: 0.5, sun: [1, 0.55, 0.3], sunI: 5.0, grassSun: 5,
+    hemi: [0x9a8ab8, 0x3a2414, 0.8], fog: 0xd8906a, fogD: 0.0019, amb: [0.5, 0.48, 0.72], cLit: [3.4, 1.6, 0.9], cShade: [0.3, 0.16, 0.26], cover: 0.5,
+    stars: 0, moon: [1.6, 1.45, 1.35], ff: 0, petals: 1, water: 0x04222c, waterSun: 0xff9a5a, rays: 0.4, motes: 0 },
+  { name: 'MOONLIT NIGHT', fromMoon: true, elev: -14, az: 205, turb: 1, ray: 0.3, mie: 0.002, mieG: 0.8, exp: 0.85, sun: [0.55, 0.65, 1.0], sunI: 1.6, grassSun: 1.5,
+    hemi: [0x26304e, 0x08080c, 0.6], fog: 0x0c1220, fogD: 0.0018, amb: [0.09, 0.11, 0.2], cLit: [0.5, 0.55, 0.75], cShade: [0.03, 0.035, 0.06], cover: 0.3,
+    stars: 1, moon: [2.6, 2.7, 3.0], ff: 1, petals: 0, water: 0x020a12, waterSun: 0x9ab8ff, rays: 0.3, motes: 0 },
 ];
 let presetIdx = 0, godRayAmt = 0.3;
 const toastEl = document.getElementById('toast'), fadeEl = document.getElementById('fade');
@@ -2588,8 +2603,8 @@ function applyPreset(p) {
   Object.keys(su).forEach(k => { const v = su[k].value, d = skyClone.material.uniforms[k]; if (d) d.value = v.clone ? v.clone() : v; });
   const old = scene.environment; scene.environment = pmrem.fromScene(envScene).texture; old?.dispose();
 }
-function cyclePreset() {
-  presetIdx = (presetIdx + 1) % PRESETS.length;
+function cyclePreset(to) {
+  presetIdx = to !== undefined ? to % PRESETS.length : (presetIdx + 1) % PRESETS.length;
   fadeEl.style.opacity = 1;
   setTimeout(() => {
     applyPreset(PRESETS[presetIdx]); fadeEl.style.opacity = 0;
@@ -3388,7 +3403,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : '';
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : '');
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -3439,6 +3454,7 @@ function animateSoldier(dt, t) {
     rotBone(B.RightArm, AZ, (-1.35 + f * 0.5) * k); rotBone(B.RightArm, AX, (0.55 - f * 1.6) * k); rotBone(B.RightForeArm, AZ, (-1.1 + f * 1.0) * k);
     rotBone(B.LeftArm, AX, -0.9 * k); rotBone(B.LeftArm, AZ, 0.3 * k); rotBone(B.Spine1, AY, -0.35 * k);
   }
+  if (S.bowT > 0) { S.bowT -= dt; const b = Math.sin(Math.min(1, (1.6 - S.bowT) / 1.6) * Math.PI) * 0.6 * (1 - sw.drawT * 0.5); rotBone(B.Spine, AX, b); rotBone(B.Neck, AX, b * 0.4); }
   if (S.waveT > 0) {   // a big friendly wave (V)
     S.waveT -= dt; const w = smooth(0, 0.25, 2.2 - S.waveT) * smooth(0, 0.35, S.waveT) * (1 - sw.drawT);
     rotBone(B.RightArm, AZ, -2.45 * w); rotBone(B.RightArm, AX, -0.25 * w);
@@ -3561,7 +3577,7 @@ function wakeCamps() {
   for (const cp of (window.__camps2 || [])) {
     if ((cp.spawned || 0) >= (cp.max || 3) || Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z) > 230) continue;
     const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
-    makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length);
+    const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) nb.camp = cp;
     cp.spawned = (cp.spawned || 0) + 1;
     return;   // one per frame keeps the hitch small
   }
@@ -3581,7 +3597,7 @@ function hitEnemy(e, dmg, p) {
   if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast('MONGOL WARRIOR DEFEATED', 1600); }
 }
 function hitPlayer(tg, dmg, p) {
-  if (player.invuln > 0 || player.dead) return;
+  if (player.invuln > 0 || player.dead || CINE.on) return;   // nobody strikes during a cutscene
   player.hp -= 16 * dmg; player.invuln = 0.6; lastHurt = clock.elapsedTime;
   shake = Math.min(1.2, shake + 0.5); audio.hurt(); hurtEl.style.opacity = 0.9; setTimeout(() => hurtEl.style.opacity = 0, 160);
   if (!player.mounted) { const dx = player.pos.x - p.x, dz = player.pos.z - p.z, dl = Math.hypot(dx, dz) || 1; player.vel.x += dx / dl * 4; player.vel.z += dz / dl * 4; }
@@ -4119,7 +4135,8 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     piece(H, 'iron', new THREE.SphereGeometry(0.2, 14, 10).scale(1, 0.8, 1), ix, ft + 0.75, iz); piece(H, 'iron', new THREE.CylinderGeometry(0.05, 0.06, 0.1, 8), ix, ft + 0.95, iz);
     COLLIDERS_INIT.push({ x: x + ix * c + iz * sn, z: z - ix * sn + iz * c, r: 0.62 });
     HEARTHS.push({ x: x + ix * c + iz * sn, y: H.base + ft, z: z - ix * sn + iz * c });
-    box(H, 'lamp', 0.3, 0.5, 0.3, -w / 2 + 0.55, ft + 0.36, -d / 2 + 0.55); box(H, 'wood', 0.36, 0.06, 0.36, -w / 2 + 0.55, ft + 0.08, -d / 2 + 0.55);
+    if (!two) { box(H, 'lamp', 0.3, 0.5, 0.3, -w / 2 + 0.55, ft + 0.36, -d / 2 + 0.55); box(H, 'wood', 0.36, 0.06, 0.36, -w / 2 + 0.55, ft + 0.08, -d / 2 + 0.55); }
+    else { box(H, 'lamp', 0.3, 0.5, 0.3, w / 2 - 0.55, ft + 0.36, d / 2 - 0.55); }
     box(H, 'cloth', 1.0, 0.1, 1.9, -w / 2 + 0.85, ft + 0.06, d * 0.05); box(H, 'paper', 0.5, 0.12, 0.3, -w / 2 + 0.85, ft + 0.16, d * 0.05 - 0.75);
     box(H, 'wood', 1.3, 0.95, 0.45, w * 0.28, ft + 0.48, -d / 2 + 0.3);
     for (let k = 0; k < 3; k++) box(H, 'floor', 1.2, 0.24, 0.02, w * 0.28, ft + 0.2 + k * 0.3, -d / 2 + 0.53);
@@ -4127,13 +4144,26 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     box(H, 'wood', 0.95, 0.06, 0.6, -w * 0.05, ft + 0.3, d * 0.28); for (const a of [-1, 1]) for (const b of [-1, 1]) box(H, 'wood', 0.06, 0.26, 0.06, -w * 0.05 + a * 0.4, ft + 0.14, d * 0.28 + b * 0.24);
     box(H, 'paper', 0.5, 1.1, 0.02, -w * 0.12, ft + 1.4, -d / 2 + 0.06);
     let top = eave;
+    H.top = eave;
     if (two) {   // a second storey: plastered walls with slatted windows, a pent roof over the street front, a board ceiling inside
       const up = 2.3; top = eave + up;
-      box(H, 'wood', w - 0.2, 0.08, d - 0.2, 0, eave + 0.02, 0);
+      const sw = Math.min(3.6, w - 2.2), sx0 = -w / 2 + 0.25, sz0 = -d / 2 + 0.1, sz1 = -d / 2 + 1.2;   // stairwell along the back wall
+      box(H, 'wood', w - 0.2, 0.08, d - 0.2 - 1.2, 0, eave + 0.02, 0.6); box(H, 'wood', w - 0.2 - sw - 0.25, 0.08, 1.1, sw / 2 + 0.1, eave + 0.02, -d / 2 + 0.65);
+      const ft0 = fl + 0.06, nS = 9, rs = (eave + 0.06 - ft0) / nS, run = sw / nS;
+      for (let k = 0; k < nS; k++) {
+        const lx = sx0 + (k + 0.5) * run, y = ft0 + (k + 1) * rs;
+        box(H, 'wood', run + 0.02, 0.1, 0.95, lx, y - 0.05, -d / 2 + 0.62); box(H, 'wood', 0.05, rs, 0.95, lx - run / 2, y - rs / 2, -d / 2 + 0.62);
+        FLOORS.push({ x, z, c, s: sn, hx0: sx0 + k * run, hx1: sx0 + (k + 1) * run, hd0: sz0, hd1: sz1, y: H.base + y });
+      }
+      box(H, 'wood', sw, 0.08, 0.06, sx0 + sw / 2, eave + 0.95, -d / 2 + 1.12);   // handrail at the top
+      FLOORS.push({ x, z, c, s: sn, hx0: -w / 2 + 0.1, hx1: w / 2 - 0.1, hd0: sz1, hd1: d / 2 - 0.1, y: H.base + eave + 0.06 },
+                  { x, z, c, s: sn, hx0: sx0 + sw, hx1: w / 2 - 0.1, hd0: sz0, hd1: sz1, y: H.base + eave + 0.06 });
+      H.upper = eave + 0.06;
       for (const sd of [-1, 1]) { box(H, 'plaster', w, up, 0.08, 0, eave + up / 2, sd * d / 2); box(H, 'plaster', 0.08, up, d, sd * w / 2, eave + up / 2, 0); }
       for (const sd of [-1, 1]) for (let i = 0; i <= nx; i++) box(H, 'wood', 0.14, up, 0.14, -w / 2 + i * w / nx, eave + up / 2, sd * d / 2);
       for (const y of [eave + 0.05, top - 0.06]) for (const sd of [-1, 1]) { box(H, 'wood', w + 0.1, 0.13, 0.16, 0, y, sd * d / 2); box(H, 'wood', 0.16, 0.13, d + 0.1, sd * w / 2, y, 0); }
-      for (let i = 0; i < nx; i++) { const px = -w / 2 + (i + 0.5) * w / nx; for (let k = 0; k < 7; k++) box(H, 'wood', 0.045, 0.8, 0.05, px - 0.42 + k * 0.14, eave + 1.2, d / 2 + 0.05); }   // mushiko lattice windows
+      H.top = top;
+    for (let i = 0; i < nx; i++) { const px = -w / 2 + (i + 0.5) * w / nx; for (let k = 0; k < 7; k++) box(H, 'wood', 0.045, 0.8, 0.05, px - 0.42 + k * 0.14, eave + 1.2, d / 2 + 0.05); }   // mushiko lattice windows
       const ph = 1.25; box(H, 'tile', w + 0.5, 0.12, ph, 0, eave + 0.3, d / 2 + ph / 2 - 0.1, 0.42, 0, 0);
     }
     // roof: steep thatch on farmhouses, lower grey tile on the townhouses; ridge, riders and wooden gable ends
@@ -4894,7 +4924,7 @@ function collideCircles(p, radius, vel, extra) {
   }
   return hit;
 }
-function slopeAlong(x, z, dx, dz) { return (groundH(x + dx * 0.6, z + dz * 0.6) - groundH(x - dx * 0.6, z - dz * 0.6)) / 1.2; }
+function slopeAlong(x, z, dx, dz, y) { return (groundH(x + dx * 0.6, z + dz * 0.6, y) - groundH(x - dx * 0.6, z - dz * 0.6, y)) / 1.2; }
 function landImpact(p, strength) {
   shake = Math.min(1.2, shake + strength * 0.5);
   audio.land(strength);
@@ -4907,7 +4937,7 @@ function updatePlayer(dt, moving, wantYaw, sprint) {
   const p = player, v = p.vel, dirX = Math.sin(wantYaw), dirZ = Math.cos(wantYaw);
   const soft = groundSoft(p.pos.x, p.pos.z); p.sink = soft.sink;
   let top = (moving ? (sprint ? 6.4 : 1.8) : 0) * soft.slow;
-  if (moving) { const s = slopeAlong(p.pos.x, p.pos.z, dirX, dirZ); top *= s > 0 ? 1 - Math.min(0.45, s * 0.9) : 1 + Math.min(0.2, -s * 0.35); if (s > 0.9) top *= Math.max(0.05, 1 - (s - 0.9) * 4); }   // cliffs are too steep to climb: find the trail
+  if (moving) { const s = slopeAlong(p.pos.x, p.pos.z, dirX, dirZ, p.pos.y); top *= s > 0 ? 1 - Math.min(0.45, s * 0.9) : 1 + Math.min(0.2, -s * 0.35); if (s > 0.9) top *= Math.max(0.05, 1 - (s - 0.9) * 4); }   // cliffs are too steep to climb: find the trail
   const accel = p.onGround ? (moving ? 10 : 14) : 2.5;
   const ax = dirX * top - v.x, az = dirZ * top - v.z, al = Math.hypot(ax, az), step = Math.min(al, accel * dt);
   if (al > 1e-5) { v.x += ax / al * step; v.z += az / al * step; }
@@ -4922,7 +4952,7 @@ function updatePlayer(dt, moving, wantYaw, sprint) {
   const hx = Math.sin(hs.yaw), hz = Math.cos(hs.yaw);
   collideCircles(p.pos, 0.32, v, [{ x: hs.pos.x + hx * 0.5, z: hs.pos.z + hz * 0.5, r: 0.42 }, { x: hs.pos.x - hx * 0.45, z: hs.pos.z - hz * 0.45, r: 0.42 }, ...enemies.filter(e => e.alive).map(e => ({ x: e.pos.x, z: e.pos.z, r: 0.38 }))]);
   // vertical: gravity, ground snapping on slopes, landing
-  const g = groundH(p.pos.x, p.pos.z) - (p.sink || 0);   // feet sink into snow and mud
+  const g = groundH(p.pos.x, p.pos.z, p.pos.y) - (p.sink || 0);   // feet sink into snow and mud
   p.pos.y += v.y * dt;
   if (p.pos.y <= g) {
     if (!p.onGround && v.y < -6) landImpact(p.pos, (-v.y - 6) / 5);
@@ -5066,9 +5096,14 @@ function update(dt, t) {
   }
   want.y = Math.max(want.y, groundH(want.x, want.z) + 0.45, 0.6);
   const inHouse = !player.mounted && houseAt(player.pos.x, player.pos.z, 0.05);
+  if (!inHouse && !window.__freeCam) {   // outside: if a house stands between you and the camera, the camera comes in front of it
+    for (let k = 1; k <= 12; k++) { const t = k / 12, px = camTarget.x + (want.x - camTarget.x) * t, pz = camTarget.z + (want.z - camTarget.z) * t, py = camTarget.y + (want.y - camTarget.y) * t, H = houseAt(px, pz, -0.25);
+      if (H && py < H.base + H.top + 2.5) { const tt = Math.max(0, (k - 1.4) / 12); want.set(camTarget.x + (want.x - camTarget.x) * tt, camTarget.y + (want.y - camTarget.y) * tt, camTarget.z + (want.z - camTarget.z) * tt); break; } }
+  }
   if (inHouse) {   // indoors: keep the camera inside the walls and under the roof
     const H = inHouse, [lx, lz] = houseLocal(H, want.x, want.z), cx = Math.max(-H.w / 2 + 0.35, Math.min(H.w / 2 - 0.35, lx)), cz = Math.max(-H.d / 2 + 0.35, Math.min(H.d / 2 - 0.35, lz));
-    want.set(H.x + cx * H.c + cz * H.s, Math.min(want.y, H.base + H.eave - 0.25), H.z - cx * H.s + cz * H.c);
+    const ceil = H.upper && player.pos.y > H.base + H.upper - 0.3 ? H.base + H.top - 0.3 : H.base + H.eave - 0.25;   // upstairs the roof is the ceiling
+    want.set(H.x + cx * H.c + cz * H.s, Math.min(want.y, ceil), H.z - cx * H.s + cz * H.c);
   }
   if (first) { camPos.copy(want); camLook.copy(camTarget); first = false; }
   else { const cdt = Math.max(dt, realDt * 0.9); camPos.lerp(want, 1 - Math.exp(-cdt * (9 + aim.k * 5))); camLook.lerp(camTarget, 1 - Math.exp(-cdt * 14)); }   // the camera keeps real-time pace in slow motion
@@ -5325,12 +5360,127 @@ function updateAim(raw) {
 addEventListener('contextmenu', e => { if (started) e.preventDefault(); });
 addEventListener('mousedown', e => { if (e.button === 2 && started) aim.on = true; });
 addEventListener('mouseup', e => { if (e.button === 2) aim.on = false; });
+// ─────────────────────────── Story: cutscenes, the elder's quest, objectives, resting, bows, the controls card ───────────────────────────
+const storyUI = (() => {
+  const mk = (css, parent = document.body) => { const d = document.createElement('div'); d.style.cssText = css; parent.appendChild(d); return d; };
+  const barT = mk('position:fixed;left:0;right:0;top:0;height:0;background:#000;z-index:50;transition:height .6s;pointer-events:none');
+  const barB = mk('position:fixed;left:0;right:0;bottom:0;height:0;background:#000;z-index:50;transition:height .6s;pointer-events:none');
+  const sub = mk('position:fixed;left:50%;bottom:7%;transform:translateX(-50%);width:min(820px,90vw);text-align:center;color:#f4e9d8;font:19px/1.6 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 10px #000;z-index:51;opacity:0;transition:opacity .5s;pointer-events:none');
+  const skip = mk('position:fixed;right:24px;bottom:12px;color:rgba(244,233,216,.6);font:12px Georgia,serif;letter-spacing:3px;z-index:51;opacity:0;transition:opacity .5s;pointer-events:none');
+  skip.textContent = 'ENTER — SKIP';
+  const obj = mk('position:fixed;left:22px;top:20px;color:#f4e9d8;font:14px/1.5 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 6px #000;z-index:20;max-width:360px;opacity:0;transition:opacity .6s;pointer-events:none');
+  const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
+  help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
+    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br>
+    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — call your horse<br><b>R</b> — open / close doors<br>
+    <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day &nbsp; <b>1–7</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
+    <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
+  return { barT, barB, sub, skip, obj, help };
+})();
+const CINE = { on: false, shots: null, i: 0, t: 0, end: null };
+function playCine(shots, end) {
+  Object.assign(CINE, { on: true, shots, i: 0, t: 0, end });
+  storyUI.barT.style.height = storyUI.barB.style.height = '11vh'; storyUI.skip.style.opacity = 1; storyUI.obj.style.opacity = 0;
+  document.exitPointerLock?.();
+}
+function endCine() {
+  if (!CINE.on) return;
+  CINE.on = false; window.__freeCam = null;
+  storyUI.barT.style.height = storyUI.barB.style.height = '0'; storyUI.sub.style.opacity = 0; storyUI.skip.style.opacity = 0;
+  const f = CINE.end; CINE.end = null; if (f) f();
+}
+function updateCine(raw) {
+  if (!CINE.on) return;
+  for (const k in keys) keys[k] = false;
+  const S = CINE.shots[CINE.i]; CINE.t += Math.min(raw, 0.1);
+  const k = smooth(0, 1, CINE.t / S.dur), [a0, a1, b0, b1] = S.cam();
+  window.__freeCam = [a0.clone().lerp(a1, k), b0.clone().lerp(b1, k)];
+  const txt = S.text || ''; if (storyUI.sub.dataset.t !== txt) { storyUI.sub.dataset.t = txt; storyUI.sub.textContent = txt; }
+  storyUI.sub.style.opacity = CINE.t > 0.4 && CINE.t < S.dur - 0.5 && txt ? 1 : 0;
+  if (CINE.t >= S.dur) { CINE.i++; CINE.t = 0; if (CINE.i >= CINE.shots.length) endCine(); }
+}
+const _V = (x, y, z) => new THREE.Vector3(x, y, z), _gy = (x, z, up) => groundH(x, z) + up;
+function introShots() {
+  const V = VILLAGE, C = window.__castle, cp = (window.__camps2 || [])[0], P = player.pos;
+  return [
+    { dur: 7, text: 'Kaze no Shima — the Island of Wind. The year is 1281.', cam: () => [_V(-200, 150, 720), _V(120, 120, 640), _V(0, 40, 0), _V(60, 60, -200)] },
+    { dur: 7, text: 'For three generations your family kept the peace in Kawabe, by the little river.', cam: () => [_V(V[0] - 110, _gy(V[0], V[1], 45), V[1] - 60), _V(V[0] - 60, _gy(V[0], V[1], 30), V[1] - 90), _V(V[0], _gy(V[0], V[1], 0), V[1]), _V(V[0] + 10, _gy(V[0], V[1], 2), V[1] - 10)] },
+    { dur: 7, text: "Then the black sails came. Jarghal Khan's Mongol raiders burned the coast and pitched their camps across the island.", cam: () => cp ? [_V(cp.x + 40, _gy(cp.x, cp.z, 18), cp.z + 30), _V(cp.x + 24, _gy(cp.x, cp.z, 9), cp.z + 18), _V(cp.x, _gy(cp.x, cp.z, 1), cp.z), _V(cp.x, _gy(cp.x, cp.z, 1.5), cp.z)] : [_V(0, 120, 300), _V(0, 100, 250), _V(0, 0, 0), _V(0, 0, 0)] },
+    { dur: 8, text: 'The Khan seized Shirasagi, the White Heron Castle on the highest peak — and with it, your wife and daughter.', cam: () => [_V(C.x - C.s * 140 + 60, C.y + 20, C.z - C.c * 140), _V(C.x - C.s * 80 + 30, C.y + 35, C.z - C.c * 80), _V(C.x, C.y + 20, C.z), _V(C.x, C.y + 24, C.z)] },
+    { dur: 7, text: 'You are Arata Kenshin, the last sword of Kawabe. Find Elder Genjirō in the village. Then take back the island.', cam: () => [_V(P.x + 6, P.y + 2.2, P.z + 6), _V(P.x + 2.6, P.y + 1.9, P.z + 3.2), _V(P.x, P.y + 1.5, P.z), _V(P.x, P.y + 1.6, P.z)] },
+  ];
+}
+const STORY = { step: 0, said: false, cleared: new Set(), castleSeen: false, done: false };
+try { Object.assign(STORY, JSON.parse(localStorage.getItem('kns-story') || '{}'), { cleared: new Set(JSON.parse(localStorage.getItem('kns-story') || '{}').cleared || []) }); } catch (e) {}
+const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); } catch (e) {} };
+let subQueue = [], subT = 0;
+function say(lines) { subQueue = lines.slice(); subT = 0; }
+function objectiveText() {
+  const n = (window.__camps2 || []).filter(c => !c.castle).length;
+  if (STORY.done) return '<b>Your family is safe.</b><br>The island is yours to wander.';
+  if (STORY.step === 0) return '<b>OBJECTIVE</b><br>Find Elder Genjirō in Kawabe village';
+  return `<b>OBJECTIVE</b><br>Free the island — Mongol camps taken: ${STORY.cleared.size} / ${n}<br>Climb to Shirasagi Castle and defeat the Khan's guard`;
+}
+function updateStory(raw) {
+  if (!started || CINE.on) return;
+  // subtitles (dialogue)
+  if (subQueue.length) { subT += raw; storyUI.sub.textContent = subQueue[0]; storyUI.sub.style.opacity = subT > 0.3 && subT < 4.6 ? 1 : 0; if (subT > 5) { subQueue.shift(); subT = 0; } }
+  else if (storyUI.sub.style.opacity !== '0') storyUI.sub.style.opacity = 0;
+  if ((frameNo & 15) !== 0) return;
+  storyUI.obj.innerHTML = objectiveText(); storyUI.obj.style.opacity = mapEl.style.display === 'block' ? 0 : 0.92;
+  // the elder
+  const elder = villagers[2];
+  if (STORY.step === 0 && elder && elder.pos.distanceTo(player.pos) < 4) {
+    STORY.step = 1; saveStory(); elder.bow = 1.6;
+    say(['Genjirō: Kenshin... you live. The gods have not abandoned Kawabe.', 'Genjirō: The Khan holds your wife and little Hana in the keep at Shirasagi, on the high peak.', 'Genjirō: His raiders camp all over the island. Break them, and his castle will stand alone.', 'Genjirō: The mountain trail climbs to the castle stairs. Go — and come home.']);
+  }
+  // camps freed
+  for (const cp of window.__camps2 || []) {
+    if (cp.castle || STORY.cleared.has(cp.x.toFixed(0) + ',' + cp.z.toFixed(0))) continue;
+    if ((cp.spawned || 0) >= (cp.max || 3) && enemies.every(e => e.camp !== cp || !e.alive)) { STORY.cleared.add(cp.x.toFixed(0) + ',' + cp.z.toFixed(0)); saveStory(); toast('MONGOL CAMP TAKEN', 2200); }
+  }
+  // the castle
+  const C = window.__castle;
+  if (C && !STORY.castleSeen && Math.hypot(C.x - player.pos.x, C.z - player.pos.z) < 75) {
+    STORY.castleSeen = true; saveStory();
+    playCine([{ dur: 7, text: 'Shirasagi. The White Heron, stained black with the Khan’s banners. Somewhere in the keep, Hana is waiting.', cam: () => [_V(player.pos.x, player.pos.y + 3, player.pos.z), _V(C.x - C.s * 30, C.y + 8, C.z - C.c * 30), _V(C.x, C.y + 12, C.z), _V(C.x, C.top, C.z)] }]);
+  }
+  const cc = (window.__camps2 || []).find(c => c.castle);
+  if (cc && !STORY.done && (cc.spawned || 0) >= (cc.max || 8) && enemies.every(e => e.camp !== cc || !e.alive)) {
+    STORY.done = true; saveStory();
+    playCine([
+      { dur: 7, text: 'The Khan’s guard lies broken in the snow. Jarghal Khan has fled the island by night.', cam: () => [_V(C.x - C.s * 40, C.y + 18, C.z - C.c * 40), _V(C.x + C.c * 40, C.y + 22, C.z - C.s * 40), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 18, C.z)] },
+      { dur: 8, text: 'In the highest room of the keep, behind a barred door, two voices call your name.', cam: () => [_V(C.x - C.s * 20, C.top - 4, C.z - C.c * 20), _V(C.x - C.s * 12, C.top + 2, C.z - C.c * 12), _V(C.x, C.top - 2, C.z), _V(C.x, C.top, C.z)] },
+      { dur: 8, text: 'Kaze no Shima is free. Thank you for playing.', cam: () => [_V(C.x - C.s * 200, C.y + 90, C.z - C.c * 200), _V(C.x - C.s * 320, C.y + 140, C.z - C.c * 320), _V(C.x, C.y, C.z), _V(0, 20, 0)] },
+    ]);
+  }
+}
+// rest by a hearth: heal, and let the hours pass
+function nearHearth() { for (const h of HEARTHS) if (Math.hypot(h.x - player.pos.x, h.z - player.pos.z) < 2.6 && Math.abs(h.y - player.pos.y) < 2) return h; return null; }
+function rest() {
+  if (player.mounted || !nearHearth() || CINE.on) return;
+  fadeEl.style.opacity = 1;
+  setTimeout(() => { player.hp = player.maxHp; cyclePreset(); toast('YOU REST BY THE FIRE', 2000); }, 700);
+}
+function bowHello() {
+  if (!soldier.ready || player.mounted) return;
+  soldier.bowT = 1.6;
+  for (const v of villagers) if (Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z) < 14) { v.bow = 1.6; v.target = null; v.wait = 3; }
+}
+addEventListener('keydown', e => {
+  if (CINE.on && (e.code === 'Enter' || e.code === 'Space' || e.code === 'Escape')) { e.preventDefault(); endCine(); return; }
+  if (!started) return;
+  if (e.code === 'F1' || e.code === 'KeyI') { e.preventDefault(); storyUI.help.style.display = storyUI.help.style.display === 'flex' ? 'none' : 'flex'; if (storyUI.help.style.display === 'flex') document.exitPointerLock?.(); }
+  if (e.code === 'KeyZ') rest();
+  if (e.code === 'KeyB') bowHello();
+  const d = /^Digit([1-7])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
+});
 let gameT = 0, realDt = 1 / 60;
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  realDt = Math.min(raw, 0.05); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
+  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
