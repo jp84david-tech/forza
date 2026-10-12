@@ -2127,7 +2127,7 @@ startEl.addEventListener('pointerup', beginGame);
   if (TOUCH) startEl.querySelector('.keys').innerHTML = 'Left side: drag to walk (far to run) · double-tap to mount<br>Right side: drag to look · tap to strike · double-tap to jump · hold to draw katana<br>Three fingers: call your horse'; }
 renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock?.());
 let dragging = false;
-addEventListener('mousedown', e => { dragging = true; if (started && document.pointerLockElement && e.button === 0) startSlash(); }); addEventListener('mouseup', () => dragging = false);
+addEventListener('mousedown', e => { dragging = true; if (started && document.pointerLockElement && e.button === 0) { if (aim.on) throwKunai(); else startSlash(); } }); addEventListener('mouseup', () => dragging = false);
 addEventListener('mousemove', e => {
   if (document.pointerLockElement || dragging) {
     lookYaw -= e.movementX * 0.0042;
@@ -3201,14 +3201,15 @@ function dressVillager(model, rig, B, animations, palette, face, wp, hipsY) {
   return { model, rig, B, mixer, act, hipsY };
 }
 const villagers = [];
-const VILLAGER_DEFS = [['vIndigo', 'man'], ['vPlum', 'woman'], ['vBrown', 'elder'], ['vSage', 'boy'], ['vRust', 'woman'], ['vSand', 'man'], ['vIndigo', 'woman'], ['vBrown', 'man']];
+const VILLAGER_DEFS = [['vIndigo', 'man'], ['vPlum', 'woman'], ['vBrown', 'elder'], ['vSage', 'boy'], ['vRust', 'woman'], ['vSand', 'man'], ['vIndigo', 'woman'], ['vBrown', 'man'],
+  ['vSage', 'woman'], ['vRust', 'man'], ['vPlum', 'elder'], ['vSand', 'boy'], ['vIndigo', 'elder'], ['vBrown', 'woman'], ['vSage', 'man'], ['vRust', 'boy'], ['vPlum', 'woman'], ['vSand', 'woman']];
 function spawnVillagers() {
   if (!soldierGLTF || villagers.length) return;
   VILLAGER_DEFS.forEach(([pal, face], i) => {
     const w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, pal, face);
     const root = new THREE.Group(); root.add(w.rig); scene.add(root);
     if (face === 'boy') root.scale.setScalar(0.78);
-    const a = i / VILLAGER_DEFS.length * 6.283, x = VILLAGE[0] + Math.cos(a) * 8, z = VILLAGE[1] + Math.sin(a) * 8;
+    const H = VILLAGE_HOMES[(i * 7) % VILLAGE_HOMES.length], fr = H.d / 2 + 2.6, x = H.x + H.s * fr + (Math.random() - 0.5) * 3, z = H.z + H.c * fr + (Math.random() - 0.5) * 3;   // each by a different doorstep
     villagers.push(Object.assign(w, { root, face, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
 }
@@ -3235,7 +3236,7 @@ function updateVillagers(dt, t) {
       if (dP > 8) v.greeted = false;
       v.wait -= dt;
       if (!v.target && v.wait <= 0) {
-        for (let k = 0; k < 8; k++) { const a = Math.random() * 6.28, r = 4 + Math.random() * 26, x = VILLAGE[0] + Math.cos(a) * r, z = VILLAGE[1] + Math.sin(a) * r;
+        for (let k = 0; k < 8; k++) { const H = VILLAGE_HOMES[Math.floor(Math.random() * VILLAGE_HOMES.length)], fr = H.d / 2 + 2.4 + Math.random() * 4, side = (Math.random() - 0.5) * H.w, x = H.x + H.s * fr + H.c * side, z = H.z + H.c * fr - H.s * side;   // stroll from doorstep to doorstep
           if (riverWet(x, z) === 0 && !COLLIDERS.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 0.6)) { v.target = { x, z }; break; } }
         v.wait = 1;
       }
@@ -3342,6 +3343,11 @@ function animateSoldier(dt, t) {
       rotBone(B.LeftUpLeg, AX, -0.75); rotBone(B.RightUpLeg, AX, -0.3); rotBone(B.LeftLeg, AX, 1.25); rotBone(B.RightLeg, AX, 0.7);
       if (sw.drawT < 0.5) { rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45); }
     } else { lungeLegs(S, sw); footIK(); }
+  }
+  if (aim.k > 0.02 && !player.mounted) {   // kunai: arm cocked back by the ear, flicks forward on the throw
+    const k = aim.k * (1 - sw.drawT * 0.6), f = aim.throwT > 0 ? Math.sin((1 - aim.throwT / 0.3) * Math.PI) : 0;
+    rotBone(B.RightArm, AZ, (-1.35 + f * 0.5) * k); rotBone(B.RightArm, AX, (0.55 - f * 1.6) * k); rotBone(B.RightForeArm, AZ, (-1.1 + f * 1.0) * k);
+    rotBone(B.LeftArm, AX, -0.9 * k); rotBone(B.LeftArm, AZ, 0.3 * k); rotBone(B.Spine1, AY, -0.35 * k);
   }
   if (S.waveT > 0) {   // a big friendly wave (V)
     S.waveT -= dt; const w = smooth(0, 0.25, 2.2 - S.waveT) * smooth(0, 0.35, S.waveT) * (1 - sw.drawT);
@@ -3761,7 +3767,7 @@ function buildLanterns() {
 // ─────────────────────────── Village: thatched minka by the little river ───────────────────────────
 const VILLAGE = [340, 326], VDIR = [0.76, 0.65];   // centre, and the direction the lane runs through it
 window.__village = VILLAGE;
-const VILLAGE_HOUSES = [], HOUSE_KIT = {};
+const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
 {
   const thatch = makeTex(512, (u, v) => {   // combed straw in overlapping courses
     const row = fract(v * 9), streak = pnoise(u * 160, v * 9, 160, 9), fine = pnoise(u * 420, v * 30, 420, 30), n = pfbm(u, v, 6, 4);
@@ -3941,6 +3947,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {};
     G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
   }
   flushHouses();
+  VILLAGE_HOMES.push(...HOUSES);
   window.__villageMats = M; window.__houses = HOUSES; window.__doors = DOORS;
   HOUSE_KIT.minka = minka; HOUSE_KIT.flush = flushHouses;
 }
@@ -4588,6 +4595,7 @@ function update(dt, t) {
     setPrompt('');
   } else {
     updatePlayer(dt, moving, wantYaw, sprint);
+    if (aim.k > 0.4) player.yaw += angDiff(player.yaw, camYaw + Math.PI) * Math.min(1, dt * 14);   // face where you aim
     // horse: comes when called, otherwise stands and grazes
     const dx = player.pos.x - hs.pos.x, dz = player.pos.z - hs.pos.z, d = Math.hypot(dx, dz);
     let target = 0;
@@ -4622,13 +4630,17 @@ function update(dt, t) {
 
   // Third-person camera: spring follow, speed-dependent distance and FOV, look-ahead, shake
   const spd = player.mounted ? Math.abs(hs.speed) : player.speed, fast = smooth(4, 12.5, spd);
-  const dist = (player.mounted ? 6.0 : 4.2) + fast * 1.4, lift = player.mounted ? 2.45 : 1.55;
+  const ak = aim.k, dist = lerp((player.mounted ? 6.0 : 4.2) + fast * 1.4, player.mounted ? 3.2 : 2.1, ak), lift = lerp(player.mounted ? 2.45 : 1.55, player.mounted ? 2.6 : 1.7, ak);
   const vx = player.mounted ? Math.sin(hs.yaw) * hs.speed : player.vel.x, vz = player.mounted ? Math.cos(hs.yaw) * hs.speed : player.vel.z;
   camTarget.set(player.pos.x + vx * 0.12, (player.mounted ? hs.y : hero.root.position.y) + lift, player.pos.z + vz * 0.12);
   const want = new THREE.Vector3(
     camTarget.x + Math.sin(camYaw) * Math.cos(camPitch) * dist,
     camTarget.y + Math.sin(camPitch) * dist,
     camTarget.z + Math.cos(camYaw) * Math.cos(camPitch) * dist);
+  if (ak > 0.001) {   // aiming: over the right shoulder
+    const rx = Math.cos(camYaw) * 0.62 * ak, rz = -Math.sin(camYaw) * 0.62 * ak;
+    want.x += rx; want.z += rz; camTarget.x += rx; camTarget.z += rz;
+  }
   want.y = Math.max(want.y, groundH(want.x, want.z) + 0.45, 0.6);
   const inHouse = !player.mounted && houseAt(player.pos.x, player.pos.z, 0.05);
   if (inHouse) {   // indoors: keep the camera inside the walls and under the roof
@@ -4641,7 +4653,7 @@ function update(dt, t) {
   const sh = shake * 0.12;
   camera.position.set(camPos.x + (Math.sin(t * 53) + Math.sin(t * 31)) * sh, camPos.y + (Math.sin(t * 61) + Math.sin(t * 23)) * sh, camPos.z + Math.sin(t * 47) * sh);
   camera.lookAt(camLook);
-  camFov = lerp(camFov, 55 + fast * 13, Math.min(1, dt * 3));
+  camFov = lerp(camFov, lerp(55 + fast * 13, 46, ak), Math.min(1, dt * (3 + ak * 6)));
   if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
 
   if (window.__freeCam) { camera.position.copy(window.__freeCam[0]); camera.lookAt(window.__freeCam[1]); }
@@ -4799,11 +4811,104 @@ addEventListener('keydown', e => {
 const fpsEl = document.getElementById('fps'); let fpsAcc = 0, fpsN = 0, autoSlow = 0;
 applyGfx();
 
+// ─────────────────────────── Kunai: hold right mouse to aim (time slows, colour drains), left click to throw ───────────────────────────
+const aim = { on: false, k: 0, focus: 1, ts: 1, throwT: 0, cool: 0, grade: -1 };
+const aimUI = (() => {
+  const mk = css => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;pointer-events:none;opacity:0;z-index:30;' + css; document.body.appendChild(d); return d; };
+  const vig = mk('inset:0;background:radial-gradient(ellipse at center, rgba(0,0,0,0) 42%, rgba(24,34,44,0.6) 100%);transition:opacity .15s');
+  const cross = mk('left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border:1.5px solid rgba(244,233,216,0.85);border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.6)');
+  const dot = mk('left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;background:#f4e9d8;border-radius:50%');
+  const bar = mk('left:50%;bottom:9%;width:180px;height:4px;margin-left:-90px;background:rgba(244,233,216,0.18)');
+  const fill = document.createElement('div'); fill.style.cssText = 'height:100%;width:100%;background:linear-gradient(90deg,#c9a24a,#f4e9d8)'; bar.appendChild(fill);
+  return { vig, cross, dot, bar, fill };
+})();
+const kunaiGeo = (() => {
+  const blade = new THREE.OctahedronGeometry(1, 0).scale(0.028, 0.1, 0.007).translate(0, 0.19, 0).toNonIndexed();
+  const grip = new THREE.CylinderGeometry(0.011, 0.012, 0.1, 8).translate(0, 0.05, 0).toNonIndexed();
+  const ring = new THREE.TorusGeometry(0.022, 0.0055, 6, 14).translate(0, -0.018, 0).toNonIndexed();
+  [blade, grip, ring].forEach(g => g.deleteAttribute('uv'));
+  return mergeGeometries([blade, grip, ring]);
+})();
+const kunaiMat = new THREE.MeshStandardMaterial({ color: 0x45484e, metalness: 0.9, roughness: 0.3 });
+const kunais = [];
+for (let i = 0; i < 30; i++) { const m = new THREE.Mesh(kunaiGeo, kunaiMat); m.visible = false; m.castShadow = true; scene.add(m); kunais.push({ m, pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), state: 0, life: 0 }); }
+let kunaiIdx = 0;
+const _kq = new THREE.Quaternion(), _ky = new THREE.Vector3(0, 1, 0), _kd = new THREE.Vector3();
+function aimPoint() {   // what the crosshair is on: the nearest bandit along the line of sight, else the ground, else far away
+  const o = camera.position, d = camera.getWorldDirection(new THREE.Vector3());
+  let best = null, bt = 140;
+  for (const e of enemies) {
+    if (!e.alive || !e.root.visible) continue;
+    for (const hy of [0.9, 1.45]) {
+      const c = new THREE.Vector3(e.pos.x, e.pos.y + hy, e.pos.z), tt = c.clone().sub(o).dot(d);
+      if (tt > 0 && tt < bt && c.distanceTo(o.clone().addScaledVector(d, tt)) < 0.55) { bt = tt; best = c; }
+    }
+  }
+  if (best) return best;
+  for (let tt = 2; tt < 140; tt += tt < 30 ? 0.5 : 2) { const q = o.clone().addScaledVector(d, tt); if (q.y < groundH(q.x, q.z)) return q; }
+  return o.clone().addScaledVector(d, 140);
+}
+function throwKunai() {
+  if (aim.cool > 0 || !soldier.ready) return;
+  aim.cool = 0.22; aim.throwT = 0.3;
+  const K = kunais[kunaiIdx++ % kunais.length], hand = soldier.B.RightHand.getWorldPosition(new THREE.Vector3());
+  const target = aimPoint(), dist = hand.distanceTo(target), speed = 52;
+  K.pos.copy(hand); K.prev.copy(hand); K.vel.copy(target).sub(hand).normalize().multiplyScalar(speed);
+  K.vel.y += 0.5 * 7 * dist / speed;   // aim a little high so the drop lands on the crosshair
+  K.state = 1; K.life = 0; K.m.visible = true;
+  audio.cut();
+}
+function updateKunai(dt) {
+  aim.cool -= dt; aim.throwT = Math.max(0, aim.throwT - dt);
+  for (const K of kunais) {
+    if (!K.state) continue;
+    K.life += dt;
+    if (K.state === 1) {
+      K.prev.copy(K.pos); K.vel.y -= 7 * dt; K.pos.addScaledVector(K.vel, dt);
+      for (const e of enemies) {   // did it pass through a bandit?
+        if (!e.alive) continue;
+        for (const hy of [0.55, 1.0, 1.5]) {
+          const c = _kd.set(e.pos.x, e.pos.y + hy, e.pos.z), seg = K.pos.clone().sub(K.prev), l2 = seg.lengthSq() || 1, u = Math.max(0, Math.min(1, c.clone().sub(K.prev).dot(seg) / l2));
+          if (K.prev.clone().addScaledVector(seg, u).distanceTo(c) < (hy > 1.4 ? 0.22 : 0.36)) { hitEnemy(e, hy > 1.4 ? 3 : 1.5, c.clone()); K.state = 0; K.m.visible = false; if (hy > 1.4) toast('HEADSHOT', 900); break; }
+        }
+        if (!K.state) break;
+      }
+      if (!K.state) continue;
+      const g = groundH(K.pos.x, K.pos.z);
+      const solid = K.pos.y < g + 3 && (() => { const pp = { x: K.pos.x, z: K.pos.z }; return collideCircles(pp, 0.02, null); })();
+      if (K.pos.y <= g + 0.04 || solid || K.life > 4) { K.state = 2; K.pos.y = Math.max(K.pos.y, g + 0.04); audio.land(0.25); dustAt(K.pos.x, K.pos.z, 0.15); }   // thunk: it sticks where it lands
+      _kd.copy(K.vel).normalize(); _kq.setFromUnitVectors(_ky, _kd); K.m.quaternion.copy(_kq);
+    } else if (K.life > 30) { K.state = 0; K.m.visible = false; }
+    K.m.position.copy(K.pos);
+  }
+}
+function updateAim(raw) {
+  const want = aim.on && started && !player.dead;
+  aim.k += ((want ? 1 : 0) - aim.k) * Math.min(1, raw * 10);
+  const slow = want && aim.focus > 0;
+  aim.focus = Math.max(0, Math.min(1, aim.focus + (slow ? -raw / 6 : raw / 9)));   // focus drains while time is slowed
+  aim.ts += ((slow ? 0.25 : 1) - aim.ts) * Math.min(1, raw * 8);
+  const k = 1 - (aim.ts - 0.25) / 0.75;   // 0 normal .. 1 full slow motion
+  const kk = Math.round(k * 50) / 50;
+  if (kk !== aim.grade) {   // the world drains to a cold, bleached gold — like a gunslinger's focus
+    aim.grade = kk;
+    renderer.domElement.style.filter = kk > 0 ? `saturate(${1 - 0.62 * kk}) sepia(${0.3 * kk}) contrast(${1 + 0.16 * kk}) brightness(${1 + 0.05 * kk}) hue-rotate(${-10 * kk}deg)` : '';
+    aimUI.vig.style.opacity = kk;
+  }
+  aimUI.cross.style.opacity = aimUI.dot.style.opacity = aim.k > 0.3 ? aim.k : 0;
+  aimUI.bar.style.opacity = aim.focus < 0.999 || aim.k > 0.3 ? 0.9 : 0; aimUI.fill.style.width = (aim.focus * 100).toFixed(1) + '%';
+}
+addEventListener('contextmenu', e => { if (started) e.preventDefault(); });
+addEventListener('mousedown', e => { if (e.button === 2 && started) aim.on = true; });
+addEventListener('mouseup', e => { if (e.button === 2) aim.on = false; });
+let gameT = 0;
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  update(dt, t);
+  updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
+  update(dt, gameT);
+  updateKunai(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
   SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
   FOGU.uFogSunV.value.copy(SH.uSunDir.value).transformDirection(camera.matrixWorldInverse);
