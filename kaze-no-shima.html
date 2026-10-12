@@ -6589,18 +6589,37 @@ const pauseEl = (() => {
   const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at center, rgba(10,8,6,.55), rgba(4,3,2,.88));z-index:58;color:#f4e9d8;font:15px Georgia,serif;letter-spacing:6px';
   const b = 'background:none;border:1px solid rgba(244,233,216,.35);color:#f4e9d8;font:14px Georgia,serif;letter-spacing:6px;padding:11px 0;width:260px;cursor:pointer';
   d.innerHTML = `<div style="font-size:26px;letter-spacing:26px;opacity:.85">風の島</div><div style="font-size:12px;letter-spacing:10px;opacity:.6;margin-bottom:26px">PAUSED</div>
-    <button data-p="resume" style="${b}">RESUME</button><button data-p="controls" style="${b}">CONTROLS</button><button data-p="gfx" style="${b}">GRAPHICS</button><button data-p="new" style="${b};opacity:.6">NEW GAME</button>
+    <button data-p="resume" style="${b}">RESUME</button><button data-p="journal" style="${b}">JOURNAL</button><button data-p="controls" style="${b}">CONTROLS</button><button data-p="gfx" style="${b}">GRAPHICS</button><button data-p="new" style="${b};opacity:.6">NEW GAME</button>
     <div id="pauseStat" style="margin-top:22px;font-size:11px;letter-spacing:4px;opacity:.55;text-align:center;line-height:2"></div>`;
   document.body.appendChild(d);
   d.addEventListener('click', e => {
     const p = e.target.dataset?.p; if (!p) return;
     if (p === 'resume') { setPaused(false); renderer.domElement.requestPointerLock?.(); }
     if (p === 'controls') { storyUI.help.style.display = 'flex'; }
+    if (p === 'journal') { journalEl.innerHTML = journalHTML(); journalEl.style.display = 'flex'; }
     if (p === 'gfx') { toggleGfxMenu(); }
     if (p === 'new' && confirm('Start a new game? Your progress on the island will be forgotten.')) { try { localStorage.removeItem('kns-story'); localStorage.removeItem('kns-intro'); } catch (er) {} location.reload(); }
   });
   return d;
 })();
+const journalEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.9);z-index:61;color:#f4e9d8;font:15px/1.75 Georgia,serif;overflow:auto';
+  d.addEventListener('click', () => d.style.display = 'none'); document.body.appendChild(d); return d; })();
+function journalHTML() {
+  const met = n => n === 'kenshin' || (n === 'genjiro' && STORY.step > 0) || (n === 'yuki' && (STORY.step > 0)) || (n === 'khan') || (n === 'kuroda' && (STORY.ronin || (RONIN && !RONIN.passive)));
+  const E = [
+    ['kenshin', 'Arata Kenshin', 'The last sword of Kawabe. Cut down on Komoda beach when the Mongols landed, and given back by the tide.'],
+    ['yuki', 'Yuki', STORY.done ? 'Kenshin’s wife. Free, and home in Kawabe; she says she never once doubted he would come.' : 'Kenshin’s wife, taken with their daughter to the keep at Shirasagi.'],
+    ['yuki', 'Hana', STORY.done ? 'Seven years old, and already telling the village she will be a samurai.' : 'Kenshin and Yuki’s daughter. Seven years old. Held in the upper room of the keep.'],
+    ['genjiro', 'Elder Genjirō', 'Headman of Kawabe for forty winters. He burned incense for Kenshin at the shrine, and has never been so glad to be wrong.'],
+    ['kuroda', 'Kuroda Sanjūrō', STORY.ronin ? 'He fought beside Kenshin’s father, and chose the Khan when no lord came. He died on the summit he guarded, asking forgiveness.' : 'A ronin who fought beside Kenshin’s father. Now he guards the summit road for the Khan.'],
+    ['khan', 'Jarghal Khan', STORY.khan ? 'Dead on the floor of the keep he stole. His fleet sailed for home without him.' : 'Raider-lord of the black sails. He holds Shirasagi, the White Heron Castle, on the island’s highest peak.'],
+  ];
+  const camps = (window.__camps2 || []).filter(c => !c.castle).length;
+  return `<div style="max-width:720px;padding:40px 24px"><div style="text-align:center;font-size:24px;letter-spacing:22px;opacity:.85">日誌</div><div style="text-align:center;font-size:12px;letter-spacing:10px;opacity:.55;margin-bottom:28px">JOURNAL</div>
+    ${E.filter(e => met(e[0])).map(e => `<div style="margin-bottom:16px"><div style="font-size:12px;letter-spacing:6px;color:#d9a55b">${e[1].toUpperCase()}</div>${e[2]}</div>`).join('')}
+    <div style="margin-top:26px;font-size:12px;letter-spacing:4px;opacity:.7;line-height:2.2">CAMPS TAKEN ${STORY.cleared.size} / ${camps} · PRISONERS FREED ${(STORY.freed || []).length} · HAIKU ${HAIKU.filter(h => h.done).length} / ${HAIKU.length} · BAMBOO ${BAMBOO.filter(b => b.done).length} / ${BAMBOO.length} · HOT SPRINGS ${SPRINGS.filter(q => q.used).length} / ${SPRINGS.length}<br>MAXIMUM HEALTH ${player.maxHp} · RESOLVE ${RESOLVE.max}</div>
+    <div style="text-align:center;margin-top:24px;font-size:11px;letter-spacing:6px;opacity:.45">CLICK TO CLOSE</div></div>`;
+}
 function setPaused(on) {
   PAUSED = on; pauseEl.style.display = on ? 'flex' : 'none';
   if (on) { const camps = (window.__camps2 || []).filter(c => !c.castle).length, hk = HAIKU.filter(h => h.done).length;
