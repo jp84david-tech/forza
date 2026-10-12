@@ -48,6 +48,8 @@
   #map { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(86vh, 92vw); height: min(86vh, 92vw); display: none; z-index: 30; border: 1px solid rgba(244,233,216,0.35); box-shadow: 0 10px 60px rgba(0,0,0,0.6); }
   #gfx { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(14,10,8,0.88); border: 1px solid rgba(244,233,216,0.3);
     color: #f4e9d8; padding: 22px 28px; font-family: 'Segoe UI', sans-serif; font-size: 13px; letter-spacing: 1px; display: none; min-width: 300px; z-index: 10; }
+  #gfxBtn { position: fixed; top: 12px; right: 12px; z-index: 60; background: rgba(14,10,8,0.55); color: #f4e9d8; border: 1px solid rgba(244,233,216,0.35); padding: 8px 14px; font: 12px Georgia, serif; letter-spacing: 3px; cursor: pointer; }
+  #gfx { z-index: 61; }
   #gfx h3 { font-family: Georgia, serif; font-weight: 400; letter-spacing: 6px; margin-bottom: 14px; }
   #gfx .row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; gap: 16px; }
   #gfx button { background: transparent; color: #f4e9d8; border: 1px solid rgba(244,233,216,0.35); padding: 5px 12px; cursor: pointer; font: inherit; }
@@ -83,6 +85,7 @@
 <div id="toast"></div>
 <div id="hurt"></div>
 <div id="gfx"></div>
+<button id="gfxBtn" aria-label="Graphics settings">⚙ GRAPHICS</button>
 <canvas id="map" width="720" height="720"></canvas>
 <div id="fps"></div>
 <div id="hp"><div id="hpfill"></div></div>
@@ -2033,7 +2036,9 @@ addEventListener('mousemove', e => {
     keys.ShiftLeft = on && d > 75; };
   const opt = { passive: false };
   renderer.domElement.style.touchAction = 'none';
+  const ui = e => e.target.closest && e.target.closest('#gfx, #gfxBtn');
   addEventListener('touchstart', e => {
+    if (ui(e)) return;
     if (e.touches.length >= 3 && started) { hs.called = true; return; }
     for (const t of e.changedTouches) {
       const left = t.clientX < innerWidth / 2, now = performance.now();
@@ -2048,6 +2053,7 @@ addEventListener('mousemove', e => {
     if (started) e.preventDefault();
   }, opt);
   addEventListener('touchmove', e => {
+    if (ui(e)) return;
     for (const t of e.changedTouches) {
       const r = T.get(t.identifier); if (!r) continue;
       if (Math.hypot(t.clientX - r.x0, t.clientY - r.y0) > 10) r.moved = true;
@@ -4427,13 +4433,14 @@ gfxEl.addEventListener('click', e => {
   else { GFX[k] = +v; GFX.preset = 'custom'; GFX.auto = false; }
   applyGfx();
 });
-addEventListener('keydown', e => {
-  if (e.code !== 'KeyG') return;
+function toggleGfxMenu() {
   const open = gfxEl.style.display !== 'block';
   gfxEl.style.display = open ? 'block' : 'none';
   if (open) document.exitPointerLock?.();
   applyGfx();
-});
+}
+addEventListener('keydown', e => { if (e.code === 'KeyG') toggleGfxMenu(); });
+document.getElementById('gfxBtn').addEventListener('click', e => { e.stopPropagation(); toggleGfxMenu(); });
 // ─────────────────────────── Map (Tab) ───────────────────────────
 // The island is painted once from the height grid; markers are drawn on top while the map is open.
 const mapEl = document.getElementById('map'), mapCx = mapEl.getContext('2d'), MAP_E = 960;
