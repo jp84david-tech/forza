@@ -1196,7 +1196,8 @@ function houseAt(x, z, pad = 0) {   // the house whose walls enclose (x, z)
 function houseFloorH(x, z) {
   let best = -Infinity;
   for (const F of FLOORS) {
-    const dx = x - F.x, dz = z - F.z; if (dx * dx + dz * dz > 80) continue;
+    if (F.r2 === undefined) F.r2 = F.hw * F.hw + Math.max(F.hd0 * F.hd0, F.hd1 * F.hd1) + 4;   // big platforms (castle courtyard, shrine terrace) reach their corners
+    const dx = x - F.x, dz = z - F.z; if (dx * dx + dz * dz > F.r2) continue;
     const lx = dx * F.c - dz * F.s, lz = dx * F.s + dz * F.c;
     if (Math.abs(lx) < F.hw && lz > F.hd0 && lz < F.hd1) best = Math.max(best, F.y);
   }
