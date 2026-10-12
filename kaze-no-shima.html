@@ -1147,8 +1147,29 @@ function bridgeH(x, z) {
   }
   return best;
 }
-// Where feet and hooves stand: the ground, or a bridge deck
-function groundH(x, z) { const t = terrainH(x, z), b = bridgeH(x, z); return b > t ? b : t; }
+// Houses you can walk into: raised floors (and the veranda and step stone in front) are ground too
+const HOUSES = [], HEARTHS = [], DOORS = [];
+function houseLocal(H, x, z) { const dx = x - H.x, dz = z - H.z; return [dx * H.c - dz * H.s, dx * H.s + dz * H.c]; }
+function houseAt(x, z, pad = 0) {   // the house whose walls enclose (x, z)
+  for (const H of HOUSES) {
+    if ((x - H.x) ** 2 + (z - H.z) ** 2 > H.R2) continue;
+    const [lx, lz] = houseLocal(H, x, z);
+    if (Math.abs(lx) < H.w / 2 - pad && Math.abs(lz) < H.d / 2 - pad) return H;
+  }
+  return null;
+}
+function houseFloorH(x, z) {
+  let best = -Infinity;
+  for (const H of HOUSES) {
+    if ((x - H.x) ** 2 + (z - H.z) ** 2 > H.R2) continue;
+    const [lx, lz] = houseLocal(H, x, z);
+    if (Math.abs(lx) < H.w / 2 + 0.17 && lz > -H.d / 2 - 0.17 && lz < H.d / 2 + 0.95) best = Math.max(best, H.base + H.fl + 0.06);
+    else if (Math.abs(lx - H.doorX) < 0.4 && lz >= H.d / 2 + 0.95 && lz < H.d / 2 + 1.45) best = Math.max(best, H.base + 0.31);
+  }
+  return best;
+}
+// Where feet and hooves stand: the ground, a bridge deck or a house floor
+function groundH(x, z) { const t = terrainH(x, z), b = bridgeH(x, z), f = HOUSES.length ? houseFloorH(x, z) : -Infinity; return Math.max(t, b, f); }
 
 // ─────────────────────────── Grass ───────────────────────────
 const blade = new THREE.BufferGeometry();
@@ -1412,6 +1433,44 @@ const grassCardTex = (() => {
   }
   const t = new THREE.CanvasTexture(c); t.anisotropy = ANISO; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t;
 })();
+// Pampas grass: a fountain of long arching leaves with tall stalks carrying silky plumes (G channel marks the plumes)
+const pampasTex = (() => {
+  const S = LOW ? 512 : 1024, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), R = rng32(4242), k = S / 512; x.lineCap = 'round';
+  for (let i = 0; i < 90; i++) {   // leaves arching out from the clump
+    const u = (R() - 0.5) * 0.5, bx = S / 2 + u * S * 0.3, side = R() < 0.5 ? -1 : 1, len = S * (0.3 + R() * 0.35), v = 90 + R() * 120 | 0;
+    x.strokeStyle = `rgb(${v},0,0)`; x.lineWidth = (2 + R() * 2.5) * k;
+    x.beginPath(); x.moveTo(bx, S); x.quadraticCurveTo(bx + side * len * 0.25, S - len * 0.95, bx + side * len * (0.45 + R() * 0.4), S - len * (0.45 + R() * 0.3)); x.stroke();
+  }
+  for (let i = 0; i < 9; i++) {   // stalks and plumes
+    const bx = S / 2 + (R() - 0.5) * S * 0.36, top = S * (0.04 + R() * 0.2), tx = bx + (R() - 0.5) * S * 0.16, v = 150 + R() * 60 | 0;
+    x.strokeStyle = `rgb(${v},0,0)`; x.lineWidth = 2.2 * k; x.beginPath(); x.moveTo(bx, S); x.quadraticCurveTo(bx, S * 0.5, tx, top + S * 0.2); x.stroke();
+    const pl = S * (0.2 + R() * 0.08);
+    for (let j = 0; j < 260; j++) {   // feathery plume: hundreds of fine strands
+      const t = R(), cy = top + t * pl, wdt = Math.sin(Math.min(1, t * 1.15) * Math.PI) * S * 0.05 + 2 * k, cx = tx + (R() - 0.5) * 2 * wdt, vv = 170 + R() * 85 | 0;
+      x.strokeStyle = `rgb(${vv},255,0)`; x.lineWidth = (0.8 + R() * 1.2) * k;
+      x.beginPath(); x.moveTo(tx + (cx - tx) * 0.2, cy + pl * 0.06); x.lineTo(cx, cy - (R() * 0.05 + 0.02) * pl); x.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.anisotropy = ANISO; return t;
+})();
+// Flowering fields (lavender, pink pinks, golden rapeseed): many slim stems with flower spikes (G channel marks the flowers)
+const flowerCardTex = (() => {
+  const S = LOW ? 512 : 1024, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), R = rng32(9191), k = S / 512; x.lineCap = 'round';
+  for (let i = 0; i < 70; i++) {
+    const bx = S * (0.06 + R() * 0.88), hgt = S * (0.55 + R() * 0.42), tx = bx + (R() - 0.5) * S * 0.12, ty = S - hgt, v = 90 + R() * 110 | 0;
+    x.strokeStyle = `rgb(${v},0,0)`; x.lineWidth = (1.6 + R()) * k;
+    x.beginPath(); x.moveTo(bx, S); x.quadraticCurveTo(bx, S - hgt * 0.5, tx, ty); x.stroke();
+    for (let j = 0; j < 3; j++) { const ly = S - hgt * (0.1 + R() * 0.3), d = R() < 0.5 ? -1 : 1; x.beginPath(); x.moveTo(bx, ly); x.quadraticCurveTo(bx + d * 10 * k, ly - 14 * k, bx + d * 22 * k, ly - 8 * k); x.stroke(); }
+    const spike = hgt * (0.22 + R() * 0.12);
+    for (let j = 0; j < 14; j++) {   // whorls of little flowers up the spike
+      const t = j / 13, cy = ty + t * spike, cx = tx + (R() - 0.5) * 3 * k, r = (2.4 + 2.2 * (1 - Math.abs(t - 0.45) * 1.4)) * k, vv = 150 + R() * 105 | 0;
+      x.fillStyle = `rgb(${vv},255,0)`; x.beginPath(); x.ellipse(cx - r * 0.7, cy, r, r * 0.8, 0, 0, 6.283); x.ellipse(cx + r * 0.7, cy + r * 0.3, r, r * 0.8, 0, 0, 6.283); x.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.anisotropy = ANISO; return t;
+})();
 const cardGeo = (() => {   // three quads crossed at 60°, two rows high so they can bend
   const pos = [], uv = [], idx = [];
   for (let q = 0; q < 3; q++) {
@@ -1439,15 +1498,18 @@ const cardGeoFar = (() => {   // two crossed quads, one row: plenty for tufts te
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
 })();
-function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
+function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex = grassCardTex) {
   return new THREE.ShaderMaterial({
-  side: THREE.DoubleSide, defines: far ? { FAR: '' } : {},
-  uniforms: { ...SH, uPatch: { value: patch }, uFade: { value: new THREE.Vector2(fadeA, fadeB) }, uGrow: { value: new THREE.Vector2(growA, growB) }, uCardTex: { value: grassCardTex }, uTexSize: { value: grassCardTex.image.width } },
+  side: THREE.DoubleSide, defines: Object.assign({ KIND: kind }, far ? { FAR: '' } : {}),
+  uniforms: { ...SH, uPatch: { value: patch }, uFade: { value: new THREE.Vector2(fadeA, fadeB) }, uGrow: { value: new THREE.Vector2(growA, growB) }, uCardTex: { value: tex }, uTexSize: { value: tex.image.width } },
   vertexShader: CANOPY_GLSL + /* glsl */`
     uniform float uTime, uCloudAmt, uPatch; uniform vec2 uFade, uGrow; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
     ${NOISE_GLSL}
     attribute vec3 aOffset; attribute vec4 aParams;
     varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
+    // where the fields grow (shared by the pampas and flower layers so they never overlap)
+    float flowerField(vec2 p){ return smoothstep(0.64, 0.7, vnoise2(p * 0.006 + vec2(57.0, 21.0)) * 0.72 + vnoise2(p * 0.035 + 3.0) * 0.28); }
+    float pampasField(vec2 p){ return smoothstep(0.64, 0.7, vnoise2(p * 0.0045 + vec2(11.0, 3.0)) * 0.7 + vnoise2(p * 0.025 + 5.0) * 0.3) * (1.0 - flowerField(p)); }
     vec2 pushFrom(vec4 P, vec2 root, float t, float h){
       vec2 d = root - P.xy; float l = length(d) + 1e-4;
       return d / l * (1.0 - smoothstep(P.z * 0.35, P.z, l)) * P.w * t * h * 1.1;
@@ -1464,10 +1526,25 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       vec3 camF0 = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
       // cheap exits first: out of this layer's band, or behind the camera (before any texture is read)
       if (grow <= 0.0 || dot(vec2(wxz - cameraPosition.xz), normalize(camF0.xz + vec2(1e-4))) < -3.0 - abs(camF0.y) * 30.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      #if KIND == 1
+      float field = pampasField(wxz);
+      #elif KIND == 2
+      float field = flowerField(wxz);
+      #else
+      float field = 1.0;
+      #endif
+      if (fract(r * 31.7 + aParams.y * 3.1) >= field) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }   // thins out softly at a field's edge
       vec4 hm = texture2D(uHeightMap, ((wxz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z);
       float keep = (1.0 - smoothstep(0.2, 0.5, hm.g)) * smoothstep(0.5, 0.85, hm.r) * (1.0 - smoothstep(52.0, 72.0, hm.r)) * smoothstep(0.05, 0.35, hm.b) * grow;
       vec3 root = vec3(wxz.x, hm.r - 0.03, wxz.y);
-      float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.7 + 0.5 * aParams.y) * keep;
+      #if KIND == 1
+      float h = (1.6 + 0.9 * aParams.y) * (0.75 + 0.25 * hm.b) * keep * step(hm.r, 45.0) * (1.0 - smoothstep(0.05, 0.2, hm.g));
+      #elif KIND == 2
+      float h = (0.42 + 0.3 * aParams.y) * (0.8 + 0.2 * hm.b) * keep * step(hm.r, 40.0) * (1.0 - smoothstep(0.05, 0.2, hm.g));
+      #else
+      float tall = smoothstep(0.6, 0.74, vnoise2(wxz * 0.012 + vec2(31.0, 7.0)) * 0.7 + vnoise2(wxz * 0.05) * 0.3);   // patches of long grass
+      float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.84 + 0.26 * aParams.y) * (0.82 + 0.36 * vnoise2(wxz * 0.15 + 2.0)) * (1.0 + 1.25 * tall) * keep;
+      #endif
       vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
       if (h < 0.004 || dot(root - cameraPosition, camF) < -2.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
       #ifdef FAR
@@ -1485,6 +1562,9 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       vec2 wdir = normalize(vec2(1.0, 0.35));
       float g = gustAt(root.xz, uTime), flutter = sin(uTime * 3.0 + r * 30.0) * 0.05;
       vec2 disp = wdir * (0.1 + g * 0.45 + flutter) * t * t * h * (0.7 + 0.6 * fract(r * 5.3));   // stiffer and softer tufts
+      #if KIND == 1
+      disp *= 0.75; disp += wdir * sin(uTime * 1.3 + root.x * 0.15 + r * 4.0) * 0.12 * t * t * h;   // tall plumes rock slowly
+      #endif
       disp *= 1.0 - ta * 0.8;
       #ifndef FAR
       disp += pushFrom(uPush0, root.xz, t, h) + pushFrom(uPush1, root.xz, t, h);
@@ -1495,7 +1575,14 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       vUv = uv; vT = t; vWorld = wp; vRand = r;
       vCardN = normalize(vec3(-lp.z, 0.0, lp.x) + vec3(1e-4));
       vUp = normalize(vec3(disp.x * 2.2, max(h, 0.02), disp.y * 2.2));
-      vTip = meadowTip(root.xz, vnoise2(root.xz * 0.19 + 7.0), vnoise2(root.xz * 0.035), r * 0.15) * vec3(1.0 + (fract(r * 7.1) - 0.5) * 0.12, 1.0, 1.0 - (fract(r * 3.7) - 0.5) * 0.15);
+      #if KIND == 2
+      float pal = vnoise2(root.xz * 0.004 + 9.0);   // each field its own colour: lavender, pinks, golden rapeseed
+      vTip = pal < 0.45 ? mix(vec3(0.3, 0.13, 0.62), vec3(0.42, 0.24, 0.75), fract(r * 7.1)) : pal < 0.62 ? mix(vec3(0.78, 0.22, 0.42), vec3(0.9, 0.5, 0.62), fract(r * 7.1)) : mix(vec3(0.85, 0.62, 0.05), vec3(0.95, 0.8, 0.2), fract(r * 7.1));
+      #elif KIND == 1
+      vTip = mix(vec3(0.78, 0.72, 0.58), vec3(0.92, 0.86, 0.74), fract(r * 7.1));
+      #else
+      vTip = meadowTip(root.xz, vnoise2(root.xz * 0.19 + 7.0), vnoise2(root.xz * 0.035), r * 0.05) * vec3(1.0 + (fract(r * 7.1) - 0.5) * 0.05, 1.0, 1.0 - (fract(r * 3.7) - 0.5) * 0.06);
+      #endif
       vCloud = cloudShadowAt(root.xz, uTime, uCloudAmt) * canopyAt(root.xz);
       vShadowCoord = uShadowMatrix * vec4(wp, 1.0);
       gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
@@ -1513,10 +1600,19 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
       vec3 Nc = vCardN * (dot(vCardN, V) < 0.0 ? -1.0 : 1.0);
       vec3 N = normalize(Nc * 0.55 + vec3(0.0, 0.9, 0.0));
       float lum = tx.r;                                                   // painted blade shading (dark roots, varied blades)
-      vec3 col = mix(vec3(0.012, 0.025, 0.006), vTip, smoothstep(0.0, 1.0, vT * 0.7 + lum * 0.5)) * (0.55 + 0.6 * lum) * (0.85 + 0.3 * vRand);
+      #if KIND == 0
+      vec3 col = mix(vec3(0.012, 0.025, 0.006), vTip, smoothstep(0.0, 1.0, vT * 0.7 + lum * 0.5)) * (0.55 + 0.6 * lum) * (0.95 + 0.1 * vRand);
+      #else
+      float flw = smoothstep(0.4, 0.8, tx.g);
+      vec3 stem = mix(vec3(0.015, 0.03, 0.008), KIND == 1 ? vec3(0.3, 0.28, 0.13) : vec3(0.08, 0.15, 0.04), smoothstep(0.0, 1.0, vT * 0.8 + lum * 0.3)) * (0.6 + 0.6 * lum);
+      vec3 col = mix(stem, vTip * (0.65 + 0.5 * lum), flw);
+      #endif
       float vis = sunVisibility(vShadowCoord) * vCloud;
       float ndl = max(dot(N, L), 0.0);
       float trans = pow(max(dot(-V, L), 0.0), 6.0) * vT * 0.8;
+      #if KIND == 1
+      trans *= 1.0 + 2.5 * flw;   // silky plumes glow against the sun
+      #endif
       float ao = mix(0.25, 1.0, smoothstep(0.0, 0.8, vT));
       float th = dot(normalize(vUp), H), sinTH = sqrt(max(1.0 - th * th, 0.0));
       float sheen = (pow(sinTH, 12.0) * 0.05 + pow(sinTH, 4.0) * 0.018) * smoothstep(0.2, 0.9, vT) * (0.4 + 0.6 * ndl) * lum;
@@ -1529,7 +1625,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far) {
     }`,
   });
 }
-function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -1, geo = cardGeo) {
+function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -1, geo = cardGeo, kind = 0, tex = grassCardTex) {
   const g = new THREE.InstancedBufferGeometry();
   g.index = geo.index; g.attributes.position = geo.attributes.position; g.attributes.uv = geo.attributes.uv;
   const off = new Float32Array(N * 3), prm = new Float32Array(N * 4);
@@ -1540,18 +1636,27 @@ function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -
   g.setAttribute('aOffset', new THREE.InstancedBufferAttribute(off, 3));
   g.setAttribute('aParams', new THREE.InstancedBufferAttribute(prm, 4));
   g.instanceCount = N;
-  const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB, geo === cardGeoFar)); m.frustumCulled = false; scene.add(m); return m;
+  const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB, geo === cardGeoFar, kind, tex)); m.frustumCulled = false; scene.add(m); return m;
 }
-const nearCards = makeCardCarpet(LOW ? 28000 : ULTRA ? 80000 : 48000, 48, 0.7, 1.05, 9, 23);    // dense layer round the player
-const midCards = makeCardCarpet(LOW ? 90000 : ULTRA ? 260000 : 160000, 210, 0.9, 1.35, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
-const farCards = makeCardCarpet(LOW ? 240000 : ULTRA ? 700000 : 480000, 540, 1.5, 2.3, 185, 262, 28, 60, cardGeoFar);   // big sparse tufts to ~250 m
+const nearCards = makeCardCarpet(LOW ? 56000 : ULTRA ? 160000 : 96000, 48, 0.9, 1.3, 9, 23);    // dense layer round the player
+const midCards = makeCardCarpet(LOW ? 180000 : ULTRA ? 520000 : 320000, 210, 1.1, 1.65, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
+const farCards = makeCardCarpet(LOW ? 480000 : ULTRA ? 1400000 : 960000, 540, 1.8, 2.7, 185, 262, 28, 60, cardGeoFar);   // big tufts to ~250 m
+// fields of pampas grass and of flowers (only drawn where their field mask says they grow)
+const FIELD_CARPETS = [
+  makeCardCarpet(LOW ? 8000 : 16000, 70, 1.5, 2.1, 24, 33, -2, -1, cardGeo, 1, pampasTex),
+  makeCardCarpet(LOW ? 26000 : 52000, 300, 1.7, 2.4, 125, 145, 20, 30, cardGeoMid, 1, pampasTex),
+  makeCardCarpet(LOW ? 20000 : 40000, 760, 2.6, 3.4, 330, 370, 125, 145, cardGeoFar, 1, pampasTex),
+  makeCardCarpet(LOW ? 20000 : 44000, 60, 0.65, 0.95, 20, 28, -2, -1, cardGeo, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 60000 : 130000, 260, 0.8, 1.1, 110, 125, 16, 24, cardGeoMid, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 50000 : 110000, 640, 1.6, 2.2, 280, 310, 105, 120, cardGeoFar, 2, flowerCardTex),
+];
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
 scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...REFL_HIDE, ...enemies.map(e => e.root), ...villagers.map(v => v.root)], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
+  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...FIELD_CARPETS, ...REFL_HIDE, ...enemies.map(e => e.root), ...villagers.map(v => v.root)], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -1997,6 +2102,7 @@ player.yaw = camYaw + Math.PI;
 const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyE') toggleMount();
+  if (e.code === 'KeyR') useDoor();
   if (e.code === 'KeyH' && !player.mounted) hs.called = true;
   if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); }
   if (e.code === 'KeyT') cyclePreset();
@@ -2370,6 +2476,7 @@ const audio = (() => {
   A.fall = () => { burst(320, 'lowpass', 1, 0.5, 0.6); tone(95, 40, 0.45, 0.5); };
   A.jump = () => burst(700, 'bandpass', 1, 0.12, 0.25, 250);
   A.land = (s = 1) => { tone(95, 38, Math.min(0.7, 0.3 + s * 0.3), 0.28); burst(380, 'lowpass', 1, Math.min(0.5, 0.2 + s * 0.2), 0.22); };
+  A.door = () => { burst(900, 'bandpass', 2, 0.18, 0.35); tone(220, 180, 0.05, 0.25, 'triangle'); };   // a wooden door sliding in its track
   A.cut = () => { for (let i = 0; i < 4; i++) setTimeout(() => burst(3000 + Math.random() * 2000, 'highpass', 0.7, 0.15, 0.08), i * 25); };
   A.update = (dt, gust, speed, shore, night) => {
     if (!ctx) return; const t = ctx.currentTime;
@@ -3076,7 +3183,7 @@ function spawnVillagers() {
     villagers.push(Object.assign(w, { root, face, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
 }
-const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 55, at: () => VILLAGE }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
+const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 120, at: () => VILLAGE }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
 function updatePlaces() {   // the name of a place appears as you arrive
   for (const pl of PLACES) {
     const c = pl.at(); if (!c) continue;
@@ -3123,6 +3230,41 @@ function updateVillagers(dt, t) {
     v.root.updateMatrixWorld(true);
     if (v.bow > 0) { v.bow -= dt; const b = Math.sin(Math.min(1, (1.6 - v.bow) / 1.6) * Math.PI) * 0.55; rotBoneRig(v.rig, v.B.Spine, AX, b); rotBoneRig(v.rig, v.B.Neck, AX, b * 0.4); }
   }
+}
+// ── Doors: every house has a sliding shoji door. R opens or closes the nearest one ──
+let doorMesh = null;
+let doorPrompt = '';
+function setDoor(D) {
+  const H = D.H, lx = D.lx + D.open * D.pw * 0.96, lz = H.d / 2 - 0.02 - D.open * 0.07, m = new THREE.Matrix4();
+  m.compose(new THREE.Vector3(H.x + lx * H.c + lz * H.s, H.base + (H.eave + H.fl) / 2 - 0.1, H.z - lx * H.s + lz * H.c), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), H.yaw), new THREE.Vector3(D.pw, D.ph, 1));
+  doorMesh.setMatrixAt(D.idx, m);
+}
+function nearestDoor(maxD) { let best = null, bd = maxD; for (const D of DOORS) { const d = Math.hypot(D.x - player.pos.x, D.z - player.pos.z); if (d < bd) { bd = d; best = D; } } return best; }
+function useDoor() {
+  if (player.mounted) return;
+  const D = nearestDoor(2.4); if (!D) return;
+  D.want = D.want ? 0 : 1; D.timer = 0;
+  audio.door?.();
+}
+function updateDoors(dt) {
+  if (!doorMesh && DOORS.length) {
+    doorMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 0.05), window.__villageMats.paper, DOORS.length);
+    doorMesh.castShadow = doorMesh.receiveShadow = true; doorMesh.frustumCulled = false; scene.add(doorMesh); REFL_HIDE.push(doorMesh);
+    DOORS.forEach(setDoor); doorMesh.instanceMatrix.needsUpdate = true;
+  }
+  if (!doorMesh) return;
+  let dirty = false;
+  for (const D of DOORS) {
+    const dp = Math.hypot(D.x - player.pos.x, D.z - player.pos.z);
+    if (D.want) { D.timer += dt; if (D.timer > 7 && dp > 2.2) D.want = 0; }   // doors slide shut behind you after a while
+    if (D.open !== D.want) {
+      D.open = D.want ? Math.min(1, D.open + dt * 2.6) : Math.max(0, D.open - dt * 2.6);
+      D.cols.forEach(c => c.off = D.open > 0.45); setDoor(D); dirty = true;
+    }
+  }
+  if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
+  const D = !player.mounted && started ? nearestDoor(2.4) : null;
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : '';
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -3275,8 +3417,8 @@ function makeBandit(home, i) {
 function wakeCamps() {
   if (!soldierGLTF) return;
   for (const cp of (window.__camps2 || [])) {
-    if ((cp.spawned || 0) >= 2 || Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z) > 230) continue;
-    const a = cp.yaw + 0.9 + (cp.spawned || 0) * 2.6;
+    if ((cp.spawned || 0) >= 3 || Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z) > 230) continue;
+    const a = cp.yaw + 0.9 + (cp.spawned || 0) * 2.1;
     makeBandit({ x: cp.x + Math.cos(a) * 3, z: cp.z + Math.sin(a) * 3 }, enemies.length);
     cp.spawned = (cp.spawned || 0) + 1;
     return;   // one per frame keeps the hitch small
@@ -3573,7 +3715,7 @@ function buildLanterns() {
 // ─────────────────────────── Village: thatched minka by the little river ───────────────────────────
 const VILLAGE = [340, 326], VDIR = [0.76, 0.65];   // centre, and the direction the lane runs through it
 window.__village = VILLAGE;
-const VILLAGE_HOUSES = [];
+const VILLAGE_HOUSES = [], HOUSE_KIT = {};
 {
   const thatch = makeTex(512, (u, v) => {   // combed straw in overlapping courses
     const row = fract(v * 9), streak = pnoise(u * 160, v * 9, 160, 9), fine = pnoise(u * 420, v * 30, 420, 30), n = pfbm(u, v, 6, 4);
@@ -3589,8 +3731,23 @@ const VILLAGE_HOUSES = [];
     wood: new THREE.MeshStandardMaterial({ color: 0x3b2a1d, roughness: 0.8 }), floor: new THREE.MeshStandardMaterial({ color: 0x6a4f36, roughness: 0.85 }),
     stone: TM(texRock, 0.9), paper: new THREE.MeshStandardMaterial({ map: shoji, roughness: 0.9, emissive: new THREE.Color(0, 0, 0) }),
     cloth: new THREE.MeshStandardMaterial({ color: 0x1d2b4a, roughness: 0.9, side: THREE.DoubleSide }), straw: TM(texStraw, 0.95),
+    tatami: new THREE.MeshStandardMaterial({ map: (() => { const c = document.createElement('canvas'); c.width = 1024; c.height = 512; const x = c.getContext('2d');
+      const mat = (mx, my, mw, mh, vert) => { x.fillStyle = '#a69a5c'; x.fillRect(mx, my, mw, mh);
+        for (let i = 0; i < (vert ? mw : mh); i += 3) { x.fillStyle = `rgba(${70 + Math.random() * 40 | 0},${70 + Math.random() * 30 | 0},30,0.35)`; vert ? x.fillRect(mx + i, my, 1.4, mh) : x.fillRect(mx, my + i, mw, 1.4); }
+        x.strokeStyle = '#1c2a22'; x.lineWidth = 12; vert ? (x.beginPath(), x.moveTo(mx + 6, my), x.lineTo(mx + 6, my + mh), x.moveTo(mx + mw - 6, my), x.lineTo(mx + mw - 6, my + mh), x.stroke()) : (x.beginPath(), x.moveTo(mx, my + 6), x.lineTo(mx + mw, my + 6), x.moveTo(mx, my + mh - 6), x.lineTo(mx + mw, my + mh - 6), x.stroke()); };
+      mat(0, 0, 512, 256, false); mat(0, 256, 512, 256, false); mat(512, 0, 256, 512, true); mat(768, 0, 256, 512, true);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO; return t; })(), roughness: 0.9 }),
+    ember: new THREE.MeshStandardMaterial({ color: 0x220800, emissive: new THREE.Color(2.2, 0.55, 0.12), roughness: 1 }),
+    lamp: new THREE.MeshStandardMaterial({ map: shoji, emissive: new THREE.Color(1.1, 0.72, 0.38), emissiveMap: shoji, roughness: 0.9 }),
+    iron: new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.55, metalness: 0.6 }),
   };
-  const G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
+  let G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
+  const _th = THREE.DataUtils.toHalfFloat;
+  function bareHM(x, z) {
+    const i = Math.round((x - HM_MIN) / HM_SIZE * (HM - 1)), j = Math.round((z - HM_MIN) / HM_SIZE * (HM - 1));
+    if (i < 0 || j < 0 || i >= HM || j >= HM) return;
+    const o = (j * HM + i) * 4 + 1; HMF[o] = 1; hmTex.image.data[o] = _th(1); hmTex.needsUpdate = true;
+  }
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
   // place a piece given in a house's own frame (x along the front, z towards the lane, y up from its floor base)
   const piece = (H, mat, geo, lx, ly, lz, rx = 0, ry = 0, rz = 0) => {
@@ -3599,15 +3756,15 @@ const VILLAGE_HOUSES = [];
     G[mat].push(geo.applyMatrix4(m4.compose(new THREE.Vector3(H.x + lx * c + lz * sn, H.base + ly, H.z - lx * sn + lz * c), q, one)));
   };
   const box = (H, mat, w, h, d, lx, ly, lz, rx, ry, rz) => piece(H, mat, new THREE.BoxGeometry(w, h, d), lx, ly, lz, rx, ry, rz);
-  function minka(x, z, yaw, w, d, big) {
+  function minka(x, z, yaw, w, d, big, R = rng32(Math.round(x * 13 + z * 7))) {
     const c = Math.cos(yaw), sn = Math.sin(yaw);
     let lo = Infinity, hi = -Infinity;
     for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) { const gx = x + a * w / 2 * c + b * d / 2 * sn, gz = z - a * w / 2 * sn + b * d / 2 * c, gy = terrainH(gx, gz); lo = Math.min(lo, gy); hi = Math.max(hi, gy); }
-    const H = { x, z, yaw, base: hi + 0.15 }, fl = 0.55, eave = 2.75 + (big ? 0.35 : 0), ov = 1.05;
+    const H = { x, z, yaw, base: hi + 0.15, c, s: sn, w, d, fl: 0.55, R2: (Math.hypot(w, d) / 2 + 2) ** 2 }, fl = 0.55, eave = 2.75 + (big ? 0.35 : 0), ov = 1.05;
+    H.eave = eave;
     box(H, 'stone', w + 0.35, H.base - lo + 0.9, d + 0.35, 0, -(H.base - lo + 0.9) / 2 + fl - 0.1, 0);              // stone footing
     box(H, 'floor', w, 0.12, d, 0, fl, 0);                                                                     // raised floor
     box(H, 'floor', w, 0.08, 0.95, 0, fl - 0.03, d / 2 + 0.48);                                                // engawa veranda
-    box(H, 'stone', 0.7, 0.25, 0.45, 0, 0.18, d / 2 + 1.2);                                                    // step stone
     const nx = Math.max(2, Math.round(w / 1.8)), nz = Math.max(2, Math.round(d / 1.8));
     for (let i = 0; i <= nx; i++) for (const sd of [-1, 1]) box(H, 'wood', 0.16, eave, 0.16, -w / 2 + i * w / nx, eave / 2, sd * d / 2);
     for (let i = 1; i < nz; i++) for (const sd of [-1, 1]) box(H, 'wood', 0.16, eave, 0.16, sd * w / 2, eave / 2, -d / 2 + i * d / nz);
@@ -3623,12 +3780,43 @@ const VILLAGE_HOUSES = [];
       box(H, 'plaster', 0.07, eave - fl - 1.0, d - 0.1, sd * w / 2, (eave + fl + 0.95) / 2, 0);
     }
     box(H, 'plaster', w - 0.1, eave - fl - 1.0, 0.07, 0, (eave + fl + 0.95) / 2, -d / 2);
-    const door = Math.floor(nx / 2);
+    const door = Math.floor(nx / 2), dpw = w / nx - 0.16, dpx = -w / 2 + (door + 0.5) * w / nx;
+    H.doorX = dpx;
+    box(H, 'stone', 0.7, 0.25, 0.45, dpx, 0.18, d / 2 + 1.2);                                                  // step stone at the door
     for (let i = 0; i < nx; i++) {
       const px = -w / 2 + (i + 0.5) * w / nx, pw = w / nx - 0.16;
-      if (i === door) { for (let k = 0; k < 3; k++) box(H, 'cloth', pw / 3 - 0.02, 0.55, 0.01, px - pw / 3 + k * pw / 3, eave - 0.45, d / 2 + 0.02); }
+      if (i === door) { for (let k = 0; k < 3; k++) box(H, 'cloth', pw / 3 - 0.02, 0.55, 0.01, px - pw / 3 + k * pw / 3, eave - 0.45, d / 2 + 0.06); }
       else box(H, 'paper', pw, eave - fl - 0.3, 0.05, px, (eave + fl) / 2 - 0.1, d / 2);
     }
+    // the sliding door itself (an instance that opens and closes) + its collider
+    const dwx = x + dpx * c + (d / 2 - 0.02) * sn, dwz = z - dpx * sn + (d / 2 - 0.02) * c;
+    const dcols = [-0.28, 0.28].map(t => ({ x: x + (dpx + t * dpw) * c + d / 2 * sn, z: z - (dpx + t * dpw) * sn + d / 2 * c, r: 0.36 }));
+    COLLIDERS_INIT.push(...dcols);
+    DOORS.push({ H, x: dwx, z: dwz, lx: dpx, pw: dpw, ph: eave - fl - 0.3, cols: dcols, open: 0, want: 0, timer: 0, idx: DOORS.length });
+    // walls you can't walk through: a chain of small circles along each wall, with a gap at the door
+    const wallCols = (ax, az, bx, bz) => { const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 0.45));
+      for (let k = 0; k <= n; k++) { const lx = ax + (bx - ax) * k / n, lz = az + (bz - az) * k / n; if (Math.abs(lz - d / 2) < 0.01 && Math.abs(lx - dpx) < dpw / 2 + 0.12) continue;
+        COLLIDERS_INIT.push({ x: x + lx * c + lz * sn, z: z - lx * sn + lz * c, r: 0.26 }); } };
+    wallCols(-w / 2, -d / 2, w / 2, -d / 2); wallCols(-w / 2, d / 2, w / 2, d / 2); wallCols(-w / 2, -d / 2, -w / 2, d / 2); wallCols(w / 2, -d / 2, w / 2, d / 2);
+    // inside: tatami, a sunken hearth with a kettle on its hook, a paper lamp, a futon, a chest, a low table and a scroll
+    const ft = fl + 0.06;
+    box(H, 'tatami', w - 0.2, 0.02, d - 0.2, 0, ft + 0.01, 0);
+    const ix = w * 0.12, iz = -d * 0.05;
+    box(H, 'wood', 1.4, 0.1, 0.14, ix, ft + 0.04, iz - 0.63); box(H, 'wood', 1.4, 0.1, 0.14, ix, ft + 0.04, iz + 0.63);
+    box(H, 'wood', 0.14, 0.1, 1.4, ix - 0.63, ft + 0.04, iz); box(H, 'wood', 0.14, 0.1, 1.4, ix + 0.63, ft + 0.04, iz);
+    box(H, 'stone', 1.12, 0.03, 1.12, ix, ft + 0.01, iz);
+    for (let k = 0; k < 7; k++) box(H, 'ember', 0.14 + R() * 0.1, 0.06, 0.12 + R() * 0.1, ix + (R() - 0.5) * 0.5, ft + 0.04, iz + (R() - 0.5) * 0.5, 0, R() * 3, 0);
+    box(H, 'wood', 0.05, eave - ft - 1.0, 0.05, ix, (eave + ft + 1.0) / 2, iz);
+    piece(H, 'iron', new THREE.SphereGeometry(0.2, 14, 10).scale(1, 0.8, 1), ix, ft + 0.75, iz); piece(H, 'iron', new THREE.CylinderGeometry(0.05, 0.06, 0.1, 8), ix, ft + 0.95, iz);
+    COLLIDERS_INIT.push({ x: x + ix * c + iz * sn, z: z - ix * sn + iz * c, r: 0.62 });
+    HEARTHS.push({ x: x + ix * c + iz * sn, y: H.base + ft, z: z - ix * sn + iz * c });
+    box(H, 'lamp', 0.3, 0.5, 0.3, -w / 2 + 0.55, ft + 0.36, -d / 2 + 0.55); box(H, 'wood', 0.36, 0.06, 0.36, -w / 2 + 0.55, ft + 0.08, -d / 2 + 0.55);
+    box(H, 'cloth', 1.0, 0.1, 1.9, -w / 2 + 0.85, ft + 0.06, d * 0.05); box(H, 'paper', 0.5, 0.12, 0.3, -w / 2 + 0.85, ft + 0.16, d * 0.05 - 0.75);
+    box(H, 'wood', 1.3, 0.95, 0.45, w * 0.28, ft + 0.48, -d / 2 + 0.3);
+    for (let k = 0; k < 3; k++) box(H, 'floor', 1.2, 0.24, 0.02, w * 0.28, ft + 0.2 + k * 0.3, -d / 2 + 0.53);
+    COLLIDERS_INIT.push({ x: x + w * 0.28 * c + (-d / 2 + 0.35) * sn, z: z - w * 0.28 * sn + (-d / 2 + 0.35) * c, r: 0.5 });
+    box(H, 'wood', 0.95, 0.06, 0.6, -w * 0.05, ft + 0.3, d * 0.28); for (const a of [-1, 1]) for (const b of [-1, 1]) box(H, 'wood', 0.06, 0.26, 0.06, -w * 0.05 + a * 0.4, ft + 0.14, d * 0.28 + b * 0.24);
+    box(H, 'paper', 0.5, 1.1, 0.02, -w * 0.12, ft + 1.4, -d / 2 + 0.06);
     // steep thatched roof: two thick slabs, a ridge with crossed riders, and wooden gable ends
     const half = d / 2 + ov, pitch = big ? 0.85 : 0.8, rise = half * Math.tan(pitch), slab = half / Math.cos(pitch) + 0.15, thick = 0.5;
     for (const sd of [-1, 1]) box(H, 'thatch', w + ov * 2, thick, slab, 0, eave + rise / 2 - 0.05, sd * half / 2, sd * pitch, 0, 0);
@@ -3640,21 +3828,43 @@ const VILLAGE_HOUSES = [];
       piece(H, 'wood', new THREE.ExtrudeGeometry(tri, { depth: 0.08, bevelEnabled: false }).translate(0, 0, -0.04), sd * w / 2, eave, 0, 0, Math.PI / 2, 0);
     }
     // a few barrels, firewood and a rice-straw bundle by the door
-    const R = rng32(Math.round(x * 13 + z * 7));
     for (let k = 0; k < 2; k++) piece(H, 'wood', new THREE.CylinderGeometry(0.28, 0.25, 0.65, 12), -w / 2 - 0.5, 0.3 - fl + 0.2, d / 2 - 0.5 - k * 0.7);
     for (let k = 0; k < 6; k++) piece(H, 'wood', new THREE.CylinderGeometry(0.07, 0.07, 0.9, 6), w / 2 + 0.45, 0.15 + (k % 3) * 0.14 - fl + 0.4, -d / 2 + 0.6 + Math.floor(k / 3) * 0.16 + R() * 0.05, Math.PI / 2, 0, 0);
-    // footprint for collisions
-    const n = Math.ceil(w / d) + 1;
-    for (let k = 0; k < n; k++) { const t = n === 1 ? 0 : -w / 2 + d / 2 + k * (w - d) / (n - 1); COLLIDERS_INIT.push({ x: x + t * c, z: z - t * sn, r: d / 2 + 0.55 }); }
-    VILLAGE_HOUSES.push({ x, z, yaw, w, d });
+    HOUSES.push(H); VILLAGE_HOUSES.push({ x, z, yaw, w, d });
+    // no grass growing up through the floor: mark the footprint as bare in the baked terrain
+    for (let a = -w / 2 - 1; a <= w / 2 + 1; a += 0.7) for (let b = -d / 2 - 1; b <= d / 2 + 1.6; b += 0.7) bareHM(x + a * c + b * sn, z - a * sn + b * c);
   }
   const PERP = [-VDIR[1], VDIR[0]], at = (u, v) => [VILLAGE[0] + VDIR[0] * u + PERP[0] * v, VILLAGE[1] + VDIR[1] * u + PERP[1] * v];
   const layout = [[-34, 14, 7.5, 5.2], [-17, 15, 8.5, 5.6], [1, 15.5, 7.2, 5.2], [19, 14, 9, 5.8], [-32, -14, 8, 5.4], [-13, -15, 7.6, 5.2], [6, -15.5, 9.4, 6], [25, -13, 7.8, 5.4], [43, 1, 11, 6.5, true]];
+  const placed = [];
+  const fits = (x, z, yaw, w, d) => {
+    const c = Math.cos(yaw), sn = Math.sin(yaw); let lo = 1e9, hi = -1e9;
+    if (Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 28) return false;
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0], [0, 1.6]]) {
+      const gx = x + a * (w / 2 + 1) * c + b * (d / 2 + 1) * sn, gz = z - a * (w / 2 + 1) * sn + b * (d / 2 + 1) * c, gy = terrainH(gx, gz);
+      if (gy < 1.3 || pathMask(gx, gz) > 0.04 || riverWet(gx, gz) > 0 || _rd < _rw + 4) return false;
+      lo = Math.min(lo, gy); hi = Math.max(hi, gy);
+    }
+    if (hi - lo > 2.4) return false;
+    const rad = Math.hypot(w, d) / 2 + 1.6;
+    return placed.every(([px, pz, pr]) => Math.hypot(px - x, pz - z) > pr + rad);
+  };
+  const faceFor = v => Math.atan2(-(PERP[0] * Math.sign(v || 1)), -(PERP[1] * Math.sign(v || 1)));   // front looks towards the lane
   for (const [u, v, w, d, big] of layout) {
     const [x, z] = at(u, v);
     if (pathMask(x, z) > 0.05 || riverWet(x, z) > 0) continue;
-    const face = Math.atan2(-(PERP[0] * Math.sign(v || 1)), -(PERP[1] * Math.sign(v || 1)));   // front looks towards the lane
-    minka(x, z, v === 1 ? Math.atan2(-VDIR[0], -VDIR[1]) : face, w, d, big);
+    minka(x, z, v === 1 ? Math.atan2(-VDIR[0], -VDIR[1]) : faceFor(v), w, d, big); placed.push([x, z, Math.hypot(w, d) / 2 + 1.6]);
+  }
+  { // the village grows along the river: more houses down the lane and along back lanes on both sides
+    const RV = rng32(5150);
+    for (const v0 of [14.5, -14.5, 36, -36, 57, -57, 78, -78]) for (let u = -135; u <= 135; u += 12.5) {
+      if (HOUSES.length >= 46) break;
+      const big = RV() < 0.1, w = big ? 11 : 6.5 + RV() * 3.4, d = big ? 6.5 : 5 + RV() * 1.4, v = v0 + (RV() - 0.5) * 3, uu = u + (RV() - 0.5) * 4;
+      const [x, z] = at(uu, v), yaw = faceFor(v) + (RV() - 0.5) * 0.12;
+      if (!fits(x, z, yaw, w, d)) continue;
+      minka(x, z, yaw, w, d, big); placed.push([x, z, Math.hypot(w, d) / 2 + 1.6]);
+      if (Math.abs(v0) === 14.5 && RV() < 0.5) { const [lx, lz] = at(uu + 6.5, v0 > 0 ? 3.3 : -3.3); if (pathMask(lx, lz) < 0.3) stoneLantern(lx, lz, Math.atan2(VDIR[0], VDIR[1])); }
+    }
   }
   // the well in the square, stone lanterns along the lane, bamboo fences behind the houses, rice drying racks by the river
   { const [x, z] = at(-6, 5.5), y = terrainH(x, z), H = { x, z, yaw: 0.3, base: y };
@@ -3676,12 +3886,17 @@ const VILLAGE_HOUSES = [];
     box(H, 'wood', 3.9, 0.08, 0.08, 0, 1.8, 0);
     for (let i = 0; i < 11; i++) piece(H, 'straw', new THREE.ConeGeometry(0.16, 0.85, 7), -1.6 + i * 0.32, 1.42, 0, 0, 0, Math.PI);
   }
-  for (const [k, list] of Object.entries(G)) {
-    if (!list.length) continue;
-    const mesh = new THREE.Mesh(mergeGeometries(list.map(g => (g.index ? g.toNonIndexed() : g)).map(g => { for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n); return g; })), M[k]);
-    mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
+  function flushHouses() {
+    for (const [k, list] of Object.entries(G)) {
+      if (!list.length) continue;
+      const mesh = new THREE.Mesh(mergeGeometries(list.map(g => (g.index ? g.toNonIndexed() : g)).map(g => { for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n); return g; })), M[k]);
+      mesh.castShadow = mesh.receiveShadow = !['ember', 'lamp'].includes(k); scene.add(mesh);
+    }
+    G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
   }
+  flushHouses();
   window.__villageMats = M;
+  HOUSE_KIT.minka = minka; HOUSE_KIT.flush = flushHouses;
 }
 buildLanterns();
 // ── Trees: red maples (most), golden maples, green zelkovas, pink and deep-red cherries ──
@@ -3906,19 +4121,19 @@ campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c
 // three fire lights shared by all the campfires: they follow the nearest ones (a fixed light count keeps every shader as it is)
 const FIRE_LIGHTS = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff8a3a, 0, 11, 1.6); scene.add(l); return l; });
 
-// ─────────────────────────── Nine small bandit camps across the island ───────────────────────────
+// ─────────────────────────── Fifteen bandit camps across the island: little fortified hamlets ───────────────────────────
 // Every tent, pole, bedroll, crate, barrel, log seat, sake jar, spear and banner of every camp is drawn with
 // GPU instancing: one mesh per kind of prop, with a list of where each copy stands. The two bandits at each
 // camp are only brought to life when you come within reach.
 const EXTRA_CAMPS = [];
 {
   const R = rng32(90210), roadPts = pathPts.filter((_, k) => k % 24 === 0), avoid = campSpots().map(c => [c.x, c.z]);
-  for (let tries = 0; tries < 6000 && EXTRA_CAMPS.length < 9; tries++) {
+  for (let tries = 0; tries < 9000 && EXTRA_CAMPS.length < 15; tries++) {
     const a = R() * 6.283, d = 120 + Math.sqrt(R()) * 470, x = Math.cos(a) * d, z = Math.sin(a) * d * 1.05 - 40, h = terrainH(x, z);
     if (h < 2.5 || h > 45 || riverWet(x, z) > 0 || _rd < _rw + 14) continue;
     if (Math.abs(terrainH(x + 6, z) - terrainH(x - 6, z)) > 2.2 || Math.abs(terrainH(x, z + 6) - terrainH(x, z - 6)) > 2.2) continue;   // fairly level
-    if (Math.hypot(x - VILLAGE[0], z - VILLAGE[1]) < 170 || Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 200) continue;
-    if (avoid.some(([ax, az]) => Math.hypot(ax - x, az - z) < 150) || EXTRA_CAMPS.some(c => Math.hypot(c.x - x, c.z - z) < 175)) continue;
+    if (Math.hypot(x - VILLAGE[0], z - VILLAGE[1]) < 230 || Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 200) continue;
+    if (avoid.some(([ax, az]) => Math.hypot(ax - x, az - z) < 150) || EXTRA_CAMPS.some(c => Math.hypot(c.x - x, c.z - z) < 140)) continue;
     let road = 1e9; for (const p of roadPts) road = Math.min(road, Math.hypot(p[0] - x, p[1] - z));
     if (road < 16 || road > 90) continue;                                                   // just off a road, where travellers can be robbed
     if (mapleSpots.some(t => Math.hypot(t[0] - x, t[1] - z) < 9)) continue;
@@ -3946,7 +4161,8 @@ const EXTRA_CAMPS = [];
     crate: [new THREE.BoxGeometry(0.7, 0.55, 0.55).translate(0, 0.275, 0), 'wood'], barrel: [new THREE.CylinderGeometry(0.3, 0.27, 0.75, 12).translate(0, 0.375, 0), 'wood'],
     log: [new THREE.CylinderGeometry(0.2, 0.22, 1.8, 9).rotateZ(Math.PI / 2).translate(0, 0.2, 0), 'bark'], jar: [new THREE.SphereGeometry(0.18, 10, 8).scale(1, 1.25, 1).translate(0, 0.22, 0), 'clay'],
     spear: [new THREE.CylinderGeometry(0.018, 0.018, 2.3, 5).translate(0, 1.15, 0), 'wood'], tip: [new THREE.ConeGeometry(0.035, 0.22, 5).translate(0, 2.4, 0), 'iron'],
-    flag: [new THREE.PlaneGeometry(0.55, 1.6).translate(0.3, 2.2, 0), 'cloth'], mast: [new THREE.CylinderGeometry(0.03, 0.035, 3.2, 6).translate(0, 1.6, 0), 'wood'],
+    flag: [new THREE.PlaneGeometry(0.55, 1.6).translate(0.3, 2.2, 0), 'cloth'], stake: [mergeGeometries([new THREE.CylinderGeometry(0.1, 0.11, 1.9, 6).translate(0, 0.95, 0).toNonIndexed(), new THREE.CylinderGeometry(0.0, 0.1, 0.35, 6).translate(0, 2.07, 0).toNonIndexed()]), 'bark'],
+    rope: [new THREE.CylinderGeometry(0.02, 0.02, 1, 4).rotateZ(Math.PI / 2), 'wood'], mast: [new THREE.CylinderGeometry(0.03, 0.035, 3.2, 6).translate(0, 1.6, 0), 'wood'],
   };
   const LIST = Object.fromEntries(Object.keys(KINDS).map(k => [k, []]));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
@@ -3974,7 +4190,26 @@ const EXTRA_CAMPS = [];
     const bx = cp.x + Math.cos(cp.yaw + 2.6) * 8.5, bz = cp.z + Math.sin(cp.yaw + 2.6) * 8.5;   // the gang's banner
     put('mast', bx, bz, 0); put('flag', bx, bz, cp.yaw, { c: new THREE.Color(ci % 2 ? 0x1a1a1e : 0x7a1c16) });
     COLLIDERS_INIT.push({ x: bx, z: bz, r: 0.25 });
+    // two or three small huts they've taken over (you can go inside), facing the fire
+    for (let k = 0, made = 0; k < 6 && made < 2 + (ci % 2); k++) {
+      const a = cp.yaw + 0.5 + k * 1.05 + (R2() - 0.5) * 0.2, r = 11 + R2() * 1.5, hx = cp.x + Math.cos(a) * r, hz = cp.z + Math.sin(a) * r;
+      const w = 5 + R2() * 1.2, d = 4.2, yaw = Math.atan2(cp.x - hx, cp.z - hz);
+      const c0 = Math.cos(yaw), s0 = Math.sin(yaw); let lo = 1e9, hi = -1e9, ok = true;
+      for (const [u, v] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 1.6]]) { const gx = hx + u * (w / 2 + 1) * c0 + v * (d / 2 + 1) * s0, gz = hz - u * (w / 2 + 1) * s0 + v * (d / 2 + 1) * c0, gy = terrainH(gx, gz);
+        if (gy < 1.5 || pathMask(gx, gz) > 0.04 || riverWet(gx, gz) > 0) ok = false; lo = Math.min(lo, gy); hi = Math.max(hi, gy); }
+      if (!ok || hi - lo > 2 || mapleSpots.some(t => Math.hypot(t[0] - hx, t[1] - hz) < 6.5) || COLLIDERS_INIT.some(c => c.r > 0.5 && Math.hypot(c.x - hx, c.z - hz) < c.r + 4)) continue;
+      HOUSE_KIT.minka(hx, hz, yaw, w, d, false, rng32(ci * 97 + k)); made++;
+    }
+    // a ring of sharpened stakes with a gap for the gate, facing the nearest road
+    for (let k = 0; k < 44; k++) {
+      const a = cp.yaw + Math.PI + k / 44 * 6.283; if (Math.abs(angDiff(a, cp.yaw + Math.PI)) < 0.32) continue;
+      const r = 16 + Math.sin(k * 1.7) * 0.4, px = cp.x + Math.cos(a) * r, pz = cp.z + Math.sin(a) * r;
+      if (riverWet(px, pz) > 0 || pathMask(px, pz) > 0.3 || HOUSES.some(H => Math.hypot(H.x - px, H.z - pz) < 4.5) || mapleSpots.some(t => Math.hypot(t[0] - px, t[1] - pz) < 1.2)) continue;
+      put('stake', px, pz, a, { rx: (R2() - 0.5) * 0.08, rz: -0.12 + (R2() - 0.5) * 0.08, s: [1, 0.85 + R2() * 0.3, 1] });
+      COLLIDERS_INIT.push({ x: px, z: pz, r: 0.28 });
+    }
   });
+  HOUSE_KIT.flush();
   for (const [k, [geo, mat]] of Object.entries(KINDS)) {
     if (!LIST[k].length) continue;
     const im = new THREE.InstancedMesh(geo, MT[mat], LIST[k].length);
@@ -3990,7 +4225,7 @@ function updateFlora(dt, t) {
   updateFallingLeaves(dt, t);
   const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
   for (const m of lanternGlow) m.color.setRGB(0.05 + night * 2.6, 0.03 + night * 1.5, 0.01 + night * 0.5);
-  const lit = campfires.map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
+  const lit = campfires.concat(HEARTHS).map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
   FIRE_LIGHTS.forEach((l, i) => { const f = lit[i]; if (!f || f[0] > 90) { l.intensity = 0; return; } l.position.set(f[1].x, f[1].y + 0.6, f[1].z); l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 29 + i) * 0.5) * (0.6 + night * 1.2) * (1 - smooth(60, 90, f[0])); });
   for (const c of campfires) {
     c.flames.forEach((f, k) => { const s = 0.55 + 0.25 * Math.sin(t * (9 + k * 3) + k) + 0.1 * Math.sin(t * 23 + k); f.scale.set(s * 0.8, s * 1.2, 1); f.position.set(Math.sin(t * 5 + k) * 0.05, 0.3 + s * 0.25, Math.cos(t * 4 + k) * 0.05); });
@@ -4028,6 +4263,7 @@ function updateWorld(dt, t) {
   trampleAcc += dt; if ((frameNo & 1) === 0) { updateTrample(trampleAcc, player.pos.x, player.pos.z); trampleAcc = 0; }
   updateEnemies(dt, t);
   updateVillagers(dt, t);
+  updateDoors(dt);
   updateFlora(dt, t);
   // shadows into grass + flowers
   if (sun.shadow.map && GFX.shadows) { SH.uShadowMap.value = sun.shadow.map.texture; SH.uHasShadow.value = 1; } else SH.uHasShadow.value = 0;
@@ -4172,6 +4408,7 @@ function collideCircles(p, radius, vel, extra) {
   const near = _colGrid.get(Math.floor(p.x / COL_CELL) * 100003 + Math.floor(p.z / COL_CELL)) || [];
   const list = extra ? near.concat(extra) : near;
   for (const c of list) {
+    if (c.off) continue;
     const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = c.r + radius;
     if (d < m && d > 1e-5) {
       const nx = dx / d, nz = dz / d; p.x = c.x + nx * m; p.z = c.z + nz * m;
@@ -4310,7 +4547,7 @@ function update(dt, t) {
     let target = 0;
     if (hs.called && d > 2.8) target = d > 14 ? 11 : d > 6 ? 6 : 2.2; else if (hs.called) hs.called = false;
     updateHorse(dt, target, Math.atan2(dx, dz), hs.called, false);
-    setPrompt(d < 3.2 ? '<b>E</b>MOUNT' : '');
+    setPrompt(d < 3.2 ? '<b>E</b>MOUNT' : doorPrompt);
   }
 
   // Place the horse: follow the slope front-to-back, bank into turns, pitch over jumps
@@ -4347,6 +4584,11 @@ function update(dt, t) {
     camTarget.y + Math.sin(camPitch) * dist,
     camTarget.z + Math.cos(camYaw) * Math.cos(camPitch) * dist);
   want.y = Math.max(want.y, groundH(want.x, want.z) + 0.45, 0.6);
+  const inHouse = !player.mounted && houseAt(player.pos.x, player.pos.z, 0.05);
+  if (inHouse) {   // indoors: keep the camera inside the walls and under the roof
+    const H = inHouse, [lx, lz] = houseLocal(H, want.x, want.z), cx = Math.max(-H.w / 2 + 0.35, Math.min(H.w / 2 - 0.35, lx)), cz = Math.max(-H.d / 2 + 0.35, Math.min(H.d / 2 - 0.35, lz));
+    want.set(H.x + cx * H.c + cz * H.s, Math.min(want.y, H.base + H.eave - 0.25), H.z - cx * H.s + cz * H.c);
+  }
   if (first) { camPos.copy(want); camLook.copy(camTarget); first = false; }
   else { camPos.lerp(want, 1 - Math.exp(-dt * 9)); camLook.lerp(camTarget, 1 - Math.exp(-dt * 14)); }
   shake *= Math.exp(-dt * 6);
@@ -4383,7 +4625,7 @@ function update(dt, t) {
   updateWorld(dt, t);
 }
 
-const grassFull = [nearGrass, midGrass, nearCards, midCards, farCards].map(m => [m, m.geometry.instanceCount]);
+const grassFull = [nearGrass, midGrass, nearCards, midCards, farCards, ...FIELD_CARPETS].map(m => [m, m.geometry.instanceCount]);
 let perfAcc = 0, perfN = 0, grassScale = 1;
 const basePR = renderer.getPixelRatio();
 function adaptQuality(rawDt) {
@@ -4397,7 +4639,7 @@ function adaptQuality(rawDt) {
 }
 // ─────────────────────────── Graphics menu ───────────────────────────
 function applyGrassCount() {   // cards are cheap, so they stay dense even on low grass settings
-  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards || m === farCards ? Math.min(1, 0.75 + 0.25 * GFX.grass) * Math.max(0.85, grassScale) : grassScale * GFX.grass)));
+  grassFull.forEach(([m, n]) => m.geometry.instanceCount = Math.floor(n * (m === nearCards || m === midCards || m === farCards || FIELD_CARPETS.includes(m) ? Math.min(1, 0.75 + 0.25 * GFX.grass) * Math.max(0.85, grassScale) : grassScale * GFX.grass)));
 }
 function applyGfx() {
   const cards = GFX.grassStyle !== 'blades';
