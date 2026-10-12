@@ -3474,7 +3474,7 @@ function updatePlaces() {   // the name of a place appears as you arrive
 function updateVillagers(dt, t) {
   if ((frameNo & 15) === 0) updatePlaces();
   if (!FAMILY.length && (frameNo & 63) === 0) spawnFamily();
-  updateFamily(dt); updatePrisoners(dt); updateDeer(dt);
+  updateFamily(dt); updatePrisoners(dt); updateDeer(dt); updateBamboo(dt);
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
     const dx = player.pos.x - v.pos.x, dz = player.pos.z - v.pos.z, dP = Math.hypot(dx, dz);
@@ -3567,7 +3567,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : !player.mounted && started && !BSTRIKE.on && nearBamboo() ? '<b>Z</b>BAMBOO STRIKE' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -5080,6 +5080,28 @@ if (window.__beacon) {   // the shrine's beacon: a big signal fire on top of its
   const cf = campfires[campfires.length - 1]; cf.g.position.y = by + 0.3; cf.y = by + 0.3; cf.g.scale.setScalar(2.4); cf.beacon = true;
 }
 // three fire lights shared by all the campfires: they follow the nearest ones (a fixed light count keeps every shader as it is)
+// ─────────────────────────── Bamboo strike stands: cut every stalk in one breath (Z) ───────────────────────────
+const BAMBOO = [];
+{
+  const green = new THREE.MeshStandardMaterial({ color: 0x9aa64e, roughness: 0.45 }), wood = new THREE.MeshStandardMaterial({ color: 0x4a3522, roughness: 0.85 });
+  const anchors = [window.__shrine, [VILLAGE[0] + VDIR[0] * 46, VILLAGE[1] + VDIR[1] * 46], SPRINGS[0] && [SPRINGS[0].x + 9, SPRINGS[0].z]].filter(Boolean);
+  anchors.forEach((a, ai) => {
+    let x = a[0] + 9, z = a[1] - 6, ok = false;
+    for (let k = 0; k < 40 && !ok; k++) { x = a[0] + Math.cos(k * 2.4) * (8 + k * 0.4); z = a[1] + Math.sin(k * 2.4) * (8 + k * 0.4);
+      ok = walkable(x, z, 0.8) && riverWet(x, z) === 0 && pathMask(x, z) < 0.3 && !houseAt(x, z, -1.5) && !COLLIDERS_INIT.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 2.2) && Math.abs(terrainH(x + 2, z) - terrainH(x - 2, z)) < 0.8; }
+    if (!ok) return;
+    const y = terrainH(x, z), yaw = Math.atan2(VILLAGE[0] - x, VILLAGE[1] - z), c = Math.cos(yaw), sn = Math.sin(yaw), stalks = [];
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.3), wood); beam.position.set(x, y + 0.06, z); beam.rotation.y = yaw; beam.receiveShadow = true; scene.add(beam);
+    for (let k = 0; k < 5; k++) {
+      const lx = (k - 2) * 0.55, px = x + lx * c, pz = z - lx * sn, h = 1.55 + (k % 2) * 0.2;
+      const lo = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, h * 0.55, 8), green); lo.position.set(px, y + h * 0.275, pz); lo.castShadow = true; scene.add(lo);
+      const hi = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, h * 0.45, 8), green); hi.position.set(px, y + h * 0.55 + h * 0.225, pz); hi.castShadow = true; scene.add(hi);
+      stalks.push({ hi, y0: hi.position.y, cut: false, t: 0, spin: (Math.random() - 0.5) * 4 });
+    }
+    COLLIDERS_INIT.push({ x, z, r: 1.2 });
+    BAMBOO.push({ x, z, y, yaw, stalks, done: false, idx: ai });
+  });
+}
 const FIRE_LIGHTS = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff8a3a, 0, 11, 1.6); scene.add(l); return l; });
 
 // ─────────────────────────── Fifteen bandit camps across the island: little fortified hamlets ───────────────────────────
@@ -5757,6 +5779,8 @@ function drawMap() {
   label(0, -720, 'Snow Peaks'); if (window.__summit) { dot(window.__summit[0], window.__summit[1], 3.5, '#c0392b', '#f4e9d8'); label(window.__summit[0], window.__summit[1], 'Summit'); } if (window.__village) label(window.__village[0], window.__village[1] - 20, 'Village');
   for (const sp of window.__springs || []) { dot(sp.x, sp.z, 3, '#7fd0d0', '#f4e9d8'); label(sp.x, sp.z, 'Hot spring'); }
   for (const q of window.__haiku || []) { dot(q.x, q.z, 3, q.done ? '#8a7a5a' : '#f4e9d8', '#2b2b2b'); label(q.x, q.z, 'Haiku'); }
+  for (const b of BAMBOO) { dot(b.x, b.z, 3, b.done ? '#6a7a3a' : '#b8c86a', '#2b2b2b'); label(b.x, b.z, 'Bamboo strike'); }
+  if (window.__summit && !STORY.ronin) label(window.__summit[0], window.__summit[1] + 14, 'A lone swordsman');
   if (window.__castle) { dot(window.__castle.x, window.__castle.z, 5, '#f4e9d8', '#1a1414'); label(window.__castle.x, window.__castle.z - 26, 'Shirasagi Castle'); }
   for (const br of BRIDGES) dot(br.cx, br.cz, 2.5, '#8e2418', '#f4e9d8');
   if (!player.mounted) dot(hs.pos.x, hs.pos.z, 4, '#8b5a2b', '#f4e9d8');
@@ -5944,7 +5968,7 @@ const storyUI = (() => {
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
     <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>Ctrl</b> — dodge (a red glint means a blow you can't block)<br><b>X</b> — assassinate from behind<br><b>Y</b> — standoff: challenge a camp (hold, release as they strike)<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
     <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors · cut a prisoner free<br>
-    <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
+    <b>Z</b> — rest by a hearth · bathe in a hot spring · compose a haiku · bamboo strike<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
   return { barT, barB, sub, skip, obj, help };
 })();
@@ -6056,7 +6080,7 @@ const STORY = { step: 0, said: false, cleared: new Set(), castleSeen: false, don
 try { Object.assign(STORY, JSON.parse(localStorage.getItem('kns-story') || '{}'), { cleared: new Set(JSON.parse(localStorage.getItem('kns-story') || '{}').cleared || []) }); } catch (e) {}
 if (STORY.ronin) player.maxHp += 15;   // the duel's reward stays won
 (STORY.sp || []).forEach(i => { if (SPRINGS[i] && !SPRINGS[i].used) { SPRINGS[i].used = true; player.maxHp += 10; } }); player.hp = player.maxHp;
-(STORY.hk || []).forEach(i => { if (HAIKU[i]) HAIKU[i].done = true; }); RESOLVE.max = Math.min(6, 3 + (STORY.hk || []).length);   // poems you've written stay written
+(STORY.hk || []).forEach(i => { if (HAIKU[i]) HAIKU[i].done = true; }); (STORY.bam || []).forEach(i => { if (BAMBOO[i]) BAMBOO[i].done = true; }); RESOLVE.max = Math.min(6, 3 + (STORY.hk || []).length + (STORY.bam || []).length);   // poems you've written stay written
 const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); } catch (e) {} };
 let subQueue = [], subT = 0;
 function say(lines) { subQueue = lines.slice(); subT = 0; }
@@ -6342,11 +6366,41 @@ function composeHaiku() {
     { dur: 8, fadeOut: true, title: line(q.poem[2], 3), fov: [40, 52], hand: 0.001, cam: () => { const P = player.pos; return [_V(P.x - vx * 6, P.y + 2.5, P.z - vz * 6), _V(P.x - vx * 26, P.y + 16, P.z - vz * 26), _V(P.x + vx * 90, P.y - 20, P.z + vz * 90), _V(P.x + vx * 90, P.y - 10, P.z + vz * 90)]; } },
   ], () => {
     soldier.seizaK = 0;
-    if (!q.done) { q.done = true; STORY.hk = HAIKU.map((h, i) => h.done ? i : -1).filter(i => i >= 0); saveStory(); RESOLVE.max = Math.min(6, 3 + STORY.hk.length); toast('HAIKU COMPOSED · RESOLVE CAPACITY ' + RESOLVE.max, 2800); }
+    if (!q.done) { q.done = true; STORY.hk = HAIKU.map((h, i) => h.done ? i : -1).filter(i => i >= 0); saveStory(); RESOLVE.max = Math.min(6, 3 + STORY.hk.length + (STORY.bam || []).length); toast('HAIKU COMPOSED · RESOLVE CAPACITY ' + RESOLVE.max, 2800); }
     else toast('A QUIET MIND', 1500);
     RESOLVE.n = RESOLVE.max;
   });
   return true;
+}
+function nearBamboo() { for (const b of BAMBOO) if (Math.hypot(b.x + Math.sin(b.yaw) * 1.6 - player.pos.x, b.z + Math.cos(b.yaw) * 1.6 - player.pos.z) < 2.2) return b; return null; }
+const BAMKEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF'];
+const BSTRIKE = { on: false, b: null, seq: [], i: 0, t: 0 };
+const bstrikeEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;right:0;top:58%;text-align:center;color:#f4e9d8;font:300 30px Georgia,serif;letter-spacing:22px;text-shadow:0 2px 12px #000;z-index:53;opacity:0;transition:opacity .25s;pointer-events:none'; document.body.appendChild(d); return d; })();
+function bambooStrike() {
+  const b = nearBamboo(); if (!b || player.mounted || CINE.on || STANDOFF.on || BSTRIKE.on) return false;
+  for (const st of b.stalks) { st.cut = false; st.t = 0; st.hi.position.y = st.y0; st.hi.rotation.set(0, 0, 0); st.hi.visible = true; }
+  player.yaw = b.yaw + Math.PI; player.vel.set(0, 0, 0); if (!sword.drawn) { sword.drawn = true; audio.draw(); }
+  Object.assign(BSTRIKE, { on: true, b, seq: Array.from({ length: 5 + b.idx }, () => BAMKEYS[Math.floor(Math.random() * BAMKEYS.length)]), i: 0, t: -1.2 });
+  return true;
+}
+function bstrikeKey(code) {
+  const S = BSTRIKE; if (!S.on || S.t < 0) return false;
+  if (code === S.seq[S.i]) { const st = S.b.stalks[S.i % S.b.stalks.length]; st.cut = true; startSlash(); audio.hit(); S.i++; S.t = 0;
+    if (S.i >= S.seq.length) { S.on = false; bstrikeEl.style.opacity = 0;
+      if (!S.b.done) { S.b.done = true; STORY.bam = BAMBOO.map((q, i) => q.done ? i : -1).filter(i => i >= 0); saveStory(); RESOLVE.max = Math.min(6, RESOLVE.max + 1); toast('BAMBOO STRIKE · RESOLVE CAPACITY ' + RESOLVE.max, 2600); } else toast('A CLEAN CUT', 1400);
+      RESOLVE.n = RESOLVE.max; } }
+  else { S.on = false; bstrikeEl.style.opacity = 0; toast('THE BAMBOO STANDS — TRY AGAIN (Z)', 1800); }
+  return true;
+}
+function updateBamboo(dt) {
+  const S = BSTRIKE;
+  if (S.on) { S.t += dt; const lim = 1.3 - S.b.idx * 0.15; for (const k of BAMKEYS) keys[k] = false;   // the keys are for the cuts, not for walking
+    if (S.t >= 0) { bstrikeEl.innerHTML = S.seq.map((k, i) => `<span style="opacity:${i < S.i ? 0.25 : i === S.i ? 1 : 0.55};${i === S.i ? 'color:#e8c46a' : ''}">${k.slice(3)}</span>`).join(''); bstrikeEl.style.opacity = 1; }
+    else { bstrikeEl.innerHTML = '<span style="font-size:14px;letter-spacing:8px">READY…</span>'; bstrikeEl.style.opacity = 1; }
+    if (S.t > lim) { S.on = false; bstrikeEl.style.opacity = 0; toast('TOO SLOW — TRY AGAIN (Z)', 1800); }
+    if (Math.hypot(S.b.x - player.pos.x, S.b.z - player.pos.z) > 4) { S.on = false; bstrikeEl.style.opacity = 0; } }
+  for (const b of BAMBOO) for (const st of b.stalks) if (st.cut && st.t < 3) { st.t += dt; const k = Math.min(1, st.t / 0.7);   // the top half slides off the cut and topples
+    st.hi.position.y = st.y0 - k * k * 0.75 + 0.05 * Math.sin(k * 3); st.hi.rotation.z = k * 1.4 * Math.sign(st.spin || 1); st.hi.rotation.x = k * 0.3 * st.spin; if (st.t > 2.6) st.hi.visible = false; }
 }
 function nearSpring() { for (const sp of SPRINGS) if (Math.hypot(sp.x - player.pos.x, sp.z - player.pos.z) < 4.5) return sp; return null; }
 function bathe() {
@@ -6371,7 +6425,8 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyY') startStandoff();
   if (!started) return;
   if (e.code === 'F1' || e.code === 'KeyI') { e.preventDefault(); storyUI.help.style.display = storyUI.help.style.display === 'flex' ? 'none' : 'flex'; if (storyUI.help.style.display === 'flex') document.exitPointerLock?.(); }
-  if (e.code === 'KeyZ' && !composeHaiku() && !bathe()) rest();
+  if (BSTRIKE.on && BAMKEYS.includes(e.code)) { e.preventDefault(); bstrikeKey(e.code); return; }
+  if (e.code === 'KeyZ' && !bambooStrike() && !composeHaiku() && !bathe()) rest();
   if (e.code === 'KeyX') assassinate();
   if (e.code === 'KeyC') heal();
   if (e.code === 'KeyJ') guidingWind();
