@@ -3715,7 +3715,7 @@ function playerDown() {
     if (player.mounted) toggleMount();
     player.pos.set(spawnPt[0], groundH(spawnPt[0], spawnPt[1]), spawnPt[1]); player.vel.set(0, 0, 0);
     hs.pos.set(spawnPt[0] + 2.5, 0, spawnPt[1] + 1.5); hs.speed = 0;
-    player.hp = player.maxHp; player.dead = false; enemies.forEach(resetEnemy);
+    player.hp = player.maxHp; player.dead = false; enemies.forEach(e => { if ((e.boss && STORY.khan) || (e.camp && !e.camp.castle && STORY.cleared.has(e.camp.x.toFixed(0) + ',' + e.camp.z.toFixed(0)))) return; resetEnemy(e); });   // what you've won stays won
     fadeEl.style.opacity = 0;
   }, 1800);
 }
