@@ -2149,7 +2149,12 @@ addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') 
   if (e.code === 'KeyE') toggleMount();
   if (e.code === 'KeyR' && !freePrisoner()) useDoor();
   if (e.code === 'KeyV') waveHello();
-  if (e.code === 'KeyH' && !player.mounted) { hs.called = true; audio.whistle(); const d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z); setTimeout(() => audio.horse('whinny', Math.max(0.15, 1 - d / 250)), 700); }
+  if (e.code === 'KeyH' && !player.mounted) { hs.called = true; audio.whistle(); let d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z);
+    if (d > 110) {   // too far to hear: she comes round from somewhere just out of sight behind you
+      const bx = Math.sin(camYaw), bz = Math.cos(camYaw);
+      for (let k = 0; k < 16; k++) { const a = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.35, r = 38 + (k % 3) * 8, x = player.pos.x + (bx * Math.cos(a) - bz * Math.sin(a)) * r, z = player.pos.z + (bz * Math.cos(a) + bx * Math.sin(a)) * r;
+        if (walkable(x, z, 0.6) && !houseAt(x, z, -1) && Math.abs(terrainH(x, z) - player.pos.y) < 8) { hs.pos.set(x, 0, z); hs.y = groundH(x, z); hs.vy = 0; hs.speed = 0; d = r; break; } }
+    } setTimeout(() => audio.horse('whinny', Math.max(0.15, 1 - d / 250)), 700); }
   if (e.code === 'KeyN') patHorse();
   if (e.code === 'ControlLeft' || e.code === 'ControlRight') { e.preventDefault(); dodge(); }
   if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); }
