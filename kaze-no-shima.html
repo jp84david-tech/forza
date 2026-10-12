@@ -5193,7 +5193,8 @@ function updateFlora(dt, t) {
   for (const m of lanternGlow) m.color.setRGB(0.05 + night * 2.6, 0.03 + night * 1.5, 0.01 + night * 0.5);
   if (window.__villageMats) { const dark = night || PRESETS[presetIdx].rain ? 1 : 0; window.__villageMats.paper.emissive.setRGB(0.55 * dark, 0.34 * dark, 0.14 * dark); }   // lamplight behind the shoji after dark
   const lit = campfires.concat(HEARTHS).map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
-  FIRE_LIGHTS.forEach((l, i) => { const f = lit[i]; if (!f || f[0] > 90) { l.intensity = 0; return; } l.position.set(f[1].x, f[1].y + 0.6, f[1].z); l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 29 + i) * 0.5) * (0.6 + night * 1.2) * (1 - smooth(60, 90, f[0])); });
+  FIRE_LIGHTS.forEach((l, i) => { if (i === 2 && CINE.on && CINE.key) { l.position.copy(CINE.key); l.color.setHex(0xffe4c8); l.intensity = CINE.keyI; return; } if (i === 2) l.color.setHex(0xff8a3a);   // the third fire light doubles as a film key light on faces in close-ups
+    const f = lit[i]; if (!f || f[0] > 90) { l.intensity = 0; return; } l.position.set(f[1].x, f[1].y + 0.6, f[1].z); l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 29 + i) * 0.5) * (0.6 + night * 1.2) * (1 - smooth(60, 90, f[0])); });
   for (const c of campfires) {
     c.flames.forEach((f, k) => { const s = 0.55 + 0.25 * Math.sin(t * (9 + k * 3) + k) + 0.1 * Math.sin(t * 23 + k); f.scale.set(s * 0.8, s * 1.2, 1); f.position.set(Math.sin(t * 5 + k) * 0.05, 0.3 + s * 0.25, Math.cos(t * 4 + k) * 0.05); });
     if (Math.random() < dt * 6 && Math.hypot(c.x - player.pos.x, c.z - player.pos.z) < 50) emit(new THREE.Vector3(c.x, c.y + 0.5, c.z), new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.2 + Math.random(), (Math.random() - 0.5) * 0.4), SPARK, 0.03, 1.4, -0.2, 0, 1, 0.5);
@@ -5946,7 +5947,7 @@ const storyUI = (() => {
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
   return { barT, barB, sub, skip, obj, help };
 })();
-const CINE = { on: false, shots: null, i: 0, t: 0, T: 0, end: null, after: undefined };
+const CINE = { on: false, shots: null, i: 0, t: 0, T: 0, end: null, after: undefined, key: null, keyI: 0 };
 const cineFX = (() => {
   const g = document.createElement('div'); g.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:49;opacity:0;transition:opacity .8s;background:radial-gradient(ellipse at center, rgba(255,200,140,0.05) 0%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%);mix-blend-mode:multiply'; document.body.appendChild(g);
   const fade = document.createElement('div'); fade.style.cssText = 'position:fixed;inset:0;background:#000;pointer-events:none;z-index:52;opacity:0'; document.body.appendChild(fade);
@@ -5985,6 +5986,7 @@ function updateCine(raw) {
   if (S.room) clampToRoom(S.room, pos); else pos.y = Math.max(pos.y, terrainH(pos.x, pos.z) + 0.75, 0.6);   // never let the lens sink into the grass or the sea
   const fov = Array.isArray(S.fov) ? lerp(S.fov[0], S.fov[1], k) : S.fov || 40;
   window.__freeCam = [pos, look, fov];
+  if (S.key) { const d = pos.clone().sub(look); d.y = 0; d.normalize(); CINE.key = look.clone().addScaledVector(d, 1.1).add(_V(-d.z * 0.75, 0.55, d.x * 0.75)); CINE.keyI = PRESETS[presetIdx].fromMoon ? 3.4 : PRESETS[presetIdx].rain ? 2.6 : 1.5; } else CINE.key = null;
   S.on?.(CINE.t, k, dt);
   const txt = S.text || ''; if (storyUI.sub.dataset.t !== txt) { storyUI.sub.dataset.t = txt; storyUI.sub.innerHTML = fmtSub(txt); }
   const next = CINE.shots[CINE.i + 1];
@@ -6010,7 +6012,7 @@ function talkShots(actors, lines, o = {}) {
     return [p, p.clone().addScaledVector(n, -0.45), m.clone().add(_V(0, -0.3, 0)), m.clone().add(_V(0, -0.22, 0))]; } });
   lines.forEach((ln, i) => {
     const sp = ln.split(':')[0], who = actors[sp] ? sp : names[0], other = names.find(n => n !== who), tight = i % 3 === 2;
-    shots.push({ dur: Math.min(7.5, 2.6 + ln.length * 0.052), cut: i > 0 || !o.noWide, text: ln, fov: tight ? [24, 22] : [30, 27], hand: 0.006, room: o.room, start: speak(who), on: actors[who].on, cam: () => {
+    shots.push({ dur: Math.min(7.5, 2.6 + ln.length * 0.052), cut: i > 0 || !o.noWide, text: ln, fov: tight ? [24, 22] : [30, 27], hand: 0.006, room: o.room, key: true, start: speak(who), on: actors[who].on, cam: () => {
       const [, , , n] = axis(), S = H(who), L = H(other), d = S.clone().sub(L); d.y = 0; const dist = d.length(); d.normalize();
       const p0 = L.clone().addScaledVector(d, tight ? 0.25 : -0.85).addScaledVector(n, tight ? 0.9 : 0.55).add(_V(0, tight ? -0.05 : 0.06, 0)), p1 = p0.clone().addScaledVector(d, Math.min(0.3, dist * 0.1));
       const t = S.clone().add(_V(0, -0.07, 0)); return [p0, p1, t, t.clone().add(_V(0, 0.015, 0))]; } });
@@ -6090,15 +6092,15 @@ function khanScene() {
   K.yaw = Math.atan2(player.pos.x - K.pos.x, player.pos.z - K.pos.z); player.yaw = K.yaw + Math.PI; player.vel.set(0, 0, 0);
   const kd = () => _V(Math.sin(K.yaw), 0, Math.cos(K.yaw)), ks = () => { const f = kd(); return _V(f.z, 0, -f.x); };
   const shots = [
-    { dur: 5.2, fov: [24, 20], hand: 0.006, room: H, text: 'Jarghal Khan: So. The last sword of Kawabe climbs my mountain.', start: () => { K.cineTalk = 1; },
+    { dur: 5.2, fov: [24, 20], hand: 0.006, room: H, key: true, text: 'Jarghal Khan: So. The last sword of Kawabe climbs my mountain.', start: () => { K.cineTalk = 1; },
       cam: () => { const h = headOf(K); return [h.clone().addScaledVector(kd(), 2.6).addScaledVector(ks(), 0.5).add(_V(0, -0.75, 0)), h.clone().addScaledVector(kd(), 2.1).addScaledVector(ks(), 0.4).add(_V(0, -0.7, 0)), h, h.clone()]; } },
   ];
-  if (fam) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, text: 'Yuki: Kenshin! No — it is what he wants!',
+  if (fam) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, key: true, text: 'Yuki: Kenshin! No — it is what he wants!',
     cam: () => { const h = headOf(fam), d = _V(player.pos.x - h.x, 0, player.pos.z - h.z).normalize(); return [h.clone().addScaledVector(d, 1.8).add(_V(0.3, 0.15, 0)), h.clone().addScaledVector(d, 1.5).add(_V(0.25, 0.12, 0)), h, h.clone()]; } });
   shots.push(
-    { dur: 4.6, cut: true, fov: [30, 27], hand: 0.006, room: H, text: 'Kenshin: Let them go. This ends between you and me.', start: () => { soldier.talking = true; }, done: () => { soldier.talking = false; },
+    { dur: 4.6, cut: true, fov: [30, 27], hand: 0.006, room: H, key: true, text: 'Kenshin: Let them go. This ends between you and me.', start: () => { soldier.talking = true; }, done: () => { soldier.talking = false; },
       cam: () => { const kh = headOf(K), h = headOf(soldier), d = h.clone().sub(kh); d.y = 0; d.normalize(); return [kh.clone().addScaledVector(d, -0.8).addScaledVector(ks(), -0.55), kh.clone().addScaledVector(d, -0.6).addScaledVector(ks(), -0.5), h.add(_V(0, -0.06, 0)), h.clone()]; } },
-    { dur: 5, cut: true, fov: [21, 18], hand: 0.008, room: H, text: 'Jarghal Khan: Kneel, and I may let them watch you die quickly.', start: () => { K.sw.drawn = true; audio.draw(0.9); },
+    { dur: 5, cut: true, fov: [21, 18], hand: 0.008, room: H, key: true, text: 'Jarghal Khan: Kneel, and I may let them watch you die quickly.', start: () => { K.sw.drawn = true; audio.draw(0.9); },
       cam: () => { const h = headOf(K); return [h.clone().addScaledVector(kd(), 2.2).addScaledVector(ks(), -0.35).add(_V(0, -0.2, 0)), h.clone().addScaledVector(kd(), 1.8).addScaledVector(ks(), -0.3).add(_V(0, -0.2, 0)), h, h.clone()]; } },
     { dur: 2.6, cut: true, fov: [38, 44], hand: 0.01, room: H, start: () => { sword.drawn = true; audio.draw(); },
       cam: () => { const a = headOf(K), b = headOf(soldier), m = a.clone().lerp(b, 0.5), n = ks(); return [m.clone().addScaledVector(n, 3.2).add(_V(0, -0.5, 0)), m.clone().addScaledVector(n, 2.6).add(_V(0, -0.6, 0)), m.clone().add(_V(0, -0.4, 0)), m.clone().add(_V(0, -0.4, 0))]; } });
@@ -6113,7 +6115,7 @@ function endingScene() {
     'Kenshin: I am sorry it took so long. Are you hurt?',
     'Yuki: Not any more. Hana — look who it is.',
   ], { room: H, wideDur: 3 }) : [];
-  if (hana) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, text: 'Hana: Father! I wasn’t scared. Not even once.', start: () => { for (const f of FAMILY) f.talking = false; hana.talking = true; },
+  if (hana) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, key: true, text: 'Hana: Father! I wasn’t scared. Not even once.', start: () => { for (const f of FAMILY) f.talking = false; hana.talking = true; },
     cam: () => { const h = headOf(hana), d = _V(player.pos.x - h.x, 0, player.pos.z - h.z).normalize(); return [h.clone().addScaledVector(d, 1.4).add(_V(0.25, 0.25, 0)), h.clone().addScaledVector(d, 1.15).add(_V(0.2, 0.22, 0)), h, h.clone()]; } });
   shots.push(
     { dur: 7, preset: 1, fov: [36, 30], hand: 0.002, text: 'With the Khan dead, his raiders broke and fled for their ships before dawn.', start: () => { for (const f of FAMILY) f.talking = false; },
@@ -6156,7 +6158,7 @@ function updateStory(raw) {
     const P = player.pos.clone(), toC = _V(C.x - P.x, 0, C.z - P.z).normalize(), side = _V(toC.z, 0, -toC.x);
     playCine([
       { dur: 6.5, fov: [22, 17], hand: 0.004, text: 'Shirasagi. The White Heron, stained black with the Khan’s banners.', cam: () => [P.clone().addScaledVector(side, 3).add(_V(0, 0.8, 0)), P.clone().addScaledVector(side, 2.4).add(_V(0, 1.1, 0)), _V(C.x, C.y + 8, C.z), _V(C.x, C.top - 2, C.z)] },
-      { dur: 5, cut: true, fov: [34, 30], hand: 0.006, text: 'Kenshin: Hold on, Hana. I am coming.', start: () => { player.yaw = Math.atan2(toC.x, toC.z); soldier.talking = true; }, done: () => { soldier.talking = false; },
+      { dur: 5, cut: true, fov: [34, 30], hand: 0.006, key: true, text: 'Kenshin: Hold on, Hana. I am coming.', start: () => { player.yaw = Math.atan2(toC.x, toC.z); soldier.talking = true; }, done: () => { soldier.talking = false; },
         cam: () => { const h = headOf(soldier); return [h.clone().addScaledVector(toC, 1.9).addScaledVector(side, 0.7).add(_V(0, -0.25, 0)), h.clone().addScaledVector(toC, 1.5).addScaledVector(side, 0.55).add(_V(0, -0.2, 0)), h, h.clone()]; } },
       { dur: 6, fov: [48, 42], hand: 0.002, cam: () => [P.clone().addScaledVector(toC, -5).add(_V(0, 2.2, 0)), P.clone().addScaledVector(toC, 6).add(_V(0, 4, 0)), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 14, C.z)] },
     ]);
@@ -6304,7 +6306,7 @@ function composeHaiku() {
     { dur: 5, fov: [40, 36], hand: 0.002, start: () => { player.pos.set(kx, groundH(kx, kz), kz); player.vel.set(0, 0, 0); player.yaw = Math.atan2(vx, vz); sword.drawn = false; soldier.seizaK = 1; },
       cam: () => { const P = player.pos; return [_V(P.x - vx * 3.2 + side.x * 1.2, P.y + 1.5, P.z - vz * 3.2 + side.z * 1.2), _V(P.x - vx * 2.6 + side.x * 0.9, P.y + 1.3, P.z - vz * 2.6 + side.z * 0.9), _V(P.x + vx * 60, P.y - 18, P.z + vz * 60), _V(P.x + vx * 60, P.y - 14, P.z + vz * 60)]; } },
     { dur: 7, title: line(q.poem[0], 1), fov: [46, 42], hand: 0.0015, cam: () => { const P = player.pos; return [_V(P.x + vx * 4 - side.x * 18, P.y + 6, P.z + vz * 4 - side.z * 18), _V(P.x + vx * 4 + side.x * 18, P.y + 7, P.z + vz * 4 + side.z * 18), _V(P.x + vx * 160 - side.x * 30, P.y - 40, P.z + vz * 160 - side.z * 30), _V(P.x + vx * 160 + side.x * 30, P.y - 38, P.z + vz * 160 + side.z * 30)]; } },
-    { dur: 7, title: line(q.poem[1], 2), fov: [34, 30], hand: 0.002, cam: () => { const P = player.pos, h = headOf(soldier); return [_V(P.x + vx * 2.4 + side.x * 1.4, P.y + 0.7, P.z + vz * 2.4 + side.z * 1.4), _V(P.x + vx * 2.0 + side.x * 1.1, P.y + 0.75, P.z + vz * 2.0 + side.z * 1.1), h, h.clone()]; } },
+    { dur: 7, title: line(q.poem[1], 2), fov: [34, 30], hand: 0.002, key: true, cam: () => { const P = player.pos, h = headOf(soldier); return [_V(P.x + vx * 2.4 + side.x * 1.4, P.y + 0.7, P.z + vz * 2.4 + side.z * 1.4), _V(P.x + vx * 2.0 + side.x * 1.1, P.y + 0.75, P.z + vz * 2.0 + side.z * 1.1), h, h.clone()]; } },
     { dur: 8, fadeOut: true, title: line(q.poem[2], 3), fov: [40, 52], hand: 0.001, cam: () => { const P = player.pos; return [_V(P.x - vx * 6, P.y + 2.5, P.z - vz * 6), _V(P.x - vx * 26, P.y + 16, P.z - vz * 26), _V(P.x + vx * 90, P.y - 20, P.z + vz * 90), _V(P.x + vx * 90, P.y - 10, P.z + vz * 90)]; } },
   ], () => {
     soldier.seizaK = 0;
@@ -6373,7 +6375,7 @@ document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement) { if (PAUSED) setPaused(false); return; }
   if (started && !TOUCH && !CINE.on && !STANDOFF.on && gfxEl.style.display !== 'block' && storyUI.help.style.display !== 'flex' && mapEl.style.display !== 'block' && !player.dead) setPaused(true);
 });
-window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN };
+window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN, startStandoff, STANDOFF, composeHaiku, HAIKU, DEER, PATROLS, spawnCampOne, shoreSpot };
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (PAUSED) { if (GFX.post === false) renderer.render(scene, camera); else composer.render(); requestAnimationFrame(loop); return; }   // the world holds still
