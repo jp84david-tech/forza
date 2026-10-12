@@ -437,8 +437,17 @@ function terrainBase(x, z, pm) {
     const rut = Math.abs(_pd / _pw - 0.5);
     h -= land * pm * (1 - smooth(0.04, 0.16, rut)) * 0.05 * (0.4 + _pm);      // cart ruts
   }
+  if (CSITE) {   // the summit is levelled into the castle's plateau, blending back into the mountain below its walls
+    const dx = x - CSITE.x, dz = z - CSITE.z;
+    if (dx * dx + dz * dz < 6400) {
+      const ox = Math.abs(dx * CSITE.c - dz * CSITE.s) - CSITE.hw, oz = Math.abs(dx * CSITE.s + dz * CSITE.c) - CSITE.hd;
+      const out = Math.hypot(Math.max(ox, 0), Math.max(oz, 0)), m = 1 - smooth(0, 18, out);
+      if (m > 0) h = lerp(h, CSITE.y - (out > 0 ? Math.min(10, out * 2.6) + out * 0.3 : 0), m);   // a sheer drop under the stone walls, then the slope
+    }
+  }
   return h;
 }
+var CSITE = null;   // the castle plateau (set once the land and roads exist, before the height grid is baked)
 let _pyReady = false;
 { // smoothed natural height along every route, so roads run level across slopes and climb evenly
   const h0 = pathPts.map(p => terrainBase(p[0], p[1], 0)), ys = new Float32Array(pathPts.length);
@@ -512,6 +521,16 @@ function carveRiver(x, z, h) {
 function terrainHp(x, z, pm) { return carveRiver(x, z, terrainBase(x, z, pm)); }
 function terrainH(x, z) { return terrainHp(x, z, pathMask(x, z)); }
 
+// ── choose the castle site: the island's highest peak, its gate turned towards the mountain trail ──
+{
+  let pk = [0, 0, -1e9];
+  for (let z = -950; z < -350; z += 8) for (let x = -620; x < 620; x += 8) { const h = terrainBase(x, z, 0); if (h > pk[2]) pk = [x, z, h]; }
+  for (let z = pk[1] - 8; z <= pk[1] + 8; z += 2) for (let x = pk[0] - 8; x <= pk[0] + 8; x += 2) { const h = terrainBase(x, z, 0); if (h > pk[2]) pk = [x, z, h]; }
+  const ti = ROUTES.findIndex(r => r.trail), trail = pathPts.filter(p => p[3] === ti);
+  let hiT = trail[0]; for (const p of trail) if (terrainBase(p[0], p[1], 0) > terrainBase(hiT[0], hiT[1], 0)) hiT = p;
+  const yaw = Math.atan2(pk[0] - hiT[0], pk[1] - hiT[1]);
+  CSITE = { x: pk[0], z: pk[1], y: pk[2] - 7, yaw, c: Math.cos(yaw), s: Math.sin(yaw), hw: 24, hd: 20, trail };
+}
 // Terrain sampled once on a grid shared by the terrain mesh, the GPU grass and placement code
 const HM = LOW ? 961 : 1281, HM_MIN = -950, HM_SIZE = 1900;
 const HMF = new Float32Array(HM * HM * 4); // height, path, shore, meadow patch
@@ -3839,25 +3858,15 @@ function buildLanterns() {
 // summit and keeps your family prisoner in its keep. A stone stairway climbs to the gate from the top of the trail.
 const CASTLE = {};
 {
-  // find the true peak (coarse search on the baked heights, then refined)
-  let pk = [0, 0, -1e9];
-  for (let z = -950; z < -350; z += 4) for (let x = -620; x < 620; x += 4) { const h = sampleHM(x, z, 0); if (h > pk[2]) pk = [x, z, h]; }
-  for (let z = pk[1] - 6; z <= pk[1] + 6; z += 1) for (let x = pk[0] - 6; x <= pk[0] + 6; x += 1) { const h = terrainH(x, z); if (h > pk[2]) pk = [x, z, h]; }
-  const HW = 26, HD = 22, trail = routePts(ROUTES.findIndex(r => r.trail));
-  // where the stairway leaves the trail: a point far enough below and away from the gate for a walkable flight
-  let best = null, bs = 1e9, Y = 0, yaw = 0, cxz = [pk[0], pk[1]];
-  for (let k = 0; k < trail.length; k += 2) {
-    const [tx, tz] = trail[k], th = terrainH(tx, tz), d = Math.hypot(tx - pk[0], tz - pk[1]); if (d < HD + 8 || d > 220) continue;
-    const yw = Math.atan2(pk[0] - tx, pk[1] - tz), gx = pk[0] - Math.sin(yw) * HD, gz = pk[1] - Math.cos(yw) * HD;
-    const run = Math.hypot(tx - gx, tz - gz), rise = pk[2] + 1 - th, score = Math.abs(run - rise * 1.7) + Math.max(0, rise * 1.5 - run) * 4;
-    if (rise > 2 && score < bs) { bs = score; best = [tx, tz, th]; yaw = yw; }
-  }
-  if (!best) { const [tx, tz] = trail[trail.length - 1]; best = [tx, tz, terrainH(tx, tz)]; yaw = Math.atan2(pk[0] - tx, pk[1] - tz); }
-  const c = Math.cos(yaw), sn = Math.sin(yaw), cx = cxz[0], cz = cxz[1];
+  const HW = CSITE.hw, HD = CSITE.hd, yaw = CSITE.yaw, c = CSITE.c, sn = CSITE.s, cx = CSITE.x, cz = CSITE.z, Y = CSITE.y + 0.05;
   const W = (lx, lz) => [cx + lx * c + lz * sn, cz - lx * sn + lz * c];
-  let lo = 1e9, hi = -1e9;
-  for (let a = -HW - 2; a <= HW + 2; a += 2) for (let b = -HD - 2; b <= HD + 2; b += 2) { const h = terrainH(...W(a, b)); lo = Math.min(lo, h); hi = Math.max(hi, h); }
-  Y = hi + 1.0;
+  // where the stairway leaves the trail: the trail point that gives a comfortable flight up to the gate
+  let best = null, bs = 1e9;
+  { const [gx, gz] = W(0, -HD - 1.6);
+    for (const p of CSITE.trail) { const th = terrainH(p[0], p[1]), run = Math.hypot(p[0] - gx, p[1] - gz), rise = Y - th; if (rise < 1 || run > 160) continue;
+      const score = Math.abs(run - rise * 1.8) + Math.max(0, rise * 1.5 - run) * 5; if (score < bs) { bs = score; best = [p[0], p[1], th]; } }
+    if (!best) { const p = CSITE.trail[CSITE.trail.length - 1]; best = [p[0], p[1], terrainH(p[0], p[1])]; } }
+  const lo = Y - 12;
   Object.assign(CASTLE, { x: cx, z: cz, y: Y, yaw, c, s: sn, HW, HD });
   // materials and a merge bucket per material
   const ishiTex = makeTex(256, (u, v) => {   // dry-laid granite blocks, long rows with staggered joints
@@ -3912,7 +3921,7 @@ const CASTLE = {};
   };
 
   // ── the great stone base under the whole compound (ishigaki), and the courtyard on top ──
-  frustum('stone', HW * 2 + 10, HD * 2 + 10, HW * 2 + 1, HD * 2 + 1, Y - lo + 4, 0, lo - 4, 0);
+  frustum('stone', HW * 2 + 9, HD * 2 + 9, HW * 2 + 1, HD * 2 + 1, Y - lo, 0, lo, 0);   // battered ishigaki retaining walls round the plateau
   box('stone', HW * 2 + 1, 0.3, HD * 2 + 1, 0, Y - 0.15, 0);
   FLOORS.push({ x: cx, z: cz, c, s: sn, hw: HW + 0.5, hd0: -HD - 0.5, hd1: HD + 0.5, y: Y });
   // ── outer walls (dobei): white plaster on a stone footing, a tile coping, triangular and square loopholes ──
