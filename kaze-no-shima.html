@@ -3404,7 +3404,7 @@ function dressVillager(model, rig, B, animations, palette, face, wp, hipsY) {
   mergeArmour(rig, { kusazuri: [] });
   const mixer = new THREE.AnimationMixer(model), act = {};
   for (const c of animations) act[c.name] = mixer.clipAction(c);
-  for (const n of ['Idle', 'Walk']) { act[n].play(); act[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
+  for (const n of ['Idle', 'Walk', 'Run']) { if (!act[n]) continue; act[n].play(); act[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
   return { model, rig, B, mixer, act, hipsY };
 }
 const villagers = [];
@@ -3532,6 +3532,11 @@ function updateVillagers(dt, t) {
     } else {
       if (dP > 8) v.greeted = false;
       v.wait -= dt;
+      if (!v.target && v.wait <= 0 && v.face === 'boy' && !v.name) {   // children chase each other round the plaza
+        for (let k = 0; k < 8; k++) { const a = Math.random() * 6.28, r = 3 + Math.random() * 9, x = VILLAGE[0] + Math.cos(a) * r, z = VILLAGE[1] + Math.sin(a) * r;
+          if (riverWet(x, z) === 0 && !houseAt(x, z, -0.6) && !COLLIDERS.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 0.5)) { v.target = { x, z }; v.play = true; break; } }
+        v.wait = 0.3;
+      }
       if (!v.target && v.wait <= 0) {
         for (let k = 0; k < 8; k++) { const H = VILLAGE_HOMES[Math.floor(Math.random() * VILLAGE_HOMES.length)], fr = H.d / 2 + 2.4 + Math.random() * 4, side = (Math.random() - 0.5) * H.w, x = H.x + H.s * fr + H.c * side, z = H.z + H.c * fr - H.s * side;   // stroll from doorstep to doorstep
           if (riverWet(x, z) === 0 && !COLLIDERS.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 0.6)) { v.target = { x, z }; break; } }
@@ -3539,8 +3544,8 @@ function updateVillagers(dt, t) {
       }
       if (v.target) {
         const wx = v.target.x - v.pos.x, wz = v.target.z - v.pos.z, wd = Math.hypot(wx, wz);
-        if (wd < 0.7) { v.target = null; v.wait = 3 + Math.random() * 6; }
-        else { tx = wx / wd; tz = wz / wd; sp = v.face === 'elder' ? 0.75 : 1.05; v.yaw += angDiff(v.yaw, Math.atan2(wx, wz)) * Math.min(1, dt * 3); }
+        if (wd < 0.7) { v.target = null; v.wait = v.play ? 0.4 + Math.random() * 1.5 : 3 + Math.random() * 6; v.play = false; }
+        else { tx = wx / wd; tz = wz / wd; sp = v.play ? 3.1 : v.face === 'elder' ? 0.75 : 1.05; v.yaw += angDiff(v.yaw, Math.atan2(wx, wz)) * Math.min(1, dt * 3); }
       }
     }
     const k = 1 - Math.exp(-dt * 5); v.vel.x += (tx * sp - v.vel.x) * k; v.vel.z += (tz * sp - v.vel.z) * k;
@@ -3550,8 +3555,8 @@ function updateVillagers(dt, t) {
     collideCircles(v.pos, 0.33, v.vel, others);
     v.pos.y = groundH(v.pos.x, v.pos.z, v.pos.y);
     // animate (cheaply when far or off-screen)
-    const spd = Math.hypot(v.vel.x, v.vel.z), wW = smooth(0.1, 0.8, spd);
-    v.act.Idle.setEffectiveWeight(1 - wW); v.act.Walk.setEffectiveWeight(wW); v.act.Walk.timeScale = Math.max(0.5, spd / 1.5);
+    const spd = Math.hypot(v.vel.x, v.vel.z), rW = v.act.Run ? smooth(1.8, 2.8, spd) : 0, wW = smooth(0.1, 0.8, spd) * (1 - rW);
+    v.act.Idle.setEffectiveWeight(1 - wW - rW); v.act.Walk.setEffectiveWeight(wW); if (v.act.Run) { v.act.Run.setEffectiveWeight(rW); v.act.Run.timeScale = Math.max(0.7, spd / 4.5); } v.act.Walk.timeScale = Math.max(0.5, spd / 1.5);
     v.root.position.copy(v.pos); v.root.rotation.set(0, v.yaw, 0);
     if (dP < 70 || (frameNo & 3) === v.idx % 4) v.mixer.update(dP < 70 ? dt : dt * 4);
     v.root.updateMatrixWorld(true);
