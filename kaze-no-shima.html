@@ -66,12 +66,13 @@
   // Installed app / web server: use the bundled copy of three.js (works offline).
   // Opened straight from a downloaded file: browsers block local modules, so load from the CDN.
   (() => {
-    const base = location.protocol === 'file:' ? 'https://cdn.jsdelivr.net/npm/three@0.160.0/' : './vendor/three/';
+    const web = /^https?:$/.test(location.protocol);   // file:, content: (phone file viewers) etc. can't load the bundled copy
+    const base = !web ? 'https://cdn.jsdelivr.net/npm/three@0.160.0/' : './vendor/three/';
     const im = document.createElement('script'); im.type = 'importmap';
     im.textContent = JSON.stringify({ imports: { three: base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/' } });
     document.currentScript.after(im);
-    window.__MODEL_BASE = location.protocol === 'file:' ? 'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/' : './models/';
-    if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
+    window.__MODEL_BASE = !web ? 'https://raw.githubusercontent.com/mrdoob/three.js/r160/examples/models/gltf/' : './models/';
+    if ('serviceWorker' in navigator && web) navigator.serviceWorker.register('sw.js');
   })();
 </script>
 </head>
