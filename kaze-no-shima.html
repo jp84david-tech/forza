@@ -2147,7 +2147,7 @@ player.yaw = camYaw + Math.PI;
 const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyE') toggleMount();
-  if (e.code === 'KeyR' && !freePrisoner()) useDoor();
+  if (e.code === 'KeyR' && !freePrisoner() && !visitSmith()) useDoor();
   if (e.code === 'KeyV') waveHello();
   if (e.code === 'KeyH' && !player.mounted) { hs.called = true; audio.whistle(); let d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z);
     if (d > 110) {   // too far to hear: she comes round from somewhere just out of sight behind you
@@ -2547,6 +2547,7 @@ const audio = (() => {
     if (!ctx) return; const t = ctx.currentTime;
     for (const [fq, v] of [[2900, 0.07], [4350, 0.04], [6100, 0.02]]) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = fq; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9); o.connect(g).connect(master); o.start(t); o.stop(t + 1); }
   };
+  A.clink = (v = 1) => { if (!ctx) return; tone(2650, 2600, 0.05 * v, 0.5, 'triangle'); tone(4100, 4050, 0.02 * v, 0.3, 'sine'); burst(3000, 'bandpass', 3, 0.05 * v, 0.06); };   // hammer on hot iron
   A.whistle = () => {   // two fingers, two notes
     if (!ctx) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
     o.frequency.setValueAtTime(1900, t); o.frequency.linearRampToValueAtTime(2600, t + 0.18); o.frequency.setValueAtTime(1700, t + 0.3); o.frequency.linearRampToValueAtTime(2900, t + 0.55);
@@ -3420,6 +3421,17 @@ function spawnVillagers() {
     villagers.push(Object.assign(w, { root, face, home: H, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
   if (STORY.done) familyHome();
+  { const v = villagers[5], H = v && v.home; if (H) {   // the smith, at his forge beside his house
+    SMITH = v; const lx = H.w / 2 + 1.6, lz = H.d / 2 - 1.2, fx = H.x + lx * H.c + lz * H.s, fz = H.z - lx * H.s + lz * H.c, y = terrainH(fx, fz);
+    const stone = new THREE.MeshStandardMaterial({ color: 0x5a5650, roughness: 0.95 }), coal = new THREE.MeshStandardMaterial({ color: 0x220a04, emissive: 0xff5a14, emissiveIntensity: 1.6, roughness: 1 }), iron = new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.4, metalness: 0.8 });
+    const g = new THREE.Group(); g.position.set(fx, y, fz); g.rotation.y = H.yaw;
+    const hearth = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 1.0), stone); hearth.position.y = 0.4; const coals = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.6), coal); coals.position.y = 0.82;
+    const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.6, 0.9, 6), stone); hood.position.y = 1.9; const flue = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 1.4, 6), stone); flue.position.y = 2.9;
+    const anvil = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.25), iron); anvil.position.set(0, 0.62, 1.2); const block = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.55, 8), new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 0.9 })); block.position.set(0, 0.27, 1.2);
+    for (const m of [hearth, coals, hood, flue, anvil, block]) { m.castShadow = m.receiveShadow = true; g.add(m); }
+    scene.add(g); COLLIDERS.push({ x: fx, z: fz, r: 0.75 }, { x: fx + Math.sin(H.yaw) * 1.2, z: fz + Math.cos(H.yaw) * 1.2, r: 0.3 });
+    const sx = fx + Math.sin(H.yaw) * 1.9, sz = fz + Math.cos(H.yaw) * 1.9; v.forge = { sx, sz, yaw: H.yaw + Math.PI }; v.pos.set(sx, groundH(sx, sz), sz);
+  } }
   (STORY.freed || []).forEach((k, n) => { const [pal, face] = VILLAGER_DEFS[(n * 5 + 3) % VILLAGER_DEFS.length]; addVillager(pal, face === 'boy' ? 'man' : face); });   // the ones you freed are home
 }
 // villagers the Mongols took: one tied up in every camp. Take the camp, cut them free (R), and they go home to Kawabe
@@ -3428,6 +3440,34 @@ const HOME_LINES = { Yuki: ['Yuki: Welcome home, Kenshin. Sit — I\u2019ll make
 function familyHome() {   // after the Khan: Yuki and Hana live in Kawabe again
   if (villagers.some(v => v.name === 'Yuki')) return;
   [['vPlum', 'woman', 'Yuki'], ['vSage', 'boy', 'Hana']].forEach(([pal, face, name]) => { addVillager(pal, face); const v = villagers[villagers.length - 1]; v.name = name; v.lines = HOME_LINES[name]; });
+}
+// ── Supplies and the smith: Mongol iron, re-forged ──
+const supEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:28px;bottom:84px;color:#d9c49a;font:12px Georgia,serif;letter-spacing:4px;text-shadow:0 2px 6px #000;z-index:20;opacity:0;transition:opacity .6s;pointer-events:none'; document.body.appendChild(d); return d; })();
+function gainSupplies(n, quiet) {
+  STORY.sup = (STORY.sup || 0) + n; supEl.textContent = '⬢ ' + STORY.sup + ' SUPPLIES  +' + n; supEl.style.opacity = 0.9; clearTimeout(supEl._t); supEl._t = setTimeout(() => supEl.style.opacity = 0, 2400);
+  if (!quiet) saveStory();
+}
+const UPGRADES = { s: { name: 'KATANA', what: 'Folded and re-tempered: every cut bites deeper', cost: [50, 110, 200] }, a: { name: 'ARMOUR', what: 'New lacing and Mongol iron plates: blows land lighter', cost: [60, 120, 220] } };
+const smithEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.86);z-index:61;color:#f4e9d8;font:15px/1.7 Georgia,serif';
+  d.addEventListener('click', e => { const k = e.target.dataset?.up; if (k) { buyUpgrade(k); return; } if (e.target.dataset?.close !== undefined || e.target === d) { d.style.display = 'none'; renderer.domElement.requestPointerLock?.(); } });
+  document.body.appendChild(d); return d; })();
+function smithHTML() {
+  const up = STORY.up || {}, row = k => { const U = UPGRADES[k], lv = up[k] || 0, c = U.cost[lv];
+    return `<div style="margin:18px 0;padding:14px 18px;border:1px solid rgba(244,233,216,.25)"><div style="font-size:13px;letter-spacing:6px;color:#d9a55b">${U.name} · ${'◆'.repeat(lv)}${'◇'.repeat(3 - lv)}</div><div style="opacity:.8">${U.what}</div>
+      ${c ? `<button data-up="${k}" style="margin-top:8px;background:none;border:1px solid rgba(244,233,216,.4);color:${(STORY.sup || 0) >= c ? '#f4e9d8' : '#8a7a6a'};font:12px Georgia,serif;letter-spacing:4px;padding:7px 16px;cursor:pointer">IMPROVE · ⬢ ${c}</button>` : '<div style="margin-top:6px;font-size:12px;letter-spacing:4px;opacity:.6">THE FINEST ON THE ISLAND</div>'}</div>`; };
+  return `<div style="width:min(520px,90vw)"><div style="text-align:center;font-size:22px;letter-spacing:18px;opacity:.85">鍛冶屋</div><div style="text-align:center;font-size:12px;letter-spacing:8px;opacity:.55">THE SMITH · ⬢ ${STORY.sup || 0} SUPPLIES</div>${row('s')}${row('a')}
+    <div data-close style="text-align:center;font-size:11px;letter-spacing:6px;opacity:.5;cursor:pointer;margin-top:10px">CLOSE</div></div>`;
+}
+function buyUpgrade(k) {
+  const up = STORY.up = STORY.up || {}, lv = up[k] || 0, c = UPGRADES[k].cost[lv]; if (!c || (STORY.sup || 0) < c) return;
+  STORY.sup -= c; up[k] = lv + 1; saveStory(); audio.hit(); setTimeout(() => audio.hit(), 260); smithEl.innerHTML = smithHTML(); toast(UPGRADES[k].name + ' IMPROVED', 1600);
+}
+let SMITH = null;
+function nearSmith() { return SMITH && SMITH.root.visible && Math.hypot(SMITH.pos.x - player.pos.x, SMITH.pos.z - player.pos.z) < 2.8 && !player.mounted ? SMITH : null; }
+function visitSmith() {
+  const v = nearSmith(); if (!v || CINE.on) return false;
+  if (!v.metSmith) { v.metSmith = true; say(['Smith: Kenshin-sama! Bring me Mongol iron and I’ll make you something worthy of it.']); }
+  smithEl.innerHTML = smithHTML(); smithEl.style.display = 'flex'; document.exitPointerLock?.(); return true;
 }
 function addVillager(pal, face) {
   const i = villagers.length, w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, pal, face);
@@ -3532,6 +3572,10 @@ function updateVillagers(dt, t) {
     } else {
       if (dP > 8) v.greeted = false;
       v.wait -= dt;
+      if (v.forge) {   // the smith keeps to his anvil
+        const F = v.forge, fd = Math.hypot(F.sx - v.pos.x, F.sz - v.pos.z);
+        if (fd > 0.6) v.target = { x: F.sx, z: F.sz }; else { v.target = null; v.wait = 5; v.yaw += angDiff(v.yaw, F.yaw) * Math.min(1, dt * 4); v.hammer = true; }
+      }
       if (!v.target && v.wait <= 0 && v.face === 'boy' && !v.name) {   // children chase each other round the plaza
         for (let k = 0; k < 8; k++) { const a = Math.random() * 6.28, r = 3 + Math.random() * 9, x = VILLAGE[0] + Math.cos(a) * r, z = VILLAGE[1] + Math.sin(a) * r;
           if (riverWet(x, z) === 0 && !houseAt(x, z, -0.6) && !COLLIDERS.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 0.5)) { v.target = { x, z }; v.play = true; break; } }
@@ -3564,7 +3608,10 @@ function updateVillagers(dt, t) {
     if (v.waveT > 0) { v.waveT -= dt; const w = smooth(0, 0.25, 2.0 - v.waveT) * smooth(0, 0.35, v.waveT);
       v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 6);
       rotBoneRig(v.rig, v.B.RightArm, AZ, -2.4 * w); rotBoneRig(v.rig, v.B.RightForeArm, AZ, (-0.3 + Math.sin(t * 10 + v.idx) * 0.5) * w); }
-    if (!v.target && v.wait > 1.2 && dP > 4 && !v.afraid && v.bow <= 0 && !(v.waveT > 0)) {   // at work while idle: sweeping, tending the ground
+    if (v.hammer) { v.hammer = false; const ph = (t * 1.6) % 1, up = ph < 0.6 ? smooth(0, 0.6, ph) : 1 - smooth(0.6, 0.72, ph);   // raise the hammer slowly, bring it down hard
+      rotBoneRig(v.rig, v.B.Spine, AX, 0.22); rotBoneRig(v.rig, v.B.RightArm, AX, -0.5 - 1.5 * up); rotBoneRig(v.rig, v.B.RightForeArm, AX, -0.6 + 0.3 * up); rotBoneRig(v.rig, v.B.LeftArm, AX, -0.7); rotBoneRig(v.rig, v.B.LeftForeArm, AX, -0.8);
+      if (ph > 0.72 && !v.struck) { v.struck = true; if (dP < 30) audio.clink?.(1 - dP / 30); } else if (ph < 0.5) v.struck = false; }
+    else if (!v.target && v.wait > 1.2 && dP > 4 && !v.afraid && v.bow <= 0 && !(v.waveT > 0)) {   // at work while idle: sweeping, tending the ground
       const wk = 0.42 + Math.sin(t * 2.1 + v.idx) * 0.14; rotBoneRig(v.rig, v.B.Spine, AX, wk); rotBoneRig(v.rig, v.B.RightArm, AX, -0.7 + Math.sin(t * 2.1 + v.idx) * 0.35); rotBoneRig(v.rig, v.B.LeftArm, AX, -0.6 - Math.sin(t * 2.1 + v.idx) * 0.3);
     }
     if (v.afraid) { v.afraid = 0; rotBoneRig(v.rig, v.B.RightArm, AX, -1.1); rotBoneRig(v.rig, v.B.LeftArm, AX, -1.1); rotBoneRig(v.rig, v.B.RightForeArm, AX, -0.6); rotBoneRig(v.rig, v.B.LeftForeArm, AX, -0.6); rotBoneRig(v.rig, v.B.Spine, AX, -0.15); }   // hands up, leaning away
@@ -3607,7 +3654,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : !player.mounted && started && !BSTRIKE.on && nearBamboo() ? '<b>Z</b>BAMBOO STRIKE' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : !player.mounted && started && !BSTRIKE.on && nearBamboo() ? '<b>Z</b>BAMBOO STRIKE' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : nearSmith() ? '<b>R</b>THE SMITH · ⬢ ' + (STORY.sup || 0) : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -3758,7 +3805,7 @@ function updateSword(dt) {
       for (let i = 0; i < flowerPos.length; i += 2) if (Math.abs(flowerPos[i] - q.x) < 0.35 && Math.abs(flowerPos[i + 1] - q.z) < 0.35)
         emit(new THREE.Vector3(flowerPos[i], gy + 0.45, flowerPos[i + 1]), new THREE.Vector3((Math.random() - 0.5) * 2.5, 1 + Math.random() * 2, (Math.random() - 0.5) * 2.5), RED, 0.05, 2.2, 2.5, 0, 1, 0.6);
     }
-    if (typeof enemies !== 'undefined') swordHits(soldier, enemies, hitEnemy);
+    if (typeof enemies !== 'undefined') swordHits(soldier, enemies, (tg, dmg, p) => hitEnemy(tg, dmg * (1 + 0.35 * ((STORY.up || {}).s || 0)), p));   // the smith's work tells
   }
   for (let i = 0; i < TRAIL_N; i++) {
     const fresh = i < trail.n ? Math.pow(1 - i / TRAIL_N, 1.5) : 0;
@@ -3868,6 +3915,7 @@ function hitEnemy(e, dmg, p) {
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
   if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35);
     if (!e.boss && !STANDOFF.on && !enemies.some(o => o !== e && o.alive && o.state === 'chase' && o.pos.distanceTo(player.pos) < 30)) KILLCAM.t = 1.0;   // the last blow: a beat of slow motion
+    gainSupplies(e.boss ? 60 : e.brute ? 8 : e.patrol ? 6 : 3, true);
     const grp = e.camp || e.patrol, rest = grp && !e.boss ? enemies.filter(o => o.alive && (o.camp || o.patrol) === grp && !o.boss) : [];
     if (rest.length === 1 && !grp.castle && (grp.spawned === true || (grp.spawned || 0) >= (grp.max || grp.n || 3)) && Math.random() < 0.6) { const L = rest[0]; L.flee = true; L.fleeT = 7; L.sw.drawn = false; L.sw.combo = -1; setTimeout(() => say(['Mongol: He is a demon! Run — run!']), 500); }   // morale breaks: the last one runs for it
   }
@@ -3892,7 +3940,7 @@ function hitPlayer(tg, dmg, p) {
     if (clock.elapsedTime - BLOCK.t0 < 0.3) { RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.5); if (foe) { foe.stagger = 1.5; foe.sw.combo = -1; } hitStop = 0.14; shake = Math.min(1, shake + 0.35); toast('PARRY', 700); player.invuln = 0.5; return; }
     dmg *= 0.25; player.invuln = 0.35; shake = Math.min(1, shake + 0.2);
   }
-  player.hp -= 16 * dmg; player.invuln = 0.6; lastHurt = clock.elapsedTime;
+  player.hp -= 16 * dmg * (1 - 0.15 * ((STORY.up || {}).a || 0)); player.invuln = 0.6; lastHurt = clock.elapsedTime;
   shake = Math.min(1.2, shake + 0.5); audio.hurt(); hurtEl.style.opacity = 0.9; setTimeout(() => hurtEl.style.opacity = 0, 160);
   if (!player.mounted) { const dx = player.pos.x - p.x, dz = player.pos.z - p.z, dl = Math.hypot(dx, dz) || 1; player.vel.x += dx / dl * 4; player.vel.z += dz / dl * 4; }
   if (player.hp <= 0) playerDown();
@@ -6104,7 +6152,7 @@ const storyUI = (() => {
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
     <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>Ctrl</b> — dodge (a red glint means a blow you can't block)<br><b>X</b> — assassinate from behind<br><b>Y</b> — standoff: challenge a camp (hold, release as they strike)<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
-    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors · cut a prisoner free<br>
+    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors · cut a prisoner free · trade with the smith<br>
     <b>Z</b> — rest by a hearth · bathe in a hot spring · compose a haiku · bamboo strike<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
   return { barT, barB, sub, skip, obj, help };
@@ -6348,7 +6396,7 @@ function updateStory(raw) {
   // camps freed
   for (const cp of window.__camps2 || []) {
     if (cp.castle || STORY.cleared.has(cp.x.toFixed(0) + ',' + cp.z.toFixed(0))) continue;
-    if ((cp.spawned || 0) >= (cp.max || 3) && enemies.every(e => e.camp !== cp || !e.alive)) { STORY.cleared.add(cp.x.toFixed(0) + ',' + cp.z.toFixed(0)); saveStory(); toast('MONGOL CAMP TAKEN — CUT THEIR PRISONER FREE (R)', 3000); audio.sting(true); }
+    if ((cp.spawned || 0) >= (cp.max || 3) && enemies.every(e => e.camp !== cp || !e.alive)) { STORY.cleared.add(cp.x.toFixed(0) + ',' + cp.z.toFixed(0)); saveStory(); toast('MONGOL CAMP TAKEN — CUT THEIR PRISONER FREE (R)', 3000); audio.sting(true); setTimeout(() => gainSupplies(40), 3200); }
   }
   // the castle
   const C = window.__castle;
@@ -6617,7 +6665,7 @@ function journalHTML() {
   const camps = (window.__camps2 || []).filter(c => !c.castle).length;
   return `<div style="max-width:720px;padding:40px 24px"><div style="text-align:center;font-size:24px;letter-spacing:22px;opacity:.85">日誌</div><div style="text-align:center;font-size:12px;letter-spacing:10px;opacity:.55;margin-bottom:28px">JOURNAL</div>
     ${E.filter(e => met(e[0])).map(e => `<div style="margin-bottom:16px"><div style="font-size:12px;letter-spacing:6px;color:#d9a55b">${e[1].toUpperCase()}</div>${e[2]}</div>`).join('')}
-    <div style="margin-top:26px;font-size:12px;letter-spacing:4px;opacity:.7;line-height:2.2">CAMPS TAKEN ${STORY.cleared.size} / ${camps} · PRISONERS FREED ${(STORY.freed || []).length} · HAIKU ${HAIKU.filter(h => h.done).length} / ${HAIKU.length} · BAMBOO ${BAMBOO.filter(b => b.done).length} / ${BAMBOO.length} · HOT SPRINGS ${SPRINGS.filter(q => q.used).length} / ${SPRINGS.length}<br>MAXIMUM HEALTH ${player.maxHp} · RESOLVE ${RESOLVE.max}</div>
+    <div style="margin-top:26px;font-size:12px;letter-spacing:4px;opacity:.7;line-height:2.2">CAMPS TAKEN ${STORY.cleared.size} / ${camps} · PRISONERS FREED ${(STORY.freed || []).length} · HAIKU ${HAIKU.filter(h => h.done).length} / ${HAIKU.length} · BAMBOO ${BAMBOO.filter(b => b.done).length} / ${BAMBOO.length} · HOT SPRINGS ${SPRINGS.filter(q => q.used).length} / ${SPRINGS.length}<br>MAXIMUM HEALTH ${player.maxHp} · RESOLVE ${RESOLVE.max} · SUPPLIES ⬢ ${STORY.sup || 0} · KATANA ${'◆'.repeat((STORY.up || {}).s || 0) || '—'} · ARMOUR ${'◆'.repeat((STORY.up || {}).a || 0) || '—'}</div>
     <div style="text-align:center;margin-top:24px;font-size:11px;letter-spacing:6px;opacity:.45">CLICK TO CLOSE</div></div>`;
 }
 function setPaused(on) {
@@ -6627,9 +6675,9 @@ function setPaused(on) {
 }
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement) { if (PAUSED) setPaused(false); return; }
-  if (started && !TOUCH && !CINE.on && !STANDOFF.on && gfxEl.style.display !== 'block' && storyUI.help.style.display !== 'flex' && mapEl.style.display !== 'block' && !player.dead) setPaused(true);
+  if (started && !TOUCH && !CINE.on && !STANDOFF.on && smithEl.style.display !== 'flex' && journalEl.style.display !== 'flex' && gfxEl.style.display !== 'block' && storyUI.help.style.display !== 'flex' && mapEl.style.display !== 'block' && !player.dead) setPaused(true);
 });
-window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN, startStandoff, STANDOFF, composeHaiku, HAIKU, DEER, PATROLS, spawnCampOne, shoreSpot };
+window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN, startStandoff, STANDOFF, composeHaiku, HAIKU, DEER, PATROLS, spawnCampOne, shoreSpot, FLEET };
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (PAUSED) { if (GFX.post === false) renderer.render(scene, camera); else composer.render(); requestAnimationFrame(loop); return; }   // the world holds still
