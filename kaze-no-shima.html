@@ -6190,7 +6190,9 @@ function introShots() {
     { dur: 7, hand: 0.002, fov: 44, text: 'Kaze no Shima — the Island of Wind. Off the coast of Kyūshū, in the year 1281.', cam: () => [_V(-200, 150, 720), _V(120, 120, 640), _V(0, 40, 0), _V(60, 60, -200)] },
     { dur: 6.5, fov: [36, 30], text: 'Red maples, white herons, and a wind that has always carried the island’s prayers out to sea.', cam: () => { const y = groundH(giant[0], giant[1]); return [_V(giant[0] + 70, y + 6, giant[1] + 50), _V(giant[0] + 40, y + 10, giant[1] + 30), _V(giant[0], y + 14, giant[1]), _V(giant[0], y + 16, giant[1])]; } },
     { dur: 7, fov: [38, 34], text: 'For three generations your family kept the peace in Kawabe, by the little river.', cam: () => [_V(V[0] - 110, _gy(V[0], V[1], 45), V[1] - 60), _V(V[0] - 60, _gy(V[0], V[1], 30), V[1] - 90), _V(V[0], _gy(V[0], V[1], 0), V[1]), _V(V[0] + 10, _gy(V[0], V[1], 2), V[1] - 10)] },
-    { dur: 7.5, preset: 2, fov: [30, 26], hand: 0.006, text: "Then the black sails came. Jarghal Khan's raiders burned the coast and pitched their camps across the island.",
+    { dur: 6.5, preset: 2, fov: [34, 28], hand: 0.003, text: 'Then the black sails came.', cam: () => { const s = FLEET[2] || FLEET[0]; if (!s) return [_V(0, 60, 900), _V(0, 50, 850), _V(0, 0, 0), _V(0, 0, 0)];
+        const d = Math.hypot(s.x, s.z), ux = s.x / d, uz = s.z / d; return [_V(s.x - ux * 60 - uz * 30, 3, s.z - uz * 60 + ux * 30), _V(s.x - ux * 42 - uz * 18, 2.2, s.z - uz * 42 + ux * 18), _V(s.x, 8, s.z), _V(s.x, 7, s.z)]; } },
+    { dur: 7.5, fov: [30, 26], hand: 0.006, text: "Jarghal Khan's raiders burned the coast and pitched their camps across the island.",
       start: () => { if (cp) while ((cp.spawned || 0) < (cp.max || 3)) spawnCampOne(cp); },
       cam: () => { if (!cp) return [_V(0, 120, 300), _V(0, 100, 250), _V(0, 0, 0), _V(0, 0, 0)]; const g = cp.gap ?? cp.yaw, cx = Math.cos(g), cz = Math.sin(g), at = r => [cp.x + cx * r, cp.z + cz * r];
         const [x0, z0] = at(7.6), [x1, z1] = at(5.2); return [_V(x0, _gy(x0, z0, 2.3), z0), _V(x1, _gy(x1, z1, 1.9), z1), _V(cp.x, _gy(cp.x, cp.z, 1.1), cp.z), _V(cp.x - cx * 2, _gy(cp.x, cp.z, 1.2), cp.z - cz * 2)]; } },
@@ -6325,7 +6327,7 @@ function updateStory(raw) {
   if (subQueue.length) { subT += raw; storyUI.sub.textContent = subQueue[0]; storyUI.sub.style.opacity = subT > 0.3 && subT < 4.6 ? 1 : 0; if (subT > 5) { subQueue.shift(); subT = 0; } }
   else if (storyUI.sub.style.opacity !== '0') storyUI.sub.style.opacity = 0;
   if ((frameNo & 15) !== 0) return;
-  storyUI.obj.innerHTML = objectiveText(); storyUI.obj.style.opacity = mapEl.style.display === 'block' ? 0 : 0.92;
+  storyUI.obj.innerHTML = objectiveText(); storyUI.obj.style.opacity = mapEl.style.display === 'block' || STANDOFF.on || BSTRIKE.on ? 0 : 0.92;
   // the elder
   const elder = villagers[2];
   if (STORY.step === 0 && elder && !player.mounted && !player.swim && elder.pos.distanceTo(player.pos) < 4 && Math.abs(elder.pos.y - player.pos.y) < 1.5) {
@@ -6438,7 +6440,7 @@ function updateStandoff(raw) {
   const dt = Math.min(raw, 0.1); S.t += dt;
   S.slowT = Math.max(0, S.slowT - dt); S.ts = S.slowT > 0 ? 0.18 + 0.82 * smooth(0, 1.3, 1.3 - S.slowT) : 1;
   const e = S.foe;
-  if (player.dead || !e) return endStandoff(false);
+  if (player.dead || !e || !e.alive && S.phase !== 'after' || e.pos.distanceTo(player.pos) > 45) return endStandoff(false);
   const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
   if (S.phase === 'approach') {
     const mx = e.standMark.x - e.pos.x, mz = e.standMark.z - e.pos.z, md = Math.hypot(mx, mz);
