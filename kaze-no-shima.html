@@ -4578,6 +4578,9 @@ const DEER = [];
   const earL = new THREE.ConeGeometry(0.045, 0.14, 4).rotateZ(0.9).translate(-0.08, 0.6, 0.25), earR = new THREE.ConeGeometry(0.045, 0.14, 4).rotateZ(-0.9).translate(0.08, 0.6, 0.25);
   const headGeo = mergeGeometries([tint(neck, 0.52, 0.31, 0.16), tint(skull, 0.5, 0.3, 0.16), tint(earL, 0.32, 0.2, 0.12), tint(earR, 0.32, 0.2, 0.12)]);
   const legGeo = tint(new THREE.CylinderGeometry(0.03, 0.022, 0.9, 5).translate(0, -0.45, 0), 0.34, 0.22, 0.13);
+  const antler = sx => { const parts = [new THREE.CylinderGeometry(0.012, 0.02, 0.42, 4).rotateZ(-sx * 0.35).translate(sx * 0.12, 0.78, 0.22), new THREE.CylinderGeometry(0.01, 0.014, 0.2, 4).rotateX(0.7).translate(sx * 0.13, 0.78, 0.3), new THREE.CylinderGeometry(0.008, 0.012, 0.18, 4).rotateZ(-sx * 0.9).translate(sx * 0.24, 0.94, 0.2)];
+    return parts.map(g => tint(g, 0.75, 0.68, 0.55)); };
+  const stagGeo = mergeGeometries([headGeo, ...antler(-1), ...antler(1)]);   // the stag of each herd carries antlers
   const R = rng32(8080), herds = [];
   for (let i = 0; i < 9000 && herds.length < 5; i++) {
     const x = (R() - 0.5) * 1100, z = (R() - 0.5) * 1100, h = terrainH(x, z);
@@ -4586,7 +4589,7 @@ const DEER = [];
   }
   herds.forEach(([hx, hz], hi) => {
     for (let k = 0; k < 4 + (hi % 2); k++) {
-      const root = new THREE.Group(), body = new THREE.Mesh(bodyGeo, coat), head = new THREE.Mesh(headGeo, coat); head.position.set(0, 1.08, 0.42); root.add(body, head);
+      const root = new THREE.Group(), body = new THREE.Mesh(bodyGeo, coat), head = new THREE.Mesh(k === 0 ? stagGeo : headGeo, coat); head.position.set(0, 1.08, 0.42); root.add(body, head);
       const legs = [[-0.12, 0.34], [0.12, 0.34], [-0.12, -0.36], [0.12, -0.36]].map(([lx, lz]) => { const m = new THREE.Mesh(legGeo, coat); m.position.set(lx, 0.92, lz); root.add(m); return m; });
       body.castShadow = head.castShadow = true; const s = 1.12 + R() * 0.25; root.scale.setScalar(s);
       const x = hx + (R() - 0.5) * 14, z = hz + (R() - 0.5) * 14; scene.add(root); REFL_HIDE.push(root);
