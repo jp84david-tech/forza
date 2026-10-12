@@ -3840,6 +3840,7 @@ function wakePatrols() {
 function spawnCampOne(cp) {
   const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
   const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) { nb.camp = cp; nb.archer = (cp.spawned || 0) % 3 === 1; nb.shotT = 1.5 + Math.random() * 2; nb.yaw = a + Math.PI;
+    if (nb.archer && cp.tower && !cp.towerMan) { cp.towerMan = nb; nb.tower = true; nb.pos.set(cp.tower[0], cp.tower[2], cp.tower[1]); nb.home.set(cp.tower[0], 0, cp.tower[1]); }   // a lookout with a bow up on the tower
     if ((cp.spawned || 0) % 4 === 3 || (cp.castle && (cp.spawned || 0) % 3 === 2)) { nb.brute = true; nb.hp = nb.maxHp = 6; nb.root.scale.setScalar(1.17); } }   // a brute: twice the man, and his red-glint blows can't be blocked
   cp.spawned = (cp.spawned || 0) + 1;
 }
@@ -3940,7 +3941,8 @@ function updateEnemy(e, dt, t) {
       }
     } else {
       if (e.state === 'chase') { e.state = 'idle'; e.sw.drawn = false; e.wander = null; }
-      if (e.patrol) {   // marching single file along the road, the leader setting the pace
+      if (e.tower && e.pos.y > terrainH(e.pos.x, e.pos.z) + 3) { moveEnemy(e, dt, 0, 0, 0); e.yaw += 0.2 * dt; }   // the lookout keeps his post, slowly scanning
+      else if (e.patrol) {   // marching single file along the road, the leader setting the pace
         const P = e.patrol, j = Math.max(0, Math.min(P.pts.length - 1, P.i - e.pm * 2 * P.dir)), w = P.pts[j], wx = w[0] - e.pos.x, wz = w[1] - e.pos.z, wd = Math.hypot(wx, wz);
         if (e.pm === 0 && wd < 1.8) { P.i += P.dir; if (P.i >= P.pts.length - 1 || P.i <= 0) P.dir *= -1; }
         if (wd > 0.9) { e.yaw += angDiff(e.yaw, Math.atan2(wx, wz)) * Math.min(1, dt * 4); moveEnemy(e, dt, wx / wd, wz / wd, e.pm === 0 ? 1.25 : 1.45); } else moveEnemy(e, dt, 0, 0, 0);
@@ -5178,6 +5180,35 @@ const FIRE_LIGHTS = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff8a3
 // GPU instancing: one mesh per kind of prop, with a list of where each copy stands. The two bandits at each
 // camp are only brought to life when you come within reach.
 const EXTRA_CAMPS = [];
+// a lookout tower: four posts, a railed platform five metres up, and a real flight of stairs you can climb
+const TOWER_GEOS = [];
+function buildWatchtower(cp) {
+  for (const [ang, rad] of [[-0.8, 9.6], [-0.4, 10.2], [1.0, 9.4], [2.0, 9.8]]) {
+    const a = cp.yaw + ang, x = cp.x + Math.cos(a) * rad, z = cp.z + Math.sin(a) * rad, yaw = Math.atan2(cp.x - x, cp.z - z) + Math.PI;   // stairs run outward, away from the fire
+    const c = Math.cos(yaw), sn = Math.sin(yaw), W = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];
+    let lo = 1e9, hi = -1e9, ok = true;
+    for (const [lx, lz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5], [0, 4], [0, 7.2], [-0.6, 7.2], [0.6, 7.2]]) { const [gx, gz] = W(lx, lz), h = terrainH(gx, gz); lo = Math.min(lo, h); hi = Math.max(hi, h);
+      if (riverWet(gx, gz) > 0 || pathMask(gx, gz) > 0.2 || COLLIDERS_INIT.some(q => q.r > 0.5 && Math.hypot(q.x - gx, q.z - gz) < q.r + 1)) ok = false; }
+    if (!ok || hi - lo > 1.6) continue;
+    const y0 = terrainH(x, z), top = y0 + 5.1, n = 20, rise = (top - y0) / n, run = 0.29;
+    const box = (w, h, d, lx, ly, lz, rx = 0) => { const g = new THREE.BoxGeometry(w, h, d); if (rx) g.rotateX(rx); g.rotateY(yaw); const [gx, gz] = W(lx, lz); g.translate(gx, y0 + ly, gz); TOWER_GEOS.push(g); };
+    for (const [px, pz] of [[-1.25, -1.25], [1.25, -1.25], [-1.25, 1.25], [1.25, 1.25]]) { box(0.2, 6.3, 0.2, px, 3.1, pz); const [gx, gz] = W(px, pz); COLLIDERS_INIT.push({ x: gx, z: gz, r: 0.2, y0: y0 - 2, y1: top - 0.4 }); }
+    for (const yy of [1.6, 3.3]) { box(2.5, 0.12, 0.12, 0, yy, -1.25); box(2.5, 0.12, 0.12, 0, yy, 1.25); box(0.12, 0.12, 2.5, -1.25, yy, 0); box(0.12, 0.12, 2.5, 1.25, yy, 0); }   // cross-ties
+    box(3, 0.15, 3, 0, 5.02, 0);   // the platform
+    box(3, 0.1, 0.08, 0, 6.05, -1.45); box(0.08, 0.1, 3, -1.45, 6.05, 0); box(0.08, 0.1, 3, 1.45, 6.05, 0); box(1.05, 0.1, 0.08, -0.97, 6.05, 1.45); box(1.05, 0.1, 0.08, 0.97, 6.05, 1.45);   // the rail, open where the stairs arrive
+    for (const [rx, rz] of [[-1.45, -1.45], [1.45, -1.45], [-1.45, 1.45], [1.45, 1.45], [-0.45, 1.45], [0.45, 1.45]]) box(0.08, 1.0, 0.08, rx, 5.6, rz);
+    box(2.2, 0.08, 2.2, 0, 7.4, 0, 0); box(0.1, 1.3, 0.1, 0, 6.75, 0);   // a little roof on a king post
+    const slope = Math.atan2(top - y0, n * run), len = Math.hypot(top - y0, n * run);
+    for (const sx of [-0.5, 0.5]) box(0.08, 0.22, len, sx, (top - y0) / 2 - 0.1, 1.5 + n * run / 2, slope);   // stringers
+    for (let k = 0; k < n; k++) { const lz = 1.5 + (n - k - 0.5) * run, yy = (k + 1) * rise; box(0.92, 0.06, run + 0.02, 0, yy - 0.03, lz);
+      FLOORS.push({ x, z, c, s: sn, hx0: -0.48, hx1: 0.48, hd0: lz - run / 2 - 0.01, hd1: lz + run / 2 + 0.01, y: y0 + yy }); }
+    FLOORS.push({ x, z, c, s: sn, hx0: -1.5, hx1: 1.5, hd0: -1.5, hd1: 1.5, y: top + 0.03 });
+    const rail = (ax, az, bx, bz) => { const L = Math.hypot(bx - ax, bz - az), m = Math.ceil(L / 0.35); for (let i = 0; i <= m; i++) { const [gx, gz] = W(ax + (bx - ax) * i / m, az + (bz - az) * i / m); COLLIDERS_INIT.push({ x: gx, z: gz, r: 0.16, y0: top - 0.3, y1: top + 2.2 }); } };
+    rail(-1.45, -1.45, 1.45, -1.45); rail(-1.45, -1.45, -1.45, 1.45); rail(1.45, -1.45, 1.45, 1.45); rail(-1.45, 1.45, -0.5, 1.45); rail(0.5, 1.45, 1.45, 1.45);   // you can't fall off the platform, except down the stairs
+    cp.tower = [x, z, top];
+    return;
+  }
+}
 {
   const R = rng32(90210), roadPts = pathPts.filter((_, k) => k % 24 === 0), avoid = campSpots().map(c => [c.x, c.z]);
   for (let tries = 0; tries < 9000 && EXTRA_CAMPS.length < 15; tries++) {
@@ -5243,6 +5274,7 @@ const EXTRA_CAMPS = [];
     COLLIDERS_INIT.push({ x: sx, z: sz, r: 1.3 });
     const rx = cp.x + Math.cos(cp.yaw - 1.2) * 4.2, rz = cp.z + Math.sin(cp.yaw - 1.2) * 4.2;   // spears leaning on a rail
     for (let k = 0; k < 4; k++) { const ox = (k - 1.5) * 0.25; put('spear', rx + ox, rz, cp.yaw, { rx: 0.25 }); put('tip', rx + ox, rz, cp.yaw, { rx: 0.25 }); }
+    buildWatchtower(cp);
     { const px = cp.x + Math.cos(cp.yaw - 2.2) * 6.8, pz = cp.z + Math.sin(cp.yaw - 2.2) * 6.8; cp.prisoner = [px, pz]; put('pole', px, pz, 0, { s: [1.3, 1.1, 1.3] }); COLLIDERS_INIT.push({ x: px, z: pz, r: 0.2 }); }   // a villager, tied to a stake
     const bx = cp.x + Math.cos(cp.yaw + 2.6) * 8.5, bz = cp.z + Math.sin(cp.yaw + 2.6) * 8.5;   // the gang's banner
     put('mast', bx, bz, 0); put('flag', bx, bz, cp.yaw, { c: new THREE.Color(ci % 2 ? 0x1a1a1e : 0x7a1c16) });
@@ -5267,6 +5299,7 @@ const EXTRA_CAMPS = [];
     }
   });
   HOUSE_KIT.flush();
+  if (TOWER_GEOS.length) { const m = new THREE.Mesh(mergeGeometries(TOWER_GEOS.map(g => g.index ? g.toNonIndexed() : g)), TM(texBark, 0.9)); m.castShadow = m.receiveShadow = true; scene.add(m); }
   for (const [k, [geo, mat]] of Object.entries(KINDS)) {
     if (!LIST[k].length) continue;
     const im = new THREE.InstancedMesh(geo, MT[mat], LIST[k].length);
