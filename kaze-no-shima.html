@@ -103,7 +103,7 @@ addEventListener('unhandledrejection', e => { const g = document.getElementById(
   <div class="go" id="go">LOADING THE ISLAND…</div>
   <div class="keys">
     W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — sprint / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse &nbsp;·&nbsp; R — open doors &nbsp;·&nbsp; V — wave<br>
-    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; 1–7 — time of day &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
+    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; Q — block / parry &nbsp;·&nbsp; X — assassinate &nbsp;·&nbsp; 1–8 — time of day &amp; weather &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
 </div>
@@ -2153,7 +2153,7 @@ addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') 
   if (e.code === 'KeyT') cyclePreset();
   if (e.code === 'KeyP') document.body.classList.toggle('photo');
   if (e.code === 'KeyM') audio.toggleMute(); });
-addEventListener('keyup', e => keys[e.code] = false);
+addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyQ') BLOCK.on = false; });
 const startEl = document.getElementById('start');
 let started = false;
 function beginGame() {
@@ -2523,7 +2523,11 @@ const audio = (() => {
     const lfo = ctx.createOscillator(); lfo.frequency.value = 32; const lg = ctx.createGain(); lg.gain.value = 0.5;
     lfo.connect(lg).connect(am.gain); crick = ctx.createGain(); crick.gain.value = 0;
     osc.connect(am).connect(crick).connect(master); osc.start(); lfo.start();
+    const rf = ctx.createBiquadFilter(); rf.type = 'highpass'; rf.frequency.value = 900; A.rainG = ctx.createGain(); A.rainG.gain.value = 0;
+    loop().connect(rf).connect(A.rainG).connect(master);
   };
+  A.rain = k => { if (A.rainG) A.rainG.gain.setTargetAtTime(k * 0.22, ctx.currentTime, 0.8); };
+  A.thunder = (dist = 1) => { if (!ctx) return; setTimeout(() => { burst(90, 'lowpass', 0.7, 0.9 / dist, 3.5, 40); burst(300, 'lowpass', 0.8, 0.35 / dist, 1.2, 60); }, 300 + dist * 900); };
   A.toggleMute = () => { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, ctx.currentTime, 0.1); return muted; };
   function burst(freq, type, q, gain, dur, sweepTo) {
     if (!ctx) return; const t = ctx.currentTime, s = ctx.createBufferSource(); s.buffer = noiseBuf;
@@ -2587,6 +2591,9 @@ const PRESETS = [
   { name: 'SUNSET', elev: 2.2, az: 255, turb: 4.2, ray: 3.8, mie: 0.004, mieG: 0.82, exp: 0.5, sun: [1, 0.55, 0.3], sunI: 5.0, grassSun: 5,
     hemi: [0x9a8ab8, 0x3a2414, 0.8], fog: 0xd8906a, fogD: 0.0019, amb: [0.5, 0.48, 0.72], cLit: [3.4, 1.6, 0.9], cShade: [0.3, 0.16, 0.26], cover: 0.5,
     stars: 0, moon: [1.6, 1.45, 1.35], ff: 0, petals: 1, water: 0x04222c, waterSun: 0xff9a5a, rays: 0.4, motes: 0 },
+  { name: 'STORM', elev: 30, az: 160, turb: 10, ray: 0.6, mie: 0.006, mieG: 0.6, exp: 0.38, sun: [0.75, 0.8, 0.88], sunI: 1.4, grassSun: 1.3, rain: 1,
+    hemi: [0x8a95a3, 0x2a2a26, 1.25], fog: 0x6f7880, fogD: 0.0042, amb: [0.42, 0.47, 0.55], cLit: [0.9, 0.95, 1.0], cShade: [0.28, 0.3, 0.34], cover: 0.98,
+    stars: 0, moon: [0.9, 0.95, 1.05], ff: 0, petals: 0, water: 0x0b2830, waterSun: 0x8c98a4, rays: 0, motes: 0 },
   { name: 'MOONLIT NIGHT', fromMoon: true, elev: -14, az: 205, turb: 1, ray: 0.3, mie: 0.002, mieG: 0.8, exp: 0.85, sun: [0.55, 0.65, 1.0], sunI: 1.6, grassSun: 1.5,
     hemi: [0x26304e, 0x08080c, 0.6], fog: 0x0c1220, fogD: 0.0018, amb: [0.09, 0.11, 0.2], cLit: [0.5, 0.55, 0.75], cShade: [0.03, 0.035, 0.06], cover: 0.3,
     stars: 1, moon: [2.6, 2.7, 3.0], ff: 1, petals: 0, water: 0x020a12, waterSun: 0x9ab8ff, rays: 0.3, motes: 0 },
@@ -2611,6 +2618,7 @@ function applyPreset(p) {
   petals.visible = p.petals > 0; motes.visible = false;
   shallowMat.uniforms.uBright.value = p.fromMoon ? 0.12 : 1;
   wu.uDay.value = p.fromMoon ? 0.12 : 1;
+  setRain(!!p.rain);
   buildCanopy();
   foamMat.uniforms.uCol.value.setRGB(...(p.fromMoon ? [0.25, 0.15, 0.18] : [1.3, 1.1, 0.95]));
   godRayAmt = p.rays;
@@ -3330,7 +3338,7 @@ function spawnVillagers() {
     const root = new THREE.Group(); root.add(w.rig); scene.add(root);
     if (face === 'boy') root.scale.setScalar(0.78);
     const H = VILLAGE_HOMES[(i * 7) % VILLAGE_HOMES.length], fr = H.d / 2 + 2.6, x = H.x + H.s * fr + (Math.random() - 0.5) * 3, z = H.z + H.c * fr + (Math.random() - 0.5) * 3;   // each by a different doorstep
-    villagers.push(Object.assign(w, { root, face, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
+    villagers.push(Object.assign(w, { root, face, home: H, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
 }
 const FAMILY = [];   // your wife and daughter, held in the keep
@@ -3365,11 +3373,18 @@ function updateVillagers(dt, t) {
   if ((frameNo & 15) === 0) updatePlaces();
   if (!FAMILY.length && (frameNo & 63) === 0) spawnFamily();
   updateFamily(dt);
-  for (const v of villagers) {
+  for (let i = 0; i < villagers.length; i++) {
+    const v = villagers[i];
     const dx = player.pos.x - v.pos.x, dz = player.pos.z - v.pos.z, dP = Math.hypot(dx, dz);
     if (dP > 160) { v.root.visible = false; continue; }
     v.root.visible = true;
     let tx = 0, tz = 0, sp = 0;
+    const night = PRESETS[presetIdx].fromMoon || PRESETS[presetIdx].rain;
+    if (night && v.home && i > 2) {   // after dark (and in a storm) most of the village goes indoors
+      const fr = v.home.d / 2 + 1.6, hx = v.home.x + v.home.s * fr, hz = v.home.z + v.home.c * fr, dd = Math.hypot(hx - v.pos.x, hz - v.pos.z);
+      if (dd < 1.2) { v.root.visible = false; v.indoors = true; continue; }
+      v.target = { x: hx, z: hz }; v.wait = 0;
+    } else if (v.indoors) { v.indoors = false; v.root.visible = true; }
     if (sword.drawn && dP < 8 && !player.mounted) {   // a drawn blade: they back away, wary, hands raised
       const ax = -dx / (dP || 1), az = -dz / (dP || 1); v.target = { x: v.pos.x + ax * 6, z: v.pos.z + az * 6 }; v.wait = 4;
       v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 5);
@@ -3444,7 +3459,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : '');
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : (assassinTarget() ? '<b>X</b>ASSASSINATE' : ''));
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -3646,8 +3661,17 @@ function hitEnemy(e, dmg, p) {
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
   if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast('MONGOL WARRIOR DEFEATED', 1600); }
 }
+const BLOCK = { on: false, t0: -9 };
+function nearestFoe(r) { let b = null, bd = r; for (const e of enemies) { if (!e.alive) continue; const d = e.pos.distanceTo(player.pos); if (d < bd) { bd = d; b = e; } } return b; }
 function hitPlayer(tg, dmg, p) {
   if (player.invuln > 0 || player.dead || CINE.on) return;   // nobody strikes during a cutscene
+  if (BLOCK.on && !player.mounted && sword.drawn) {   // steel on steel: a timed block is a parry
+    const foe = nearestFoe(3.8), sp = p.clone ? p.clone() : new THREE.Vector3(player.pos.x, player.pos.y + 1.3, player.pos.z);
+    for (let i = 0; i < 18; i++) emit(sp.clone(), new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5), SPARK, 0.04, 0.4, 9, 0, 1, 1, 1);
+    audio.hit();
+    if (clock.elapsedTime - BLOCK.t0 < 0.3) { if (foe) { foe.stagger = 1.5; foe.sw.combo = -1; } hitStop = 0.14; shake = Math.min(1, shake + 0.35); toast('PARRY', 700); player.invuln = 0.5; return; }
+    dmg *= 0.25; player.invuln = 0.35; shake = Math.min(1, shake + 0.2);
+  }
   player.hp -= 16 * dmg; player.invuln = 0.6; lastHurt = clock.elapsedTime;
   shake = Math.min(1.2, shake + 0.5); audio.hurt(); hurtEl.style.opacity = 0.9; setTimeout(() => hurtEl.style.opacity = 0, 160);
   if (!player.mounted) { const dx = player.pos.x - p.x, dz = player.pos.z - p.z, dl = Math.hypot(dx, dz) || 1; player.vel.x += dx / dl * 4; player.vel.z += dz / dl * 4; }
@@ -4819,6 +4843,7 @@ function updateFlora(dt, t) {
   updateFallingLeaves(dt, t);
   const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
   for (const m of lanternGlow) m.color.setRGB(0.05 + night * 2.6, 0.03 + night * 1.5, 0.01 + night * 0.5);
+  if (window.__villageMats) { const dark = night || PRESETS[presetIdx].rain ? 1 : 0; window.__villageMats.paper.emissive.setRGB(0.55 * dark, 0.34 * dark, 0.14 * dark); }   // lamplight behind the shoji after dark
   const lit = campfires.concat(HEARTHS).map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
   FIRE_LIGHTS.forEach((l, i) => { const f = lit[i]; if (!f || f[0] > 90) { l.intensity = 0; return; } l.position.set(f[1].x, f[1].y + 0.6, f[1].z); l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 29 + i) * 0.5) * (0.6 + night * 1.2) * (1 - smooth(60, 90, f[0])); });
   for (const c of campfires) {
@@ -5040,7 +5065,7 @@ function updatePlayer(dt, moving, wantYaw, sprint) {
   const soft = groundSoft(p.pos.x, p.pos.z); p.sink = soft.sink;
   const wl = waterAt(p.pos.x, p.pos.z), depth = wl - groundH(p.pos.x, p.pos.z, p.pos.y);
   p.swim = depth > 1.25; p.wade = depth > 0.2 ? Math.min(1, depth / 1.25) : 0;
-  let top = (moving ? (p.swim ? (sprint ? 1.9 : 1.2) : sprint ? 6.4 : 1.8) : 0) * soft.slow * (p.swim ? 1 : 1 - 0.55 * p.wade);   // water drags at your legs, then you swim
+  let top = (moving ? (p.swim ? (sprint ? 1.9 : 1.2) : sprint && !BLOCK.on ? 6.4 : 1.8) : 0) * soft.slow * (p.swim ? 1 : 1 - 0.55 * p.wade) * (BLOCK.on ? 0.55 : 1);   // water drags at your legs, then you swim
   if (p.swim && sword.drawn) { sword.drawn = false; }
   if (p.wade > 0 && moving && Math.random() < 0.25 + p.wade * 0.3) splash(p.pos.x, wl, p.pos.z, p.swim ? 0.6 : p.wade);
   if (moving) { const s = slopeAlong(p.pos.x, p.pos.z, dirX, dirZ, p.pos.y); top *= s > 0 ? 1 - Math.min(0.45, s * 0.9) : 1 + Math.min(0.2, -s * 0.35); if (s > 0.9) top *= Math.max(0.05, 1 - (s - 0.9) * 4); }   // cliffs are too steep to climb: find the trail
@@ -5485,6 +5510,34 @@ function updateAim(raw) {
 addEventListener('contextmenu', e => { if (started) e.preventDefault(); });
 addEventListener('mousedown', e => { if (e.button === 2 && started) aim.on = true; });
 addEventListener('mouseup', e => { if (e.button === 2) aim.on = false; });
+// ─────────────────────────── Weather: rain streaks round the camera, wet ground, lightning ───────────────────────────
+const rain = (() => {
+  const N = LOW ? 5000 : 14000, pos = new Float32Array(N * 6), end = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) { const x = (Math.random() - 0.5) * 60, y = Math.random() * 40, z = (Math.random() - 0.5) * 60; pos.set([x, y, z, x, y, z], i * 6); end[i * 2 + 1] = 1; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+  const m = new THREE.LineSegments(g, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, uniforms: { uTime: SH.uTime, uCam: { value: new THREE.Vector3() }, uAmb: SH.uAmb, uFlash: { value: 0 } },
+    vertexShader: `attribute float aEnd; uniform float uTime; uniform vec3 uCam; varying float vA;
+      void main(){ vec3 p = position; p.y = mod(p.y - uTime * 24.0, 40.0) - 14.0 + aEnd * 0.55; p.x += aEnd * 0.09; p.xz = mod(p.xz - uCam.xz + 30.0, 60.0) - 30.0;
+        vec3 w = vec3(uCam.x + p.x, uCam.y + p.y, uCam.z + p.z); vA = 1.0 - smoothstep(10.0, 30.0, length(p.xz)); gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); }`,
+    fragmentShader: `uniform vec3 uAmb; uniform float uFlash; varying float vA; void main(){ gl_FragColor = vec4((uAmb * 0.9 + 0.15) * (1.0 + uFlash * 4.0), 0.32 * vA);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment> }`,
+  }));
+  m.frustumCulled = false; m.visible = false; scene.add(m); REFL_HIDE.push(m); return m;
+})();
+const WET = { on: false, k: 0, flash: 0, next: 8 };
+function setRain(on) { WET.on = on; rain.visible = on; }
+function updateWeather(dt) {
+  WET.k += ((WET.on ? 1 : 0) - WET.k) * Math.min(1, dt * 0.5);
+  audio.rain?.(WET.k);
+  if (rain.visible) rain.material.uniforms.uCam.value.copy(camera.position).setX(Math.floor(camera.position.x / 60) * 60).setZ(Math.floor(camera.position.z / 60) * 60).setY(camera.position.y);
+  for (const m of [terrain.material, tileMat]) { m.roughness = lerp(0.95, 0.38, WET.k); m.color.setScalar(lerp(1, 0.7, WET.k)); }   // the ground darkens and shines when soaked
+  if (WET.on) { WET.next -= dt; if (WET.next < 0) { WET.next = 6 + Math.random() * 14; WET.flash = 1; audio.thunder?.(1 + Math.random() * 2); } }
+  WET.flash = Math.max(0, WET.flash - dt * 3.2);
+  const fl = WET.flash > 0.5 ? 1 : WET.flash * 1.6;
+  hemi.intensity = PRESETS[presetIdx].hemi[2] * (1 + fl * 3 * (Math.random() < 0.7 ? 1 : 0.3)); rain.material.uniforms.uFlash.value = fl;
+}
 // ─────────────────────────── Story: cutscenes, the elder's quest, objectives, resting, bows, the controls card ───────────────────────────
 const storyUI = (() => {
   const mk = (css, parent = document.body) => { const d = document.createElement('div'); d.style.cssText = css; parent.appendChild(d); return d; };
@@ -5496,9 +5549,9 @@ const storyUI = (() => {
   const obj = mk('position:fixed;left:22px;top:104px;color:#f4e9d8;font:14px/1.5 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 6px #000;z-index:20;max-width:360px;opacity:0;transition:opacity .6s;pointer-events:none');
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
-    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br>
+    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>X</b> — assassinate from behind<br>
     <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — call your horse<br><b>R</b> — open / close doors<br>
-    <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day &nbsp; <b>1–7</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
+    <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
   return { barT, barB, sub, skip, obj, help };
 })();
@@ -5584,6 +5637,22 @@ function updateStory(raw) {
 }
 // rest by a hearth: heal, and let the hours pass
 function nearHearth() { for (const h of HEARTHS) if (Math.hypot(h.x - player.pos.x, h.z - player.pos.z) < 2.6 && Math.abs(h.y - player.pos.y) < 2) return h; return null; }
+// a silent kill from behind on a Mongol who hasn't seen you
+function assassinTarget() {
+  if (player.mounted || player.swim || !started) return null;
+  for (const e of enemies) {
+    if (!e.alive || e.state === 'chase') continue;
+    const dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, d = Math.hypot(dx, dz);
+    if (d < 2.3 && (Math.sin(e.yaw) * dx + Math.cos(e.yaw) * dz) / (d || 1) < -0.25) return e;
+  }
+  return null;
+}
+function assassinate() {
+  const e = assassinTarget(); if (!e) return;
+  player.yaw = Math.atan2(e.pos.x - player.pos.x, e.pos.z - player.pos.z);
+  if (!sword.drawn) { sword.drawn = true; audio.draw(); }
+  startSlash(); hitEnemy(e, 99, new THREE.Vector3(e.pos.x, e.pos.y + 1.4, e.pos.z)); hitStop = 0.3; toast('ASSASSINATION', 1100);
+}
 function rest() {
   if (player.mounted || !nearHearth() || CINE.on) return;
   fadeEl.style.opacity = 1;
@@ -5599,8 +5668,10 @@ addEventListener('keydown', e => {
   if (!started) return;
   if (e.code === 'F1' || e.code === 'KeyI') { e.preventDefault(); storyUI.help.style.display = storyUI.help.style.display === 'flex' ? 'none' : 'flex'; if (storyUI.help.style.display === 'flex') document.exitPointerLock?.(); }
   if (e.code === 'KeyZ') rest();
+  if (e.code === 'KeyX') assassinate();
+  if (e.code === 'KeyQ' && !e.repeat) { BLOCK.on = true; BLOCK.t0 = clock.elapsedTime; }
   if (e.code === 'KeyB') bowHello();
-  const d = /^Digit([1-7])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
+  const d = /^Digit([1-8])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
 });
 let gameT = 0, realDt = 1 / 60;
 window.__story = { playCine, introShots, STORY, groundH, endCine };
@@ -5608,7 +5679,7 @@ function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
+  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
