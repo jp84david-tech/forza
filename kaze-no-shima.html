@@ -5600,8 +5600,9 @@ const AO_BLOB = (() => {
   const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, fog: true }), 96);
   m.frustumCulled = false; m.count = 0; m.renderOrder = 1; scene.add(m); REFL_HIDE.push(m); return m;
 })();
+const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _bs = new THREE.Vector3(), _bp = new THREE.Vector3(), _bY = new THREE.Vector3(0, 1, 0);
 function updateBlobs() {
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0); let n = 0;
+  const m4 = _bm, q = _bq, sc = _bs, p = _bp, Y = _bY; let n = 0;
   const put = (x, y, z, sx, sz, yaw, k = 1) => { if (n >= 96 || Math.hypot(x - camera.position.x, z - camera.position.z) > 70) return; q.setFromAxisAngle(Y, yaw); AO_BLOB.setMatrixAt(n++, m4.compose(p.set(x, y + 0.035, z), q, sc.set(sx * k, 1, sz * k))); };
   if (!player.swim && !(player.wade > 0.2)) put(player.pos.x, player.mounted ? groundH(player.pos.x, player.pos.z, hs.y) : player.pos.y - (player.sink || 0), player.pos.z, 0.95, 0.95, 0, player.onGround || player.mounted ? 1 : 0.7);
   { const hg = groundH(hs.pos.x, hs.pos.z, hs.y); if (waterAt(hs.pos.x, hs.pos.z) - hg < 0.25) put(hs.pos.x, hg, hs.pos.z, 1.1, 2.6, hs.yaw); }
@@ -6143,7 +6144,8 @@ try { Object.assign(STORY, JSON.parse(localStorage.getItem('kns-story') || '{}')
 if (STORY.ronin) player.maxHp += 15;   // the duel's reward stays won
 (STORY.sp || []).forEach(i => { if (SPRINGS[i] && !SPRINGS[i].used) { SPRINGS[i].used = true; player.maxHp += 10; } }); player.hp = player.maxHp;
 (STORY.hk || []).forEach(i => { if (HAIKU[i]) HAIKU[i].done = true; }); (STORY.bam || []).forEach(i => { if (BAMBOO[i]) BAMBOO[i].done = true; }); RESOLVE.max = Math.min(6, 3 + (STORY.hk || []).length + (STORY.bam || []).length);   // poems you've written stay written
-const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); } catch (e) {} };
+const saveEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;right:22px;bottom:18px;color:#e8c46a;font:11px Georgia,serif;letter-spacing:4px;opacity:0;transition:opacity .6s;z-index:21;pointer-events:none;text-shadow:0 1px 4px #000'; d.textContent = '◈ SAVED'; document.body.appendChild(d); return d; })();
+const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); saveEl.style.opacity = 0.85; clearTimeout(saveEl._t); saveEl._t = setTimeout(() => saveEl.style.opacity = 0, 1800); } catch (e) {} };
 let subQueue = [], subT = 0;
 function say(lines) { subQueue = lines.slice(); subT = 0; }
 // Jarghal Khan: waits in the keep's upper room with his prisoners once his guard has fallen
