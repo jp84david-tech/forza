@@ -5064,7 +5064,8 @@ function landImpact(p, strength) {
 Object.assign(player, { vel: new THREE.Vector3(), onGround: true, jumpHeld: false, yawRate: 0, lean: 0, pitchLean: 0, prevSpeed: 0 });
 function updatePlayer(dt, moving, wantYaw, sprint) {
   const p = player, v = p.vel, dirX = Math.sin(wantYaw), dirZ = Math.cos(wantYaw);
-  const soft = groundSoft(p.pos.x, p.pos.z); p.sink = soft.sink;
+  const onFloor = groundH(p.pos.x, p.pos.z, p.pos.y) > terrainH(p.pos.x, p.pos.z) + 0.05;   // floors, steps and decks: no sinking, no mud
+  const soft = onFloor ? { sink: 0, slow: 1 } : groundSoft(p.pos.x, p.pos.z); p.sink = soft.sink;
   const wl = waterAt(p.pos.x, p.pos.z), depth = wl - groundH(p.pos.x, p.pos.z, p.pos.y);
   p.swim = depth > 1.25; p.wade = depth > 0.2 ? Math.min(1, depth / 1.25) : 0;
   let top = (moving ? (p.swim ? (sprint ? 1.9 : 1.2) : sprint && !BLOCK.on ? 6.4 : 1.8) : 0) * soft.slow * (p.swim ? 1 : 1 - 0.55 * p.wade) * (BLOCK.on ? 0.55 : 1);   // water drags at your legs, then you swim
