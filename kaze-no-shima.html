@@ -5476,6 +5476,7 @@ addEventListener('keydown', e => {
   const d = /^Digit([1-7])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
 });
 let gameT = 0, realDt = 1 / 60;
+window.__story = { playCine, introShots, STORY, groundH, endCine };
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
