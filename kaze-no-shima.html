@@ -100,7 +100,7 @@ addEventListener('unhandledrejection', e => { const g = document.getElementById(
   <div class="sub">A wandering samurai. A horse. An island of wind.</div>
   <div class="go" id="go">LOADING THE ISLAND…</div>
   <div class="keys">
-    W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse<br>
+    W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — sprint / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse &nbsp;·&nbsp; R — open doors &nbsp;·&nbsp; V — wave<br>
     G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
@@ -234,6 +234,7 @@ function cells(u, v, P) { // periodic Worley noise → [nearest, second nearest,
 }
 const fract = x => x - Math.floor(x);
 function makeTex(size, fn, repeat = [1, 1], bumpStrength = 3) {
+  if (size <= 256 && !LOW) { size *= 2; bumpStrength *= 2; }   // small textures are drawn at double resolution
   const cc = document.createElement('canvas'), nc = document.createElement('canvas');
   cc.width = cc.height = nc.width = nc.height = size;
   const cx = cc.getContext('2d'), nx = nc.getContext('2d');
@@ -2103,6 +2104,7 @@ const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') e.preventDefault();
   if (e.code === 'KeyE') toggleMount();
   if (e.code === 'KeyR') useDoor();
+  if (e.code === 'KeyV') waveHello();
   if (e.code === 'KeyH' && !player.mounted) hs.called = true;
   if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); }
   if (e.code === 'KeyT') cyclePreset();
@@ -2748,21 +2750,31 @@ function buildKatana(withSheath) {
 // ─────────────────────────── Samurai armour (ō-yoroi style), fitted to the skeleton ───────────────────────────
 // Every piece is built from rows of lacquered plates (lames) laced with silk cords, sized from the
 // character's own mesh and attached to the bone it rides on.
-function makeLameTex(plate, cord, knot) {
-  return makeTex(256, (u, v) => {
-    const fu = fract(u * 4), lac = pfbm(u, v, 4, 3);
+function makeLameTex(plate, cord, knot, accent = [0.85, 0.82, 0.74]) {
+  return makeTex(512, (u, v) => {
+    const fu = fract(u * 4), lac = pfbm(u, v, 4, 3), grain = pfbm(u * 3, v * 3, 12, 3);
     let [r, g, b] = plate, h = 0.5;
-    const k = 0.72 + 0.34 * smooth(0.0, 0.35, v) * (1 - smooth(0.75, 1.0, v)) + 0.1 * lac;
+    const brush = 0.06 * (pnoise(u * 180, v * 6, 180, 6) - 0.5);                                // lacquer brushed on in strokes
+    const k = 0.7 + 0.36 * smooth(0.0, 0.35, v) * (1 - smooth(0.75, 1.0, v)) + 0.12 * lac + brush;
     r *= k; g *= k; b *= k;
-    if (v > 0.88) { r = Math.min(1, r * 1.7 + 0.03); g = Math.min(1, g * 1.6 + 0.02); b = Math.min(1, b * 1.5 + 0.02); h = 0.75; }   // polished upper edge
-    if (v < 0.07) { r *= 0.15; g *= 0.15; b *= 0.15; h = 0; }                                    // shadow under the lame above
-    if (Math.abs(fu - 0.5) < 0.16 && v > 0.08) {                                               // silk lacing (odoshi)
-      const br = 0.6 + 0.4 * Math.sin((v * 16 + (fu - 0.5) * 6) * Math.PI);
-      [r, g, b] = cord.map(c => c * br); h = 0.95;
+    const scratch = Math.pow(Math.max(0, pnoise(u * 9 + v * 40, v * 3 - u * 2, 9, 3) * 2 - 1), 9) * 6 + Math.pow(Math.max(0, pnoise(u * 50 - v * 7, v * 50 + u * 9, 50, 50) * 2 - 1), 12) * 4;
+    const grime = smooth(0.45, 0.8, grain) * 0.35 * (1 - smooth(0.6, 0.9, v));                    // dirt settled in the hollows
+    r = r * (1 - grime) + scratch * 0.18; g = g * (1 - grime) + scratch * 0.17; b = b * (1 - grime) + scratch * 0.16; h -= scratch * 0.15;
+    if (v > 0.87) {   // polished upper edge, chipped through to bare iron here and there
+      const chip = pfbm(u * 6, v, 24, 2) > 0.62;
+      if (chip) { r = 0.32; g = 0.31; b = 0.3; h = 0.6; } else { r = Math.min(1, r * 1.8 + 0.04); g = Math.min(1, g * 1.7 + 0.03); b = Math.min(1, b * 1.6 + 0.03); h = 0.78; }
     }
-    if (Math.abs(fu - 0.5) < 0.12 && Math.abs(v - 0.2) < 0.05) { [r, g, b] = knot; h = 1; }       // cord knots
+    if (v < 0.07) { r *= 0.12; g *= 0.12; b *= 0.12; h = 0; }                                   // shadow under the lame above
+    if (Math.abs(fu - 0.5) < 0.17 && v > 0.08) {                                               // braided silk lacing (kumihimo), with a pale thread spiralling through it
+      const br = 0.6 + 0.4 * Math.sin((v * 16 + (fu - 0.5) * 6) * Math.PI), twill = fract(v * 34 + fu * 5) < 0.18;
+      [r, g, b] = (twill ? accent : cord).map(c => c * br * (0.85 + 0.3 * lac)); h = 0.95 + 0.05 * Math.sin(v * 200);
+      if (Math.abs(fu - 0.5) > 0.14) { r *= 0.4; g *= 0.4; b *= 0.4; }
+    }
+    if (Math.abs(fu - 0.5) < 0.13 && Math.abs(v - 0.2) < 0.05) { [r, g, b] = knot; h = 1; }       // cord knots
+    const rv = Math.hypot(fract(u * 8 + 0.5) - 0.5, (v - 0.93) * 6);                            // gilt rivets along the polished edge
+    if (rv < 0.11) { const sh = 1 - rv / 0.11; r = 0.55 + 0.4 * sh; g = 0.4 + 0.3 * sh; b = 0.12 + 0.1 * sh; h = 1 + sh * 0.3; }
     return [r, g, b, h];
-  }, [1, 1], 4);
+  }, [1, 1], 5);
 }
 const texKabuto = makeTex(256, (u, v) => {   // black lacquer bowl with raised ridges and gilt rivets
   const ridge = Math.pow(Math.abs(Math.sin(u * Math.PI * 32)), 6), n = pfbm(u, v, 6, 3);
@@ -2779,7 +2791,7 @@ const ARMOUR_PALETTES = {
   vIndigo: { under: [0.05, 0.07, 0.16], sash: 0x8a6a3a, villager: true }, vBrown: { under: [0.16, 0.1, 0.06], sash: 0x2a2a3a, villager: true },
   vSage:   { under: [0.1, 0.13, 0.09], sash: 0x6a2a20, villager: true }, vRust: { under: [0.22, 0.08, 0.05], sash: 0x1e2236, villager: true },
   vPlum:   { under: [0.14, 0.05, 0.1], sash: 0xc0a060, villager: true }, vSand: { under: [0.26, 0.22, 0.15], sash: 0x34261a, villager: true },
-  hero:   { plate: [0.42, 0.04, 0.03], cord: [0.06, 0.09, 0.3], knot: [0.85, 0.65, 0.25], under: [0.022, 0.026, 0.045], sash: 0x1b2340, trim: 0xb08a3a },
+  hero:   { plate: [0.1, 0.12, 0.16], cord: [0.5, 0.05, 0.04], knot: [0.9, 0.7, 0.28], under: [0.02, 0.024, 0.04], sash: 0x5a0e0c, trim: 0xc09a48 },
   bandit: { plate: [0.12, 0.09, 0.06], cord: [0.16, 0.2, 0.12], knot: [0.35, 0.3, 0.2], under: [0.05, 0.045, 0.04], sash: 0x3a3428, trim: 0x6a5a40, hat: 'kasa' },
 };
 const lacquer = (tex, rough = 0.38) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: rough, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2, side: THREE.DoubleSide, envMapIntensity: 0.8 });
@@ -2997,7 +3009,7 @@ function updateArmour(ch) {
 // The motion-capture body came with a trooper's helmet for a head. Those head vertices are folded away
 // inside the skull, and a human head is built in its place: a painted face on a head-shaped mesh,
 // with a sculpted nose, ears and hair.
-const HEAD_S = 1.32, HEAD_K = HEAD_S / 1.12;   // head scale (bigger, more heroic proportions); helmets and hats follow
+const HEAD_S = 1.55, HEAD_K = HEAD_S / 1.12;   // big, characterful heads (a touch of chibi); helmets and hats follow
 function prepareHeadCollapse(mesh) {
   const g = mesh.geometry;
   if (g.userData.headC) return g.userData.headC;
@@ -3014,12 +3026,12 @@ function prepareHeadCollapse(mesh) {
   return g.userData.headC;
 }
 const FACE_STYLES = {
-  hero:   { skin: [205, 158, 122], hair: [22, 18, 16], beard: 'short', brow: 2.2, eye: [40, 26, 18] },
+  hero:   { skin: [214, 168, 132], hair: [22, 18, 16], beard: 'short', brow: 2.6, eye: [58, 34, 20], cute: 1.4 },
   bandit: { skin: [182, 136, 104], hair: [26, 22, 18], beard: 'stubble', brow: 2.4, eye: [30, 20, 14], scar: true },
   man:    { skin: [210, 164, 128], hair: [24, 20, 18], beard: 'mustache', brow: 1.8, eye: [44, 28, 20], top: 'chonmage' },
   elder:  { skin: [196, 156, 126], hair: [190, 186, 180], beard: 'long', brow: 2.0, eye: [48, 34, 24], top: 'chonmage', wrinkles: true },
   woman:  { skin: [226, 186, 154], hair: [20, 17, 16], beard: null, brow: 1.3, eye: [36, 24, 18], lips: true, top: 'bun' },
-  boy:    { skin: [214, 170, 134], hair: [24, 20, 18], beard: null, brow: 1.4, eye: [40, 26, 18], top: 'bowl' },
+  boy:    { skin: [214, 170, 134], hair: [24, 20, 18], beard: null, brow: 1.4, eye: [40, 26, 18], top: 'bowl', cute: 1.25 },
 };
 const _faceTex = {};
 function faceTexture(name) {
@@ -3039,11 +3051,23 @@ function faceTexture(name) {
   x.beginPath(); x.ellipse(cx + W * 0.5, H * 0.3, W * 0.3, H * 0.42, 0, 0, 6.283); x.fill();   // back of the head
   if (st.top === 'bowl') { x.beginPath(); x.ellipse(cx, H * 0.37, 60, 14, 0, 0, 3.1416); x.fill(); }   // fringe
   for (let i = 0; i < 500; i++) { x.strokeStyle = rgb(st.hair, 0.6 + R() * 0.8, 0.35); x.lineWidth = 1; const hx = R() * W, hy = R() * H * 0.32; x.beginPath(); x.moveTo(hx, hy); x.lineTo(hx + (R() - 0.5) * 6, hy + 8); x.stroke(); }
+  if (st.cute) { x.save(); x.translate(cx, eyeY + 8); x.scale(st.cute, st.cute); x.translate(-cx, -eyeY - 8); }   // bigger features: an expressive, slightly cartoon face
   // brows
   x.strokeStyle = rgb(st.hair, st.hair[0] > 120 ? 0.85 : 1); x.lineCap = 'round';
   for (const s of [-1, 1]) { x.lineWidth = 3 * st.brow; x.beginPath(); x.moveTo(cx + s * 9, eyeY - 12); x.quadraticCurveTo(cx + s * 22, eyeY - 17 - st.brow, cx + s * 36, eyeY - 11); x.stroke(); }
   // eyes: lids, whites, irises, lashes
-  for (const s of [-1, 1]) {
+  if (st.cute) for (const s of [-1, 1]) {   // big round glossy eyes with two catch-lights and a bold upper lash line
+    const ex = cx + s * 22;
+    x.fillStyle = '#f2ebe0'; x.beginPath(); x.ellipse(ex, eyeY - 1, 10.5, 9, 0, 0, 6.283); x.fill();
+    const ig = x.createRadialGradient(ex + s * 0.5, eyeY - 3, 1, ex + s * 0.5, eyeY, 7.5); ig.addColorStop(0, rgb(st.eye, 1.8)); ig.addColorStop(1, rgb(st.eye, 0.7));
+    x.fillStyle = ig; x.beginPath(); x.arc(ex + s * 0.5, eyeY, 7, 0, 6.283); x.fill();
+    x.fillStyle = '#080605'; x.beginPath(); x.arc(ex + s * 0.5, eyeY + 0.5, 3.4, 0, 6.283); x.fill();
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(ex + s * 0.5 - 2.6, eyeY - 2.8, 2.4, 0, 6.283); x.fill(); x.beginPath(); x.arc(ex + s * 0.5 + 2.4, eyeY + 2.6, 1.1, 0, 6.283); x.fill();
+    x.strokeStyle = '#140c09'; x.lineWidth = 2.8; x.beginPath(); x.moveTo(ex - s * 11, eyeY + 1); x.quadraticCurveTo(ex, eyeY - 12.5, ex + s * 11.5, eyeY - 2); x.lineTo(ex + s * 14, eyeY - 5); x.stroke();
+    x.lineWidth = 1; x.strokeStyle = 'rgba(80,40,30,0.5)'; x.beginPath(); x.moveTo(ex - 8, eyeY + 8.5); x.quadraticCurveTo(ex, eyeY + 11, ex + 8, eyeY + 8.5); x.stroke();
+    const bl = x.createRadialGradient(ex + s * 6, eyeY + 19, 1, ex + s * 6, eyeY + 19, 12); bl.addColorStop(0, 'rgba(235,110,100,0.45)'); bl.addColorStop(1, 'rgba(235,110,100,0)'); x.fillStyle = bl; x.fillRect(ex - 20, eyeY + 4, 40, 30);   // rosy cheeks
+  }
+  else for (const s of [-1, 1]) {
     const ex = cx + s * 22;
     x.fillStyle = 'rgba(70,35,25,0.25)'; x.beginPath(); x.ellipse(ex, eyeY - 3, 13, 7, 0, 0, 6.283); x.fill();
     x.fillStyle = '#e9e0d2'; x.beginPath(); x.moveTo(ex - 10, eyeY); x.quadraticCurveTo(ex, eyeY - 6.5, ex + 10, eyeY - 0.5); x.quadraticCurveTo(ex, eyeY + 4.5, ex - 10, eyeY); x.fill();
@@ -3058,9 +3082,13 @@ function faceTexture(name) {
   x.fillStyle = 'rgba(40,18,12,0.7)'; for (const s of [-1, 1]) { x.beginPath(); x.ellipse(cx + s * 4.5, eyeY + 27, 2.4, 1.5, 0, 0, 6.283); x.fill(); }
   // mouth
   const my = eyeY + 40;
+  if (st.cute) { x.fillStyle = '#5a1e1a'; x.beginPath(); x.moveTo(cx - 12, my - 2); x.quadraticCurveTo(cx, my + 12, cx + 12, my - 2); x.quadraticCurveTo(cx, my + 2, cx - 12, my - 2); x.fill();
+    x.fillStyle = '#e8dccb'; x.beginPath(); x.moveTo(cx - 9, my - 0.5); x.quadraticCurveTo(cx, my + 3, cx + 9, my - 0.5); x.lineTo(cx + 8, my + 1.5); x.quadraticCurveTo(cx, my + 4, cx - 8, my + 1.5); x.fill(); }   // a cheeky grin
+  else {
   x.fillStyle = st.lips ? 'rgba(170,45,45,0.85)' : 'rgba(140,72,62,0.75)';
   x.beginPath(); x.moveTo(cx - 13, my); x.quadraticCurveTo(cx, my - 4.5, cx + 13, my); x.quadraticCurveTo(cx, my + 5.5, cx - 13, my); x.fill();
   x.strokeStyle = 'rgba(50,20,15,0.8)'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(cx - 13, my); x.quadraticCurveTo(cx, my + 1, cx + 13, my); x.stroke();
+  }
   if (st.wrinkles) { x.strokeStyle = 'rgba(90,50,35,0.45)'; for (const s of [-1, 1]) { x.beginPath(); x.moveTo(cx + s * 10, eyeY + 22); x.quadraticCurveTo(cx + s * 17, my - 2, cx + s * 15, my + 9); x.stroke(); } }
   // beard
   const hairStroke = (n, x0, x1, y0, y1, len, al) => { for (let i = 0; i < n; i++) { const hx = x0 + R() * (x1 - x0), hy = y0 + R() * (y1 - y0); x.strokeStyle = rgb(st.hair, 0.7 + R() * 0.6, al); x.lineWidth = 1.3; x.beginPath(); x.moveTo(hx, hy); x.lineTo(hx + (R() - 0.5) * 2, hy + len); x.stroke(); } };
@@ -3070,6 +3098,7 @@ function faceTexture(name) {
   }
   if (st.beard === 'short') { x.fillStyle = rgb(st.hair, 1, 0.9); x.beginPath(); x.moveTo(cx - 9, my + 7); x.quadraticCurveTo(cx, my + 30, cx + 9, my + 7); x.fill(); hairStroke(300, cx - 34, cx + 34, my - 6, my + 22, 3, 0.35); }
   if (st.beard === 'long') { x.fillStyle = rgb(st.hair, 1, 0.95); x.beginPath(); x.moveTo(cx - 20, my + 4); x.quadraticCurveTo(cx, my + 75, cx + 20, my + 4); x.fill(); hairStroke(400, cx - 22, cx + 22, my + 4, my + 60, 8, 0.6); }
+  if (st.cute) x.restore();
   if (st.scar) { x.strokeStyle = 'rgba(120,50,45,0.7)'; x.lineWidth = 2; x.beginPath(); x.moveTo(cx + 26, eyeY - 18); x.lineTo(cx + 16, eyeY + 18); x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO;
   return (_faceTex[name] = t);
@@ -3228,6 +3257,10 @@ function updateVillagers(dt, t) {
     v.root.position.copy(v.pos); v.root.rotation.set(0, v.yaw, 0);
     if (dP < 70 || (frameNo & 3) === v.idx % 4) v.mixer.update(dP < 70 ? dt : dt * 4);
     v.root.updateMatrixWorld(true);
+    if (v.waveDelay > 0) { v.waveDelay -= dt; v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 6); if (v.waveDelay <= 0) v.waveT = 2.0; }
+    if (v.waveT > 0) { v.waveT -= dt; const w = smooth(0, 0.25, 2.0 - v.waveT) * smooth(0, 0.35, v.waveT);
+      v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 6);
+      rotBoneRig(v.rig, v.B.RightArm, AZ, -2.4 * w); rotBoneRig(v.rig, v.B.RightForeArm, AZ, (-0.3 + Math.sin(t * 10 + v.idx) * 0.5) * w); }
     if (v.bow > 0) { v.bow -= dt; const b = Math.sin(Math.min(1, (1.6 - v.bow) / 1.6) * Math.PI) * 0.55; rotBoneRig(v.rig, v.B.Spine, AX, b); rotBoneRig(v.rig, v.B.Neck, AX, b * 0.4); }
   }
 }
@@ -3289,7 +3322,7 @@ function animateSoldier(dt, t) {
   const atk = !player.mounted && sw.combo >= 0 ? smooth(0, 0.15, sw.t) * (1 - smooth(0.85, 1, sw.t)) : 0;
   const walkW = smooth(0.15, 1.2, spd) * (1 - smooth(2.4, 4.5, spd)) * (1 - atk), runW = smooth(2.4, 4.5, spd) * (1 - atk);
   S.act.Idle.setEffectiveWeight(1 - walkW - runW); S.act.Walk.setEffectiveWeight(walkW); S.act.Run.setEffectiveWeight(runW);
-  S.act.Walk.timeScale = Math.max(0.6, spd / 1.6); S.act.Run.timeScale = player.onGround ? Math.max(0.7, spd / 5.0) : 0.15;
+  S.act.Walk.timeScale = Math.max(0.6, spd / 1.6); S.act.Run.timeScale = player.onGround ? Math.max(0.7, spd / 4.9) : 0.15;
   S.mixer.update(dt);
   S.rig.position.y = player.mounted ? 0.94 + 0.07 - S.hipsY : -0.08 * atk;
   if (player.mounted) S.rig.rotation.set(0, 0, 0); else S.rig.rotation.set(player.pitchLean, 0, player.lean);
@@ -3310,8 +3343,21 @@ function animateSoldier(dt, t) {
       if (sw.drawT < 0.5) { rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45); }
     } else { lungeLegs(S, sw); footIK(); }
   }
+  if (S.waveT > 0) {   // a big friendly wave (V)
+    S.waveT -= dt; const w = smooth(0, 0.25, 2.2 - S.waveT) * smooth(0, 0.35, S.waveT) * (1 - sw.drawT);
+    rotBone(B.RightArm, AZ, -2.45 * w); rotBone(B.RightArm, AX, -0.25 * w);
+    rotBone(B.RightForeArm, AZ, (-0.35 + Math.sin(t * 11) * 0.5) * w); rotBone(B.Head, AZ, Math.sin(t * 5.5) * 0.08 * w);
+  }
   updateArmour(S);
   S.drawn.visible = sw.drawT > 0.25; S.handle.visible = !S.drawn.visible;
+}
+function waveHello() {
+  if (!soldier.ready || player.mounted || soldier.waveT > 0) return;
+  soldier.waveT = 2.2;
+  for (const v of villagers) {   // the villagers who see you wave back
+    const d = Math.hypot(v.pos.x - player.pos.x, v.pos.z - player.pos.z);
+    if (d < 18) { v.waveDelay = 0.3 + Math.random() * 0.6; v.target = null; v.wait = 3; }
+  }
 }
 
 // ─────────────────────────── Sword slash: trail + grass cutting ───────────────────────────
@@ -3895,7 +3941,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {};
     G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
   }
   flushHouses();
-  window.__villageMats = M;
+  window.__villageMats = M; window.__houses = HOUSES; window.__doors = DOORS;
   HOUSE_KIT.minka = minka; HOUSE_KIT.flush = flushHouses;
 }
 buildLanterns();
@@ -4430,7 +4476,7 @@ Object.assign(player, { vel: new THREE.Vector3(), onGround: true, jumpHeld: fals
 function updatePlayer(dt, moving, wantYaw, sprint) {
   const p = player, v = p.vel, dirX = Math.sin(wantYaw), dirZ = Math.cos(wantYaw);
   const soft = groundSoft(p.pos.x, p.pos.z); p.sink = soft.sink;
-  let top = (moving ? (sprint ? 5.6 : 1.8) : 0) * soft.slow;
+  let top = (moving ? (sprint ? 6.4 : 1.8) : 0) * soft.slow;
   if (moving) { const s = slopeAlong(p.pos.x, p.pos.z, dirX, dirZ); top *= s > 0 ? 1 - Math.min(0.45, s * 0.9) : 1 + Math.min(0.2, -s * 0.35); if (s > 0.9) top *= Math.max(0.05, 1 - (s - 0.9) * 4); }   // cliffs are too steep to climb: find the trail
   const accel = p.onGround ? (moving ? 10 : 14) : 2.5;
   const ax = dirX * top - v.x, az = dirZ * top - v.z, al = Math.hypot(ax, az), step = Math.min(al, accel * dt);
