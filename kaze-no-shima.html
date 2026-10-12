@@ -6272,6 +6272,8 @@ try { Object.assign(STORY, JSON.parse(localStorage.getItem('kns-story') || '{}')
 if (STORY.ronin) player.maxHp += 15;   // the duel's reward stays won
 (STORY.sp || []).forEach(i => { if (SPRINGS[i] && !SPRINGS[i].used) { SPRINGS[i].used = true; player.maxHp += 10; } }); player.hp = player.maxHp;
 (STORY.hk || []).forEach(i => { if (HAIKU[i]) HAIKU[i].done = true; }); (STORY.bam || []).forEach(i => { if (BAMBOO[i]) BAMBOO[i].done = true; }); RESOLVE.max = Math.min(6, 3 + (STORY.hk || []).length + (STORY.bam || []).length);   // poems you've written stay written
+{ const go = document.getElementById('go'), n = STORY.cleared.size;   // a journey already under way: say so on the title screen
+  if (go && (STORY.step > 0 || n)) go.innerHTML = (TOUCH ? 'TAP' : 'CLICK') + ' TO CONTINUE<div style="font-size:11px;letter-spacing:5px;opacity:.6;margin-top:8px">' + (STORY.done ? 'THE ISLAND IS FREE' : n + ' CAMP' + (n === 1 ? '' : 'S') + ' TAKEN' + (STORY.khan ? ' · THE KHAN IS DEAD' : '')) + '</div>'; }
 const saveEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;right:22px;bottom:18px;color:#e8c46a;font:11px Georgia,serif;letter-spacing:4px;opacity:0;transition:opacity .6s;z-index:21;pointer-events:none;text-shadow:0 1px 4px #000'; d.textContent = '◈ SAVED'; document.body.appendChild(d); return d; })();
 const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); saveEl.style.opacity = 0.85; clearTimeout(saveEl._t); saveEl._t = setTimeout(() => saveEl.style.opacity = 0, 1800); } catch (e) {} };
 let subQueue = [], subT = 0;
