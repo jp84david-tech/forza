@@ -1787,13 +1787,14 @@ const routePts = ri => pathPts.filter(p => p[3] === ri);
   im.receiveShadow = true; scene.add(im); REFL_HIDE.push(im);
 }
 const floaters = [];
-for (let i = 0; i < 9; i++) { // surreal floating islands over the sea
-  const a = (i / 9) * 6.28 + Math.random() * 0.4, d = 900 + Math.random() * 500, s = 24 + Math.random() * 50;
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(rockGeo(s, 4, i * 7.7, true), skyRock); g.add(body);
-  g.position.set(Math.cos(a) * d, 40 + Math.random() * 110, Math.sin(a) * d);
-  g.userData = { base: g.position.y, ph: Math.random() * 6 };
-  scene.add(g); floaters.push(g);
+{ // offshore islets on the horizon, sitting in the sea and fading into the haze (the old floating islands are gone)
+  const R = rng32(31337), geos = [];
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 11) * 6.28 + R() * 0.35, d = 1050 + R() * 650, s = 30 + R() * 90, g = rockGeo(s, 3, i * 7.7 + 3);
+    g.scale(1 + R() * 0.8, 0.4 + R() * 0.35, 1 + R() * 0.5); g.rotateY(R() * 6.28); g.translate(Math.cos(a) * d, -s * 0.12, Math.sin(a) * d); geos.push(g);
+    if (R() < 0.6) { const s2 = s * (0.25 + R() * 0.2), g2 = rockGeo(s2, 2, i * 3.3 + 1); g2.scale(0.6, 1.1 + R() * 0.6, 0.6); g2.translate(Math.cos(a + 0.03) * (d + s * 1.1), -s2 * 0.2, Math.sin(a + 0.03) * (d + s * 1.1)); geos.push(g2); }   // a sea stack beside it
+  }
+  const m = new THREE.Mesh(mergeGeometries(geos.map(g => g.index ? g.toNonIndexed() : g)), rock); m.receiveShadow = true; scene.add(m);
 }
 
 // (glowing pollen motes were removed — kept as an empty, hidden object)
@@ -2148,12 +2149,14 @@ addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') 
   if (e.code === 'KeyE') toggleMount();
   if (e.code === 'KeyR') useDoor();
   if (e.code === 'KeyV') waveHello();
-  if (e.code === 'KeyH' && !player.mounted) hs.called = true;
+  if (e.code === 'KeyH' && !player.mounted) { hs.called = true; audio.whistle(); const d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z); setTimeout(() => audio.horse('whinny', Math.max(0.15, 1 - d / 250)), 700); }
+  if (e.code === 'KeyN') patHorse();
+  if (e.code === 'ControlLeft' || e.code === 'ControlRight') { e.preventDefault(); dodge(); }
   if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); }
   if (e.code === 'KeyT') cyclePreset();
   if (e.code === 'KeyP') document.body.classList.toggle('photo');
   if (e.code === 'KeyM') audio.toggleMute(); });
-addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyQ') BLOCK.on = false; });
+addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'KeyQ') BLOCK.on = false; if (e.code === 'Space' && STANDOFF.on) standoffRelease(); });
 const startEl = document.getElementById('start');
 let started = false;
 function beginGame() {
@@ -2161,7 +2164,7 @@ function beginGame() {
   startEl.style.opacity = 0; setTimeout(() => startEl.style.display = 'none', 600);   // hide first, so nothing below can leave it stuck
   try { audio.init(); } catch (e) {}
   let seen = false; try { seen = localStorage.getItem('kns-intro') === '1'; localStorage.setItem('kns-intro', '1'); } catch (e) {}
-  if (!seen && !params.get('fixed')) setTimeout(() => playCine(introShots()), 700);   // the backstory, once (Enter skips)
+  if (!seen && !params.get('fixed')) setTimeout(() => playCine(introShots(), null, 1), 700);   // the backstory, once (Enter skips)
   try { if (!TOUCH) renderer.domElement.requestPointerLock?.(); } catch (e) {}
 }
 startEl.addEventListener('click', beginGame);
@@ -2172,7 +2175,7 @@ startEl.addEventListener('pointerup', beginGame);
   if (TOUCH) startEl.querySelector('.keys').innerHTML = 'Left side: drag to walk (far to run) · double-tap to mount<br>Right side: drag to look · tap to strike · double-tap to jump · hold to draw katana<br>Three fingers: call your horse'; }
 renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock?.());
 let dragging = false;
-addEventListener('mousedown', e => { dragging = true; if (started && !CINE.on && document.pointerLockElement && e.button === 0) { if (aim.on) throwKunai(); else startSlash(); } }); addEventListener('mouseup', () => dragging = false);
+addEventListener('mousedown', e => { dragging = true; if (STANDOFF.on) { if (e.button === 0) STANDOFF.hold = true; return; } if (started && !CINE.on && document.pointerLockElement && e.button === 0) { if (aim.on) throwKunai(); else startSlash(); } }); addEventListener('mouseup', e => { dragging = false; if (e.button === 0) standoffRelease(); });
 addEventListener('mousemove', e => {
   if (document.pointerLockElement || dragging) {
     lookYaw -= e.movementX * 0.0042;
@@ -2525,6 +2528,25 @@ const audio = (() => {
     osc.connect(am).connect(crick).connect(master); osc.start(); lfo.start();
     const rf = ctx.createBiquadFilter(); rf.type = 'highpass'; rf.frequency.value = 900; A.rainG = ctx.createGain(); A.rainG.gain.value = 0;
     loop().connect(rf).connect(A.rainG).connect(master);
+  };
+  A.horse = (kind = 'nicker', v = 0.5) => {   // a voice for the horse: a soft nicker when patted, a whinny when called
+    if (!ctx || v < 0.02) return; const t = ctx.currentTime, o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+    o.type = 'sawtooth'; f.type = 'bandpass'; let dur;
+    if (kind === 'whinny') { dur = 1.5; f.frequency.value = 1500; f.Q.value = 2.5; o.frequency.setValueAtTime(650, t); o.frequency.linearRampToValueAtTime(1380, t + 0.22); o.frequency.linearRampToValueAtTime(1150, t + 0.75); o.frequency.exponentialRampToValueAtTime(420, t + dur);
+      lfo.frequency.value = 11; lg.gain.value = 90; lfo.connect(lg).connect(o.frequency); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.16 * v, t + 0.08); g.gain.setValueAtTime(0.16 * v, t + 0.9); g.gain.exponentialRampToValueAtTime(0.001, t + dur); }
+    else { dur = 0.9; f.frequency.value = 380; f.Q.value = 1.2; o.frequency.setValueAtTime(118, t); o.frequency.linearRampToValueAtTime(86, t + dur);
+      lfo.type = 'square'; lfo.frequency.value = 13; lg.gain.value = 0.12 * v; lfo.connect(lg).connect(g.gain); g.gain.setValueAtTime(0.12 * v, t); g.gain.setTargetAtTime(0, t + dur * 0.6, 0.12); }
+    o.connect(f).connect(g).connect(master); o.start(t); lfo.start(t); o.stop(t + dur + 0.2); lfo.stop(t + dur + 0.2);
+  };
+  A.glint = () => {   // the ring of a blade catching the light: the warning before a perilous blow
+    if (!ctx) return; const t = ctx.currentTime;
+    for (const [fq, v] of [[2900, 0.07], [4350, 0.04], [6100, 0.02]]) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = fq; g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9); o.connect(g).connect(master); o.start(t); o.stop(t + 1); }
+  };
+  A.whistle = () => {   // two fingers, two notes
+    if (!ctx) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine';
+    o.frequency.setValueAtTime(1900, t); o.frequency.linearRampToValueAtTime(2600, t + 0.18); o.frequency.setValueAtTime(1700, t + 0.3); o.frequency.linearRampToValueAtTime(2900, t + 0.55);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.07, t + 0.03); g.gain.setValueAtTime(0.07, t + 0.2); g.gain.linearRampToValueAtTime(0.0, t + 0.26); g.gain.linearRampToValueAtTime(0.08, t + 0.33); g.gain.exponentialRampToValueAtTime(0.001, t + 0.62);
+    o.connect(g).connect(master); o.start(t); o.stop(t + 0.7);
   };
   A.rain = k => { if (A.rainG) A.rainG.gain.setTargetAtTime(k * 0.22, ctx.currentTime, 0.8); };
   A.thunder = (dist = 1) => { if (!ctx) return; setTimeout(() => { burst(90, 'lowpass', 0.7, 0.9 / dist, 3.5, 40); burst(300, 'lowpass', 0.8, 0.35 / dist, 1.2, 60); }, 300 + dist * 900); };
@@ -3383,9 +3405,17 @@ function spawnFamily() {
 function updateFamily(dt) {
   for (const f of FAMILY) {
     const d = f.pos.distanceTo(player.pos); f.root.visible = d < 140; if (d > 60) continue;
-    f.act.Idle.setEffectiveWeight(1); f.act.Walk.setEffectiveWeight(0); f.mixer.update(dt); f.root.updateMatrixWorld(true);
+    f.act.Idle.setEffectiveWeight(1); f.act.Walk.setEffectiveWeight(0); f.mixer.update(dt);
+    const sc = f.name === 'Hana' ? 0.78 : 1;
+    if (STORY.done) {   // free: they stand and turn to you
+      f.root.position.y = lerp(f.root.position.y, f.pos.y, Math.min(1, dt * 3)); f.root.rotation.y += angDiff(f.root.rotation.y, Math.atan2(player.pos.x - f.pos.x, player.pos.z - f.pos.z)) * Math.min(1, dt * 3); f.root.updateMatrixWorld(true);
+      if (f.root.position.y < f.pos.y - 0.05) { rotBoneRig(f.rig, f.B.LeftUpLeg, AX, -0.8); rotBoneRig(f.rig, f.B.RightUpLeg, AX, -0.8); rotBoneRig(f.rig, f.B.LeftLeg, AX, 1.3); rotBoneRig(f.rig, f.B.RightLeg, AX, 1.3); }
+      if (f.talking) { const g = clock.elapsedTime * 2.1 + (sc < 1 ? 2 : 0); rotBoneRig(f.rig, f.B.Neck, AX, 0.04 + Math.sin(g * 1.3) * 0.05); rotBoneRig(f.rig, f.B.Head, AY, Math.sin(g * 0.6) * 0.08); rotBoneRig(f.rig, f.B.RightArm, AX, -0.4 - Math.sin(g) * 0.1); }
+      continue;
+    }
+    f.root.position.y = f.pos.y - 0.5 * sc; f.root.updateMatrixWorld(true);
     rotBoneRig(f.rig, f.B.LeftUpLeg, AX, -1.5); rotBoneRig(f.rig, f.B.RightUpLeg, AX, -1.5); rotBoneRig(f.rig, f.B.LeftLeg, AX, 2.5); rotBoneRig(f.rig, f.B.RightLeg, AX, 2.5);   // kneeling, seiza
-    rotBoneRig(f.rig, f.B.Spine, AX, STORY.done ? 0 : 0.35); rotBoneRig(f.rig, f.B.Neck, AX, STORY.done ? -0.1 : 0.4);   // heads bowed until you come
+    rotBoneRig(f.rig, f.B.Spine, AX, 0.35); rotBoneRig(f.rig, f.B.Neck, AX, CINE.on ? -0.15 : 0.4);   // heads bowed until you come — raised when you do
   }
 }
 const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 95, at: () => VILLAGE }, { name: 'SHRINE OF THE BEACON · 狼煙神社', r: 24, at: () => window.__shrine }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit },
@@ -3455,6 +3485,9 @@ function updateVillagers(dt, t) {
       const wk = 0.42 + Math.sin(t * 2.1 + v.idx) * 0.14; rotBoneRig(v.rig, v.B.Spine, AX, wk); rotBoneRig(v.rig, v.B.RightArm, AX, -0.7 + Math.sin(t * 2.1 + v.idx) * 0.35); rotBoneRig(v.rig, v.B.LeftArm, AX, -0.6 - Math.sin(t * 2.1 + v.idx) * 0.3);
     }
     if (v.afraid) { v.afraid = 0; rotBoneRig(v.rig, v.B.RightArm, AX, -1.1); rotBoneRig(v.rig, v.B.LeftArm, AX, -1.1); rotBoneRig(v.rig, v.B.RightForeArm, AX, -0.6); rotBoneRig(v.rig, v.B.LeftForeArm, AX, -0.6); rotBoneRig(v.rig, v.B.Spine, AX, -0.15); }   // hands up, leaning away
+    if (v.talking) { const g = t * 2.2 + v.idx;   // speaking in a cutscene: an open hand, nods
+      rotBoneRig(v.rig, v.B.Neck, AX, 0.05 + Math.sin(g * 1.3) * 0.05); rotBoneRig(v.rig, v.B.Head, AY, Math.sin(g * 0.6) * 0.08);
+      rotBoneRig(v.rig, v.B.RightArm, AX, -0.45 - Math.sin(g) * 0.12); rotBoneRig(v.rig, v.B.RightForeArm, AX, -0.7 + Math.sin(g * 1.7) * 0.15); }
     if (v.bow > 0) { v.bow -= dt; const b = Math.sin(Math.min(1, (1.6 - v.bow) / 1.6) * Math.PI) * 0.55; rotBoneRig(v.rig, v.B.Spine, AX, b); rotBoneRig(v.rig, v.B.Neck, AX, b * 0.4); }
   }
 }
@@ -3491,7 +3524,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : (assassinTarget() ? '<b>X</b>ASSASSINATE' : ''));
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : (assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
@@ -3522,6 +3555,8 @@ function animateSoldier(dt, t) {
   if (player.mounted) S.rig.rotation.set(0, 0, 0); else S.rig.rotation.set(player.pitchLean, 0, player.lean);
   S.swimK = lerp(S.swimK || 0, !player.mounted && player.swim ? 1 : 0, Math.min(1, dt * 4));
   if (S.swimK > 0.01) { S.rig.rotation.x = lerp(S.rig.rotation.x, 1.2, S.swimK); S.rig.position.y += 1.12 * S.swimK; S.rig.position.z = -0.85 * S.swimK; } else S.rig.position.z = 0;   // lying along the water to swim
+  if (S.lieK > 0.01) { S.rig.rotation.x = lerp(S.rig.rotation.x, -1.45, S.lieK); S.rig.position.y += 0.13 * S.lieK; }
+  if (S.seizaK > 0.01) S.rig.position.y -= 0.5 * S.seizaK;   // cutscenes: lying wounded on the shore, then rising
   (player.mounted ? horse.root : hero.root).updateMatrixWorld(true);
   const B = S.B;
   if (player.mounted) {
@@ -3538,8 +3573,16 @@ function animateSoldier(dt, t) {
     else if (!player.onGround) { // airborne: knees up, arms out
       rotBone(B.LeftUpLeg, AX, -0.75); rotBone(B.RightUpLeg, AX, -0.3); rotBone(B.LeftLeg, AX, 1.25); rotBone(B.RightLeg, AX, 0.7);
       if (sw.drawT < 0.5) { rotBone(B.LeftArm, AZ, 0.45); rotBone(B.RightArm, AZ, -0.45); }
-    } else { lungeLegs(S, sw); footIK(); }
+    } else if (S.seizaK > 0.01) { const k = S.seizaK;   // kneeling in seiza, hands on the thighs
+      rotBone(B.LeftUpLeg, AX, -1.5 * k); rotBone(B.RightUpLeg, AX, -1.5 * k); rotBone(B.LeftLeg, AX, 2.5 * k); rotBone(B.RightLeg, AX, 2.5 * k);
+      rotBone(B.LeftArm, AX, -0.45 * k); rotBone(B.RightArm, AX, -0.45 * k); rotBone(B.LeftForeArm, AX, -0.7 * k); rotBone(B.RightForeArm, AX, -0.7 * k); rotBone(B.Spine, AX, 0.08 * k);
+    } else if (S.lieK > 0.01) { const m = Math.sin(Math.min(1, S.lieK) * Math.PI), k = S.lieK;   // sitting up out of the surf: knees bent, a hand pushing off the sand
+      rotBone(B.Spine, AX, 0.55 * m); rotBone(B.Neck, AX, 0.25 * m - 0.2 * k); rotBone(B.LeftUpLeg, AX, -0.9 * m); rotBone(B.LeftLeg, AX, 1.4 * m); rotBone(B.RightUpLeg, AX, -0.3 * m); rotBone(B.RightLeg, AX, 0.6 * m);
+      rotBone(B.RightArm, AZ, -0.5 * k); rotBone(B.LeftArm, AZ, 0.7 * k); rotBone(B.LeftArm, AX, -0.6 * m); }
+    else { lungeLegs(S, sw); footIK(); }
   }
+  if (S.talking && !player.mounted) { const g = clock.elapsedTime;   // speaking in a cutscene: small nods and a turn of the head
+    rotBone(B.Neck, AX, 0.04 + Math.sin(g * 2.7) * 0.045); rotBone(B.Head, AY, Math.sin(g * 1.3) * 0.07); rotBone(B.Spine1, AY, Math.sin(g * 0.9) * 0.04); }
   if (aim.k > 0.02 && !player.mounted) {   // kunai: arm cocked back by the ear, flicks forward on the throw
     const k = aim.k * (1 - sw.drawT * 0.6), f = aim.throwT > 0 ? Math.sin((1 - aim.throwT / 0.3) * Math.PI) : 0;
     rotBone(B.RightArm, AZ, (-1.35 + f * 0.5) * k); rotBone(B.RightArm, AX, (0.55 - f * 1.6) * k); rotBone(B.RightForeArm, AZ, (-1.1 + f * 1.0) * k);
@@ -3552,6 +3595,13 @@ function animateSoldier(dt, t) {
     rotBone(B.LeftUpLeg, AX, Math.sin(ph * 2) * 0.35 * k); rotBone(B.RightUpLeg, AX, -Math.sin(ph * 2) * 0.35 * k); rotBone(B.Neck, AX, -0.7 * k);
   }
   if (S.bowT > 0) { S.bowT -= dt; const b = Math.sin(Math.min(1, (1.6 - S.bowT) / 1.6) * Math.PI) * 0.6 * (1 - sw.drawT * 0.5); rotBone(B.Spine, AX, b); rotBone(B.Neck, AX, b * 0.4); }
+  player.dodgeCool = Math.max(0, (player.dodgeCool || 0) - dt);
+  if (S.dodgeT > 0) { S.dodgeT -= dt; const w = Math.sin(Math.max(0, S.dodgeT) / 0.45 * Math.PI);   // ducking low through the sidestep
+    rotBone(B.Spine, AX, 0.4 * w); rotBone(B.LeftUpLeg, AX, -0.6 * w); rotBone(B.RightUpLeg, AX, -0.3 * w); rotBone(B.LeftLeg, AX, 0.9 * w); rotBone(B.RightLeg, AX, 0.6 * w); }
+  if (S.patT > 0) {   // stroking the horse's neck
+    S.patT -= dt; const w = smooth(0, 0.3, 2.4 - S.patT) * smooth(0, 0.4, S.patT) * (1 - sw.drawT), st = Math.sin(t * 4.2);
+    rotBone(B.RightArm, AX, (-1.15 + st * 0.12) * w); rotBone(B.RightArm, AZ, -0.25 * w); rotBone(B.RightForeArm, AX, (-0.35 + st * 0.25) * w); rotBone(B.Head, AX, 0.12 * w);
+  }
   if (S.waveT > 0) {   // a big friendly wave (V)
     S.waveT -= dt; const w = smooth(0, 0.25, 2.2 - S.waveT) * smooth(0, 0.35, S.waveT) * (1 - sw.drawT);
     rotBone(B.RightArm, AZ, -2.45 * w); rotBone(B.RightArm, AX, -0.25 * w);
@@ -3559,6 +3609,21 @@ function animateSoldier(dt, t) {
   }
   updateArmour(S);
   S.drawn.visible = sw.drawT > 0.25; S.handle.visible = !S.drawn.visible;
+}
+function dodge() {   // a quick sidestep (Ctrl): out of reach for a heartbeat
+  if (!started || !soldier.ready || player.mounted || player.swim || CINE.on || STANDOFF.on || !player.onGround || player.dead || (player.dodgeCool || 0) > 0) return;
+  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), iF = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), iR = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  let dx = fx * iF - fz * iR, dz = fz * iF + fx * iR; const l = Math.hypot(dx, dz);
+  if (l < 0.1) { dx = -Math.sin(player.yaw); dz = -Math.cos(player.yaw); } else { dx /= l; dz /= l; }
+  player.vel.x = dx * 8.5; player.vel.z = dz * 8.5; player.invuln = Math.max(player.invuln, 0.4); player.dodgeCool = 0.75; soldier.dodgeT = 0.45; audio.slash(0.35);
+}
+function patHorse() {   // a hand on Kage's neck: she leans into it and nickers
+  if (!soldier.ready || player.mounted || CINE.on || soldier.patT > 0) return;
+  const d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z); if (d > 3.2) return;
+  const nx = hs.pos.x + Math.sin(hs.yaw) * 0.9, nz = hs.pos.z + Math.cos(hs.yaw) * 0.9;   // the neck
+  player.yaw = Math.atan2(nx - player.pos.x, nz - player.pos.z); soldier.patT = 2.4; hs.speed = 0;
+  setTimeout(() => audio.horse('nicker', 0.7), 500);
+  if (!subQueue.length && Math.random() < 0.6) say([['Kenshin: Easy, Kage. Easy.', 'Kenshin: Good girl.', 'Kenshin: You and me, Kage. Like always.', 'Kenshin: We\u2019ll rest soon, I promise.'][Math.floor(Math.random() * 4)]]);
 }
 function waveHello() {
   if (!soldier.ready || player.mounted || soldier.waveT > 0) return;
@@ -3673,11 +3738,15 @@ function wakeCamps() {
   if (!soldierGLTF) return;
   for (const cp of (window.__camps2 || [])) {
     if ((cp.spawned || 0) >= (cp.max || 3) || Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z) > 230) continue;
-    const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
-    const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) { nb.camp = cp; nb.archer = (cp.spawned || 0) % 3 === 1; nb.shotT = 1.5 + Math.random() * 2; }
-    cp.spawned = (cp.spawned || 0) + 1;
+    spawnCampOne(cp);
     return;   // one per frame keeps the hitch small
   }
+}
+function spawnCampOne(cp) {
+  const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
+  const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) { nb.camp = cp; nb.archer = (cp.spawned || 0) % 3 === 1; nb.shotT = 1.5 + Math.random() * 2; nb.yaw = a + Math.PI;
+    if ((cp.spawned || 0) % 4 === 3 || (cp.castle && (cp.spawned || 0) % 3 === 2)) { nb.brute = true; nb.hp = nb.maxHp = 6; nb.root.scale.setScalar(1.17); } }   // a brute: twice the man, and his red-glint blows can't be blocked
+  cp.spawned = (cp.spawned || 0) + 1;
 }
 function resetEnemy(e) {
   Object.assign(e, { hp: e.maxHp, alive: true, state: 'idle', stagger: 0, deathT: 0, wander: null, atkCool: 1.5 });
@@ -3694,10 +3763,18 @@ function hitEnemy(e, dmg, p) {
   if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? 'JARGHAL KHAN FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35); }
 }
 const BLOCK = { on: false, t0: -9 };
+let curFoe = null;   // whose blade is being checked against you
+function perilGlint(e) {
+  const h = e.B.RightHand.getWorldPosition(new THREE.Vector3());
+  for (let i = 0; i < 3; i++) emit(h.clone(), new THREE.Vector3(0, 0.15, 0), new THREE.Color(4, 0.35, 0.2), 0.16 + i * 0.07, 0.5, 0, 1.6, 0.9, 0);
+  audio.glint?.();
+}
 function nearestFoe(r) { let b = null, bd = r; for (const e of enemies) { if (!e.alive) continue; const d = e.pos.distanceTo(player.pos); if (d < bd) { bd = d; b = e; } } return b; }
 function hitPlayer(tg, dmg, p) {
   if (player.invuln > 0 || player.dead || CINE.on) return;   // nobody strikes during a cutscene
-  if (BLOCK.on && !player.mounted && sword.drawn) {   // steel on steel: a timed block is a parry
+  const peril = curFoe && curFoe.perilNow > 0;
+  if (curFoe && curFoe.brute) dmg *= 1.6;
+  if (BLOCK.on && !player.mounted && sword.drawn && !peril) {   // steel on steel: a timed block is a parry (but no blade stops a perilous blow)
     const foe = nearestFoe(3.8), sp = p.clone ? p.clone() : new THREE.Vector3(player.pos.x, player.pos.y + 1.3, player.pos.z);
     for (let i = 0; i < 18; i++) emit(sp.clone(), new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5), SPARK, 0.04, 0.4, 9, 0, 1, 1, 1);
     audio.hit();
@@ -3739,6 +3816,8 @@ function updateEnemy(e, dt, t) {
     if (e.deathT > 25 && !e.camp && !e.boss) resetEnemy(e);   // a camp you have taken stays taken
   } else if (e.stagger > 0) {
     e.stagger -= dt; moveEnemy(e, dt, 0, 0, 0);
+  } else if ((CINE.on || STANDOFF.on) && !e.cineWalk) {   // in a cutscene or a standoff everyone holds their mark, eyes on you
+    moveEnemy(e, dt, 0, 0, 0); if (dP < 25) e.yaw += angDiff(e.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 3);
   } else {
     const fromHome = Math.hypot(player.pos.x - e.home.x, player.pos.z - e.home.z);
     const engaged = !player.dead && dP < (e.state === 'chase' ? 24 : 15) && fromHome < 48;
@@ -3746,13 +3825,17 @@ function updateEnemy(e, dt, t) {
       if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); if (!subQueue.length && Math.random() < 0.6 && !e.boss) say([['Mongol: There! The samurai!', 'Mongol: Kill him!', 'Mongol: Surround him!', 'Mongol: For the Khan!', 'Mongol: Archers — loose!'][Math.floor(Math.random() * 5)]]); }
       e.sw.drawn = true;
       const want = Math.atan2(dx, dz); e.yaw += angDiff(e.yaw, want) * Math.min(1, dt * (e.sw.combo >= 0 ? 2 : 7));
-      if (e.sw.combo >= 0) moveEnemy(e, dt, 0, 0, 0);
+      if (e.perilT > 0) { e.perilT -= dt; moveEnemy(e, dt, 0, 0, 0); if (e.perilT <= 0) { e.perilNow = 1.1; beginSlash(e, 2); e.vel.x += dx / (dP || 1) * 5; e.vel.z += dz / (dP || 1) * 5; } }
+      else if (e.sw.combo >= 0) moveEnemy(e, dt, 0, 0, 0);
       else if (dP > 2.0) moveEnemy(e, dt, dx / dP, dz / dP, dP > 6 ? 3.7 : 1.8);
       else {
         const side = Math.sin(t * 0.7 + e.idx) > 0 ? 1 : -1;            // circle while waiting to strike
         moveEnemy(e, dt, -dz / dP * side, dx / dP * side, 0.7);
         e.atkCool -= dt;
-        if (e.atkCool <= 0 && Math.abs(angDiff(e.yaw, want)) < 0.4) { beginSlash(e, Math.floor(Math.random() * 3)); e.atkCool = 1.5 + Math.random() * 1.3; }
+        if (e.atkCool <= 0 && Math.abs(angDiff(e.yaw, want)) < 0.4) {
+          if (e.brute && Math.random() < 0.5) { e.perilT = 0.75; e.atkCool = 2.4 + Math.random(); perilGlint(e); }   // a perilous blow: a red glint on the blade, then a cut you must dodge
+          else { beginSlash(e, Math.floor(Math.random() * 3)); e.atkCool = (e.brute ? 2.1 : 1.5) + Math.random() * 1.3; }
+        }
       }
     } else {
       if (e.state === 'chase') { e.state = 'idle'; e.sw.drawn = false; e.wander = null; }
@@ -3765,8 +3848,9 @@ function updateEnemy(e, dt, t) {
       } else moveEnemy(e, dt, 0, 0, 0);
     }
   }
-  tickSword(e, dt * 0.62);                                              // bandits cut slower: you can see it coming
-  if (e.alive && e.stagger <= 0) swordHits(e, [playerTarget], hitPlayer);
+  tickSword(e, dt * (e.brute ? 0.52 : 0.62));                           // bandits cut slower: you can see it coming
+  e.perilNow = Math.max(0, (e.perilNow || 0) - dt);
+  if (e.alive && e.stagger <= 0) { curFoe = e; swordHits(e, [playerTarget], hitPlayer); curFoe = null; }
 }
 function animateEnemy(e, dt) {
   const spd = Math.hypot(e.vel.x, e.vel.z), sw = e.sw, atk = sw.combo >= 0 ? smooth(0, 0.15, sw.t) * (1 - smooth(0.85, 1, sw.t)) : 0;
@@ -3796,8 +3880,8 @@ function updateEnemies(dt, t) {
   if (!player.dead && player.hp < player.maxHp && clock.elapsedTime - lastHurt > 5) player.hp = Math.min(player.maxHp, player.hp + 7 * dt);
   if ((frameNo & 7) === 0) wakeCamps();
   for (const e of enemies) {
-    const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70;
-    e.root.visible = dP < 180 && (e.alive || e.deathT < 12);   // far bandits are not drawn at all
+    const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70 || (CINE.on && Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z) < 90);   // a cutscene can look at a far camp
+    e.root.visible = (dP < 180 || near) && (e.alive || e.deathT < 12);   // far bandits are not drawn at all
     if (near || e.state === 'chase') {
       const px = e.pos.x, pz = e.pos.z;
       updateEnemy(e, dt, t);
@@ -3860,7 +3944,7 @@ function heal() {
   RESOLVE.n -= 1; player.hp = Math.min(player.maxHp, player.hp + 45); toast('RESOLVE', 900);
   for (let i = 0; i < 16; i++) emit(new THREE.Vector3(player.pos.x, player.pos.y + 0.4 + Math.random() * 1.4, player.pos.z), new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6), new THREE.Color(2.2, 1.7, 0.8), 0.05, 1.2, -0.2, 0, 0.9);
 }
-function updateResolve() { const n = RESOLVE.n, s = [0, 1, 2].map(i => n >= i + 1 ? '◆' : n > i ? '◈' : '◇').join(''); if (resolveEl.textContent !== s) resolveEl.textContent = s; resolveEl.style.opacity = started && !CINE.on ? 1 : 0; }
+function updateResolve() { const n = RESOLVE.n, s = Array.from({ length: RESOLVE.max }, (_, i) => i).map(i => n >= i + 1 ? '◆' : n > i ? '◈' : '◇').join(''); if (resolveEl.textContent !== s) resolveEl.textContent = s; resolveEl.style.opacity = started && !CINE.on ? 1 : 0; }
 function toast(text, ms = 2000) { toastEl.textContent = text; toastEl.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.style.opacity = 0, ms); }
 
 // ─────────────────────────── Flora & props: red maples, bamboo grove, lanterns, shrine, campfires ───────────────────────────
@@ -4256,6 +4340,35 @@ const SPRINGS = [];
   if (geos.length) { const m = new THREE.Mesh(mergeGeometries(geos.map(g => g.index ? g.toNonIndexed() : g)), rock); m.castShadow = m.receiveShadow = true; scene.add(m); }
   window.__springs = SPRINGS;
 }
+// ─────────────────────────── Haiku outlooks: a flat stone at the edge of a great view. Kneel there (Z) and compose ───────────────────────────
+const HAIKU = [];
+{
+  const R = rng32(5151), C = CASTLE, POEMS = [
+    ['Red leaves on the wind —', 'the sea takes what the land gives,', 'still the maples burn.'],
+    ['Smoke above the pines.', 'Even the herons are still.', 'My blade waits for spring.'],
+    ['Snow on the high stones.', 'The castle is a white bird', 'with a broken wing.'],
+    ['Grass bends, and rises.', 'The river does not recall', 'the boats that it bore.'],
+  ];
+  for (let i = 0; i < 9000 && HAIKU.length < 4; i++) {
+    const x = (R() - 0.5) * 1150, z = (R() - 0.5) * 1150, h = terrainH(x, z);
+    if (h < 28 || h > 230 || pathMask(x, z) > 0.02 || riverWet(x, z) > 0) continue;
+    if (Math.abs(terrainH(x + 3, z) - terrainH(x - 3, z)) > 1.2 || Math.abs(terrainH(x, z + 3) - terrainH(x, z - 3)) > 1.2) continue;
+    if (Math.hypot(x - C.x, z - C.z) < 150 || HAIKU.some(q => Math.hypot(q.x - x, q.z - z) < 260) || SPRINGS.some(q => Math.hypot(q.x - x, q.z - z) < 60)) continue;
+    let best = -1, drop = 0;   // which way the land falls away the furthest: that's the view
+    for (let k = 0; k < 16; k++) { const a = k / 16 * 6.283, d = h - Math.max(terrainH(x + Math.cos(a) * 45, z + Math.sin(a) * 45), terrainH(x + Math.cos(a) * 110, z + Math.sin(a) * 110) + 12); if (d > drop) { drop = d; best = a; } }
+    if (drop < 30) continue;
+    HAIKU.push({ x, z, y: h, view: best, poem: POEMS[HAIKU.length], done: false });
+  }
+  const geos = [], paper = new THREE.MeshStandardMaterial({ color: 0xf2ece0, roughness: 0.9, side: THREE.DoubleSide }), wood = new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 0.85 });
+  for (const q of HAIKU) {
+    const g = rockGeo(0.8, 1, q.x * 3.1); g.scale(1.3, 0.35, 0.9); g.rotateY(q.view); g.translate(q.x - Math.cos(q.view) * 1.3, q.y + 0.05, q.z - Math.sin(q.view) * 1.3); geos.push(g);   // the kneeling stone
+    const px = q.x - Math.cos(q.view) * 1.3 + Math.sin(q.view) * 1.4, pz = q.z - Math.sin(q.view) * 1.3 - Math.cos(q.view) * 1.4;   // a post with paper prayers tied to it
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.6, 6), wood); post.position.set(px, terrainH(px, pz) + 0.8, pz); post.castShadow = true; scene.add(post);
+    for (let k = 0; k < 3; k++) { const sh = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.32), paper); sh.position.set(px + Math.cos(k * 2.1) * 0.08, terrainH(px, pz) + 1.35 - k * 0.04, pz + Math.sin(k * 2.1) * 0.08); sh.rotation.y = k * 2.1; scene.add(sh); }
+  }
+  if (geos.length) { const m = new THREE.Mesh(mergeGeometries(geos.map(g => g.index ? g.toNonIndexed() : g)), rock); m.castShadow = m.receiveShadow = true; scene.add(m); }
+  window.__haiku = HAIKU;
+}
 
 // ─────────────────────────── Village: thatched minka by the little river ───────────────────────────
 const VILLAGE = [340, 326], VDIR = [0.76, 0.65];   // centre, and the direction the lane runs through it
@@ -4587,7 +4700,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
   flushHouses();
   VILLAGE_HOMES.push(...HOUSES.filter(h => !h.keep));
   window.__villageMats = M; window.__houses = HOUSES; window.__doors = DOORS;
-  HOUSE_KIT.minka = minka; HOUSE_KIT.flush = flushHouses;
+  HOUSE_KIT.minka = minka; HOUSE_KIT.flush = flushHouses; HOUSE_KIT.bare = bareHM;
 }
 buildLanterns();
 // ── Trees: red maples (most), golden maples, green zelkovas, pink and deep-red cherries ──
@@ -4888,7 +5001,11 @@ const EXTRA_CAMPS = [];
   EXTRA_CAMPS.forEach((cp, ci) => {
     const R2 = rng32(777 + ci * 31);
     campfire(cp.x, cp.z);
-    const nT = 2 + (ci % 2);
+    for (let a = -10; a <= 10; a += 0.7) for (let b = -10; b <= 10; b += 0.7) {   // the ground inside the stakes is trampled to bare earth, ragged at the edge
+      const rr = Math.hypot(a, b), edge = 8.5 + Math.sin(Math.atan2(b, a) * 5 + ci) * 1.2 + Math.sin(Math.atan2(b, a) * 11 + ci * 3) * 0.6;
+      if (rr < edge) HOUSE_KIT.bare(cp.x + a, cp.z + b);
+    }
+    const nT = 2 + (ci % 2); cp.gap = cp.yaw + Math.PI / nT;   // the open ground between the tents (where a camera can stand)
     for (let k = 0; k < nT; k++) {   // tents round the fire, their open ends facing it
       const a = cp.yaw + k * 6.283 / nT + (R2() - 0.5) * 0.4, r = 5.2 + R2() * 1.2, tx = cp.x + Math.cos(a) * r, tz = cp.z + Math.sin(a) * r, face = Math.atan2(cp.x - tx, cp.z - tz);
       put('tent', tx, tz, face, { c: new THREE.Color(TENT_COL[(ci + k) % 4]) });
@@ -5203,7 +5320,7 @@ function updatePlayer(dt, moving, wantYaw, sprint) {
   }
   // facing follows velocity; lean into turns and acceleration
   const hsp = Math.hypot(v.x, v.z), prevYaw = p.yaw;
-  if (hsp > 0.25) p.yaw += angDiff(p.yaw, Math.atan2(v.x, v.z)) * Math.min(1, dt * (p.onGround ? 11 : 4));
+  if (hsp > 0.25 && !(soldier.dodgeT > 0)) p.yaw += angDiff(p.yaw, Math.atan2(v.x, v.z)) * Math.min(1, dt * (p.onGround ? 11 : 4));
   p.yawRate = lerp(p.yawRate, angDiff(prevYaw, p.yaw) / Math.max(dt, 1e-3), Math.min(1, dt * 8));
   p.speed = hsp;
   p.lean = lerp(p.lean, Math.max(-0.22, Math.min(0.22, -p.yawRate * hsp * 0.03)), Math.min(1, dt * 6));
@@ -5308,7 +5425,7 @@ function update(dt, t) {
     let target = 0;
     if (hs.called && d > 2.8) target = d > 14 ? 11 : d > 6 ? 6 : 2.2; else if (hs.called) hs.called = false;
     updateHorse(dt, target, Math.atan2(dx, dz), hs.called, false);
-    setPrompt(d < 3.2 ? '<b>E</b>MOUNT' : doorPrompt);
+    setPrompt(d < 3.2 ? '<b>E</b>MOUNT &nbsp; <b>N</b>PAT' : doorPrompt);
   }
 
   // Place the horse: follow the slope front-to-back, bank into turns, pitch over jumps
@@ -5331,7 +5448,7 @@ function update(dt, t) {
 
   // Grass parts around feet and hooves
   SH.uTime.value = t;
-  SH.uPush0.value.set(player.pos.x, player.pos.z, 0.45, player.mounted ? 0 : 0.7);
+  SH.uPush0.value.set(player.pos.x, player.pos.z, soldier.lieK > 0.01 || soldier.seizaK > 0.01 ? 1.4 : 0.45, player.mounted ? 0 : soldier.lieK > 0.01 ? 1 : 0.7);   // lying or kneeling flattens a bed in the grass
   SH.uPush1.value.set(hs.pos.x, hs.pos.z, 0.8, 0.6);
   SH.uCenter.value.set(player.pos.x - Math.sin(camYaw) * 5, player.pos.z - Math.cos(camYaw) * 5); // carpets sit ahead of the camera
 
@@ -5368,7 +5485,7 @@ function update(dt, t) {
   camFov = lerp(camFov, lerp(55 + fast * 13, 46, ak), Math.min(1, Math.max(dt, realDt * 0.9) * (3 + ak * 6)));
   if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
 
-  if (window.__freeCam) { camera.position.copy(window.__freeCam[0]); camera.lookAt(window.__freeCam[1]); }
+  if (window.__freeCam) { camera.position.copy(window.__freeCam[0]); camera.lookAt(window.__freeCam[1]); const fv = window.__freeCam[2]; if (fv && Math.abs(camera.fov - fv) > 0.01) { camera.fov = fv; camera.updateProjectionMatrix(); } }   // cutscenes choose their own lens
   // Title screen: slow cinematic orbit of the island
   else if (!started) {
     const a = t * 0.045 + 2.2;
@@ -5506,6 +5623,7 @@ function drawMap() {
   for (const e of enemies) if (e.alive) dot(e.pos.x, e.pos.z, 3.5, '#e74c3c', '#200');
   label(0, -720, 'Snow Peaks'); if (window.__summit) { dot(window.__summit[0], window.__summit[1], 3.5, '#c0392b', '#f4e9d8'); label(window.__summit[0], window.__summit[1], 'Summit'); } if (window.__village) label(window.__village[0], window.__village[1] - 20, 'Village');
   for (const sp of window.__springs || []) { dot(sp.x, sp.z, 3, '#7fd0d0', '#f4e9d8'); label(sp.x, sp.z, 'Hot spring'); }
+  for (const q of window.__haiku || []) { dot(q.x, q.z, 3, q.done ? '#8a7a5a' : '#f4e9d8', '#2b2b2b'); label(q.x, q.z, 'Haiku'); }
   if (window.__castle) { dot(window.__castle.x, window.__castle.z, 5, '#f4e9d8', '#1a1414'); label(window.__castle.x, window.__castle.z - 26, 'Shirasagi Castle'); }
   for (const br of BRIDGES) dot(br.cx, br.cz, 2.5, '#8e2418', '#f4e9d8');
   if (!player.mounted) dot(hs.pos.x, hs.pos.z, 4, '#8b5a2b', '#f4e9d8');
@@ -5691,59 +5809,117 @@ const storyUI = (() => {
   const obj = mk('position:fixed;left:22px;top:104px;color:#f4e9d8;font:14px/1.5 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 6px #000;z-index:20;max-width:360px;opacity:0;transition:opacity .6s;pointer-events:none');
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
-    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>X</b> — assassinate from behind<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
-    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — call your horse<br><b>R</b> — open / close doors<br>
+    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>Ctrl</b> — dodge (a red glint means a blow you can't block)<br><b>X</b> — assassinate from behind<br><b>Y</b> — standoff: challenge a camp (hold, release as they strike)<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
+    <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors<br>
     <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
   return { barT, barB, sub, skip, obj, help };
 })();
-const CINE = { on: false, shots: null, i: 0, t: 0, end: null };
+const CINE = { on: false, shots: null, i: 0, t: 0, T: 0, end: null, after: undefined };
 const cineFX = (() => {
   const g = document.createElement('div'); g.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:49;opacity:0;transition:opacity .8s;background:radial-gradient(ellipse at center, rgba(255,200,140,0.05) 0%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.55) 100%);mix-blend-mode:multiply'; document.body.appendChild(g);
   const fade = document.createElement('div'); fade.style.cssText = 'position:fixed;inset:0;background:#000;pointer-events:none;z-index:52;opacity:0'; document.body.appendChild(fade);
-  const title = document.createElement('div'); title.style.cssText = 'position:fixed;left:0;right:0;top:36%;text-align:center;color:#f4e9d8;font:300 64px Georgia,serif;letter-spacing:22px;text-shadow:0 4px 30px rgba(0,0,0,.8);pointer-events:none;z-index:52;opacity:0;transition:opacity 1.6s'; document.body.appendChild(title);
+  const title = document.createElement('div'); title.style.cssText = 'position:fixed;left:0;right:0;top:34%;text-align:center;color:#f4e9d8;font:300 64px Georgia,serif;letter-spacing:22px;text-shadow:0 4px 30px rgba(0,0,0,.8);pointer-events:none;z-index:52;opacity:0;transition:opacity 1.6s'; document.body.appendChild(title);
   return { g, fade, title };
 })();
-function playCine(shots, end) {
-  Object.assign(CINE, { on: true, shots, i: 0, t: 0, end }); document.body.classList.add('cine'); cineFX.g.style.opacity = 1;
-  storyUI.barT.style.height = storyUI.barB.style.height = '11vh'; storyUI.skip.style.opacity = 1; storyUI.obj.style.opacity = 0;
+const setPresetNow = i => { if (presetIdx !== i) { presetIdx = i; applyPreset(PRESETS[i]); } };   // cutscenes relight the island under a cut
+const easeCine = u => { u = Math.min(1, Math.max(0, u)); return u * u * u * (u * (u * 6 - 15) + 10); };
+const fmtSub = s => { const m = /^([^:]{1,26}): ([\s\S]*)$/.exec(s); return m ? `<div style="font-size:11px;letter-spacing:6px;color:#d9a55b;margin-bottom:3px">${m[1].toUpperCase()}</div>${m[2]}` : s; };   // the speaker's name sits over their line
+function playCine(shots, end, after) {
+  for (const S of shots) S._c = null;
+  Object.assign(CINE, { on: true, shots, i: 0, t: 0, T: 0, end, after }); document.body.classList.add('cine'); cineFX.g.style.opacity = 1;
+  storyUI.barT.style.height = storyUI.barB.style.height = 'max(8vh, calc((100vh - 100vw / 2.39) / 2))';   // scope: 2.39 : 1
+  storyUI.skip.style.opacity = 1; storyUI.obj.style.opacity = 0;
   document.exitPointerLock?.();
 }
 function endCine() {
   if (!CINE.on) return;
+  for (const S of CINE.shots) S.done?.();
+  if (CINE.after !== undefined) setPresetNow(CINE.after);
   CINE.on = false; window.__freeCam = null; document.body.classList.remove('cine'); cineFX.g.style.opacity = 0; cineFX.fade.style.opacity = 0; cineFX.title.style.opacity = 0;
   storyUI.barT.style.height = storyUI.barB.style.height = '0'; storyUI.sub.style.opacity = 0; storyUI.skip.style.opacity = 0;
+  soldier.talking = false; soldier.lieK = 0; soldier.seizaK = 0;
   const f = CINE.end; CINE.end = null; if (f) f();
 }
 function updateCine(raw) {
   if (!CINE.on) return;
   for (const k in keys) keys[k] = false;
-  const S = CINE.shots[CINE.i]; CINE.t += Math.min(raw, 0.1);
-  const k = smooth(0, 1, CINE.t / S.dur), [a0, a1, b0, b1] = S.cam();
-  window.__freeCam = [a0.clone().lerp(a1, k), b0.clone().lerp(b1, k)];
-  const txt = S.text || ''; if (storyUI.sub.dataset.t !== txt) { storyUI.sub.dataset.t = txt; storyUI.sub.textContent = txt; }
-  const cut = Math.max(1 - smooth(0, 0.7, CINE.t), CINE.i < CINE.shots.length - 1 || S.fadeOut ? smooth(S.dur - 0.6, S.dur, CINE.t) : 0);   // dip to black between shots
-  cineFX.fade.style.opacity = cut.toFixed(3);
-  if (S.title !== undefined) { cineFX.title.textContent = S.title; cineFX.title.style.opacity = CINE.t > 0.8 && CINE.t < S.dur - 1.2 ? 1 : 0; } else cineFX.title.style.opacity = 0;
-  storyUI.sub.style.opacity = CINE.t > 0.4 && CINE.t < S.dur - 0.5 && txt ? 1 : 0;
-  if (CINE.t >= S.dur) { CINE.i++; CINE.t = 0; if (CINE.i >= CINE.shots.length) endCine(); }
+  const dt = Math.min(raw, 0.1), S = CINE.shots[CINE.i];
+  if (!S._c) { if (S.preset !== undefined) setPresetNow(S.preset); S.start?.(); S._c = S.cam(); }   // set the stage, then frame it
+  CINE.t += dt; CINE.T += dt;
+  const k = S.lin ? Math.min(1, CINE.t / S.dur) : easeCine(CINE.t / S.dur), [a0, a1, b0, b1] = S.track ? S.cam() : S._c;
+  const pos = a0.clone().lerp(a1, k), look = b0.clone().lerp(b1, k), T = CINE.T, h = (S.hand ?? 0.004) * pos.distanceTo(look);   // a camera operator's breathing
+  look.x += (Math.sin(T * 0.83) + Math.sin(T * 2.1) * 0.35) * h; look.y += (Math.sin(T * 1.17 + 1) + Math.sin(T * 2.7) * 0.3) * h * 0.7; look.z += Math.sin(T * 0.71 + 2) * h;
+  if (S.room) clampToRoom(S.room, pos); else pos.y = Math.max(pos.y, terrainH(pos.x, pos.z) + 0.75, 0.6);   // never let the lens sink into the grass or the sea
+  const fov = Array.isArray(S.fov) ? lerp(S.fov[0], S.fov[1], k) : S.fov || 40;
+  window.__freeCam = [pos, look, fov];
+  S.on?.(CINE.t, k, dt);
+  const txt = S.text || ''; if (storyUI.sub.dataset.t !== txt) { storyUI.sub.dataset.t = txt; storyUI.sub.innerHTML = fmtSub(txt); }
+  const next = CINE.shots[CINE.i + 1];
+  const fin = CINE.i === 0 || !S.cut ? 1 - smooth(0, 0.7, CINE.t) : 0, fout = next ? (next.cut ? 0 : smooth(S.dur - 0.6, S.dur, CINE.t)) : (S.fadeOut ? smooth(S.dur - 0.9, S.dur, CINE.t) : 0);   // hard cuts inside a scene, dips to black between scenes
+  cineFX.fade.style.opacity = Math.max(fin, fout).toFixed(3);
+  if (S.title !== undefined) { if (cineFX.title.dataset.t !== S.title) { cineFX.title.dataset.t = S.title; cineFX.title.innerHTML = S.title; } cineFX.title.style.opacity = CINE.t > 0.8 && CINE.t < S.dur - 1.2 ? 1 : 0; } else cineFX.title.style.opacity = 0;
+  storyUI.sub.style.opacity = CINE.t > 0.25 && CINE.t < S.dur - 0.3 && txt ? 1 : 0;
+  if (CINE.t >= S.dur) { S.done?.(); S.done = null; CINE.i++; CINE.t = 0; if (CINE.i >= CINE.shots.length) endCine(); }
+}
+function clampToRoom(H, p) {   // keep an indoor camera inside the walls
+  const [lx, lz] = houseLocal(H, p.x, p.z), cx = Math.max(-H.w / 2 + 0.4, Math.min(H.w / 2 - 0.4, lx)), cz = Math.max(-H.d / 2 + 0.4, Math.min(H.d / 2 - 0.4, lz));
+  p.x = H.x + cx * H.c + cz * H.s; p.z = H.z - cx * H.s + cz * H.c;
 }
 const _V = (x, y, z) => new THREE.Vector3(x, y, z), _gy = (x, z, up) => groundH(x, z) + up;
+const headOf = w => w.B.Head.getWorldPosition(new THREE.Vector3());
+// Conversation coverage, the way a film crew shoots it: an establishing two-shot, then over-the-shoulder singles on whoever speaks, every camera on one side of the line
+function talkShots(actors, lines, o = {}) {
+  const names = Object.keys(actors), H = n => actors[n].head(), shots = [];
+  const axis = () => { const a = H(names[0]), b = H(names[1]), d = b.clone().sub(a); d.y = 0; d.normalize(); return [a, b, d, _V(-d.z, 0, d.x)]; };
+  const speak = who => () => { for (const n of names) actors[n].talk?.(n === who); };
+  if (!o.noWide) shots.push({ dur: o.wideDur || 3.4, fov: [34, 31], hand: 0.003, room: o.room, start: speak(null), text: o.wideText, cam: () => {
+    const [a, b, d, n] = axis(), m = a.clone().lerp(b, 0.5), L = a.distanceTo(b), p = m.clone().addScaledVector(n, L * 1.1 + (o.room ? 1.2 : 2.6)).addScaledVector(d, -0.4).add(_V(0, o.room ? 0.05 : 0.35, 0));
+    return [p, p.clone().addScaledVector(n, -0.45), m.clone().add(_V(0, -0.3, 0)), m.clone().add(_V(0, -0.22, 0))]; } });
+  lines.forEach((ln, i) => {
+    const sp = ln.split(':')[0], who = actors[sp] ? sp : names[0], other = names.find(n => n !== who), tight = i % 3 === 2;
+    shots.push({ dur: Math.min(7.5, 2.6 + ln.length * 0.052), cut: i > 0 || !o.noWide, text: ln, fov: tight ? [24, 22] : [30, 27], hand: 0.006, room: o.room, start: speak(who), on: actors[who].on, cam: () => {
+      const [, , , n] = axis(), S = H(who), L = H(other), d = S.clone().sub(L); d.y = 0; const dist = d.length(); d.normalize();
+      const p0 = L.clone().addScaledVector(d, tight ? 0.25 : -0.85).addScaledVector(n, tight ? 0.9 : 0.55).add(_V(0, tight ? -0.05 : 0.06, 0)), p1 = p0.clone().addScaledVector(d, Math.min(0.3, dist * 0.1));
+      const t = S.clone().add(_V(0, -0.07, 0)); return [p0, p1, t, t.clone().add(_V(0, 0.015, 0))]; } });
+  });
+  return shots;
+}
+function shoreSpot() {   // the nearest stretch of beach below the start: where the tide left you
+  let best = null;
+  const ox = spawnPt[0], oz = spawnPt[1], r0 = Math.hypot(ox, oz) || 1;
+  for (let k = 0; k < 24 && !best; k++) {
+    const ang = Math.atan2(oz, ox) + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.08;
+    for (let r = 8; r < 520; r += 1) { const x = ox + Math.cos(ang) * r, z = oz + Math.sin(ang) * r, h = terrainH(x, z); if (h < 0.3) break; if (h < 2.2 && riverWet(x, z) === 0) { best = [x, z, ang]; break; } }
+  }
+  return best;
+}
 function introShots() {
-  const V = VILLAGE, C = window.__castle, cp = (window.__camps2 || [])[0], P = player.pos;
+  const V = VILLAGE, C = window.__castle, cp = (window.__camps2 || []).find(c => !c.castle), P = player.pos;
+  const giant = window.__flora.maples.find(m => m[3] > 2) || [0, 0];
   return [
-    { dur: 6, title: 'KAZE NO SHIMA', cam: () => [_V(-420, 60, 900), _V(-300, 90, 760), _V(0, 120, -300), _V(0, 160, -500)] },
-    { dur: 7, text: 'Kaze no Shima — the Island of Wind. The year is 1281.', cam: () => [_V(-200, 150, 720), _V(120, 120, 640), _V(0, 40, 0), _V(60, 60, -200)] },
-    { dur: 6, text: 'Red maples, white herons, and a wind that has always carried the island\u2019s prayers out to sea.', cam: () => { const t = window.__flora.maples.find(m => m[3] > 2) || [0, 0]; const y = groundH(t[0], t[1]); return [_V(t[0] + 70, y + 6, t[1] + 50), _V(t[0] + 40, y + 10, t[1] + 30), _V(t[0], y + 14, t[1]), _V(t[0], y + 16, t[1])]; } },
-    { dur: 7, text: 'For three generations your family kept the peace in Kawabe, by the little river.', cam: () => [_V(V[0] - 110, _gy(V[0], V[1], 45), V[1] - 60), _V(V[0] - 60, _gy(V[0], V[1], 30), V[1] - 90), _V(V[0], _gy(V[0], V[1], 0), V[1]), _V(V[0] + 10, _gy(V[0], V[1], 2), V[1] - 10)] },
-    { dur: 7, text: "Then the black sails came. Jarghal Khan's Mongol raiders burned the coast and pitched their camps across the island.", cam: () => cp ? [_V(cp.x + 40, _gy(cp.x, cp.z, 18), cp.z + 30), _V(cp.x + 24, _gy(cp.x, cp.z, 9), cp.z + 18), _V(cp.x, _gy(cp.x, cp.z, 1), cp.z), _V(cp.x, _gy(cp.x, cp.z, 1.5), cp.z)] : [_V(0, 120, 300), _V(0, 100, 250), _V(0, 0, 0), _V(0, 0, 0)] },
-    { dur: 8, text: 'The Khan seized Shirasagi, the White Heron Castle on the highest peak — and with it, your wife and daughter.', cam: () => [_V(C.x - C.s * 140 + 60, C.y + 20, C.z - C.c * 140), _V(C.x - C.s * 80 + 30, C.y + 35, C.z - C.c * 80), _V(C.x, C.y + 20, C.z), _V(C.x, C.y + 24, C.z)] },
-    { dur: 6, text: 'They left you for dead on the shore. They were wrong.', cam: () => [_V(P.x - 14, P.y + 9, P.z - 10), _V(P.x - 8, P.y + 4, P.z - 6), _V(P.x, P.y + 1, P.z), _V(P.x, P.y + 1.4, P.z)] },
-    { dur: 7, fadeOut: true, text: 'You are Arata Kenshin, the last sword of Kawabe. Find Elder Genjirō in the village. Then take back the island.', cam: () => [_V(P.x + 6, P.y + 2.2, P.z + 6), _V(P.x + 2.6, P.y + 1.9, P.z + 3.2), _V(P.x, P.y + 1.5, P.z), _V(P.x, P.y + 1.6, P.z)] },
+    { dur: 7, preset: 0, hand: 0.001, fov: [42, 38], title: '<div style="font-size:30px;letter-spacing:30px;margin-bottom:10px;opacity:.85">風の島</div>KAZE NO SHIMA<div style="font-size:13px;letter-spacing:9px;margin-top:18px;opacity:.7">THE ISLAND OF WIND · 1281</div>', cam: () => [_V(-420, 60, 900), _V(-300, 90, 760), _V(0, 120, -300), _V(0, 160, -500)] },
+    { dur: 7, hand: 0.002, fov: 44, text: 'Kaze no Shima — the Island of Wind. Off the coast of Kyūshū, in the year 1281.', cam: () => [_V(-200, 150, 720), _V(120, 120, 640), _V(0, 40, 0), _V(60, 60, -200)] },
+    { dur: 6.5, fov: [36, 30], text: 'Red maples, white herons, and a wind that has always carried the island’s prayers out to sea.', cam: () => { const y = groundH(giant[0], giant[1]); return [_V(giant[0] + 70, y + 6, giant[1] + 50), _V(giant[0] + 40, y + 10, giant[1] + 30), _V(giant[0], y + 14, giant[1]), _V(giant[0], y + 16, giant[1])]; } },
+    { dur: 7, fov: [38, 34], text: 'For three generations your family kept the peace in Kawabe, by the little river.', cam: () => [_V(V[0] - 110, _gy(V[0], V[1], 45), V[1] - 60), _V(V[0] - 60, _gy(V[0], V[1], 30), V[1] - 90), _V(V[0], _gy(V[0], V[1], 0), V[1]), _V(V[0] + 10, _gy(V[0], V[1], 2), V[1] - 10)] },
+    { dur: 7.5, preset: 2, fov: [30, 26], hand: 0.006, text: "Then the black sails came. Jarghal Khan's raiders burned the coast and pitched their camps across the island.",
+      start: () => { if (cp) while ((cp.spawned || 0) < (cp.max || 3)) spawnCampOne(cp); },
+      cam: () => { if (!cp) return [_V(0, 120, 300), _V(0, 100, 250), _V(0, 0, 0), _V(0, 0, 0)]; const g = cp.gap ?? cp.yaw, cx = Math.cos(g), cz = Math.sin(g), at = r => [cp.x + cx * r, cp.z + cz * r];
+        const [x0, z0] = at(7.6), [x1, z1] = at(5.2); return [_V(x0, _gy(x0, z0, 2.3), z0), _V(x1, _gy(x1, z1, 1.9), z1), _V(cp.x, _gy(cp.x, cp.z, 1.1), cp.z), _V(cp.x - cx * 2, _gy(cp.x, cp.z, 1.2), cp.z - cz * 2)]; } },
+    { dur: 8, preset: 6, fov: [26, 22], hand: 0.003, text: 'He took Shirasagi, the White Heron Castle on the highest peak — and with it, your wife Yuki and your daughter Hana.', cam: () => [_V(C.x - C.s * 160 + 60, C.y - 10, C.z - C.c * 160), _V(C.x - C.s * 120 + 40, C.y + 5, C.z - C.c * 120), _V(C.x, C.y + 18, C.z), _V(C.x, C.y + 26, C.z)] },
+    { dur: 7, preset: 1, fov: [40, 34], hand: 0.002, text: 'They cut you down at Komoda beach, and left you for the tide.',
+      start: () => { const b = shoreSpot(); if (b) { player.pos.set(b[0], terrainH(b[0], b[1]), b[1]); player.yaw = Math.atan2(-Math.cos(b[2]), -Math.sin(b[2])); hs.pos.set(b[0] - Math.cos(b[2]) * 30, 0, b[1] - Math.sin(b[2]) * 30); } player.vel.set(0, 0, 0); if (player.mounted) toggleMount(); sword.drawn = false; soldier.lieK = 1; },
+      cam: () => [_V(P.x + 0.6, P.y + 11, P.z + 0.4), _V(P.x + 0.4, P.y + 5.5, P.z + 0.3), _V(P.x, P.y + 0.2, P.z), _V(P.x, P.y + 0.3, P.z)] },
+    { dur: 8, cut: true, fov: [30, 36], hand: 0.007, text: 'They were wrong.', on: t => { soldier.lieK = 1 - smooth(1.2, 6.2, t); },
+      cam: () => { const f = _V(Math.sin(player.yaw), 0, Math.cos(player.yaw)), r = _V(f.z, 0, -f.x); return [P.clone().addScaledVector(f, 2.8).addScaledVector(r, 1.3).add(_V(0, 0.95, 0)), P.clone().addScaledVector(f, 2.3).addScaledVector(r, 0.9).add(_V(0, 1.45, 0)), P.clone().add(_V(0, 0.35, 0)), P.clone().add(_V(0, 1.55, 0))]; } },
+    { dur: 7.5, fadeOut: true, fov: [44, 50], hand: 0.003, text: 'You are Arata Kenshin, the last sword of Kawabe. Find Elder Genjirō in the village. Then take back the island.',
+      start: () => { soldier.lieK = 0; },
+      cam: () => { const f = _V(Math.sin(player.yaw), 0, Math.cos(player.yaw)); return [P.clone().addScaledVector(f, -2.6).add(_V(0.3, 1.9, 0)), P.clone().addScaledVector(f, -9).add(_V(0, 6.5, 0)), P.clone().add(_V(0, 1.5, 0)).addScaledVector(f, 6), P.clone().add(_V(0, 1.2, 0)).addScaledVector(f, 30)]; } },
   ];
 }
 const STORY = { step: 0, said: false, cleared: new Set(), castleSeen: false, done: false };
 try { Object.assign(STORY, JSON.parse(localStorage.getItem('kns-story') || '{}'), { cleared: new Set(JSON.parse(localStorage.getItem('kns-story') || '{}').cleared || []) }); } catch (e) {}
+(STORY.hk || []).forEach(i => { if (HAIKU[i]) HAIKU[i].done = true; }); RESOLVE.max = Math.min(6, 3 + (STORY.hk || []).length);   // poems you've written stay written
 const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); } catch (e) {} };
 let subQueue = [], subT = 0;
 function say(lines) { subQueue = lines.slice(); subT = 0; }
@@ -5757,7 +5933,63 @@ function spawnKhan() {
   const lx = 3.2, lz = 3.5, x = H.x + lx * H.c + lz * H.s, z = H.z - lx * H.s + lz * H.c;
   KHAN = makeBandit({ x, z }, enemies.length, 'khan');
   KHAN.pos.y = H.base + H.upper; KHAN.hp = KHAN.maxHp = 16; KHAN.root.scale.setScalar(1.12); KHAN.boss = true; KHAN.yaw = H.yaw + Math.PI;
-  KHAN.home.set(x, 0, z); KHAN.atkCool = 0.6;
+  KHAN.home.set(x, 0, z); KHAN.atkCool = 0.6; KHAN.brute = true;
+}
+// ── the story's scenes ──
+function meetElder(elder) {
+  const dx = player.pos.x - elder.pos.x, dz = player.pos.z - elder.pos.z, d = Math.hypot(dx, dz) || 1;
+  if (d > 2.4 && walkable(elder.pos.x + dx / d * 2.3, elder.pos.z + dz / d * 2.3)) { player.pos.x = elder.pos.x + dx / d * 2.3; player.pos.z = elder.pos.z + dz / d * 2.3; player.pos.y = groundH(player.pos.x, player.pos.z, player.pos.y); }
+  player.vel.set(0, 0, 0); sword.drawn = false; player.yaw = Math.atan2(elder.pos.x - player.pos.x, elder.pos.z - player.pos.z);
+  elder.yaw = player.yaw + Math.PI; elder.target = null; elder.wait = 60; elder.bow = 1.6; elder.vel.set(0, 0, 0);
+  const actors = { 'Genjirō': { head: () => headOf(elder), talk: on => { elder.talking = on; } }, 'Kenshin': { head: () => headOf(soldier), talk: on => { soldier.talking = on; } } };
+  playCine(talkShots(actors, [
+    'Genjirō: Kenshin...? Gods above. We burned incense for you at the shrine.',
+    'Kenshin: The sea gave me back. Where are Yuki and Hana?',
+    'Genjirō: Alive. The Khan keeps them in the upper room of Shirasagi’s keep — a prize, to show the island who rules it now.',
+    'Kenshin: Then I climb the mountain tonight.',
+    'Genjirō: Alone, against his whole garrison? Break his camps first. Every camp you burn is a band of men who will never hold that mountain.',
+    'Genjirō: And when the way is unclear, call on the wind. It has always carried Kawabe’s prayers.',
+    'Kenshin: Watch over the village, old friend. I will bring them home.',
+  ], { wideText: '' }), () => { elder.talking = false; elder.wait = 4; toast('J — CALL THE GUIDING WIND', 3200); });
+}
+function khanScene() {
+  const H = HOUSES.find(h => h.keep), K = KHAN, fam = FAMILY[0];
+  K.yaw = Math.atan2(player.pos.x - K.pos.x, player.pos.z - K.pos.z); player.yaw = K.yaw + Math.PI; player.vel.set(0, 0, 0);
+  const kd = () => _V(Math.sin(K.yaw), 0, Math.cos(K.yaw)), ks = () => { const f = kd(); return _V(f.z, 0, -f.x); };
+  const shots = [
+    { dur: 5.2, fov: [24, 20], hand: 0.006, room: H, text: 'Jarghal Khan: So. The last sword of Kawabe climbs my mountain.', start: () => { K.cineTalk = 1; },
+      cam: () => { const h = headOf(K); return [h.clone().addScaledVector(kd(), 2.6).addScaledVector(ks(), 0.5).add(_V(0, -0.75, 0)), h.clone().addScaledVector(kd(), 2.1).addScaledVector(ks(), 0.4).add(_V(0, -0.7, 0)), h, h.clone()]; } },
+  ];
+  if (fam) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, text: 'Yuki: Kenshin! No — it is what he wants!',
+    cam: () => { const h = headOf(fam), d = _V(player.pos.x - h.x, 0, player.pos.z - h.z).normalize(); return [h.clone().addScaledVector(d, 1.8).add(_V(0.3, 0.15, 0)), h.clone().addScaledVector(d, 1.5).add(_V(0.25, 0.12, 0)), h, h.clone()]; } });
+  shots.push(
+    { dur: 4.6, cut: true, fov: [30, 27], hand: 0.006, room: H, text: 'Kenshin: Let them go. This ends between you and me.', start: () => { soldier.talking = true; }, done: () => { soldier.talking = false; },
+      cam: () => { const kh = headOf(K), h = headOf(soldier), d = h.clone().sub(kh); d.y = 0; d.normalize(); return [kh.clone().addScaledVector(d, -0.8).addScaledVector(ks(), -0.55), kh.clone().addScaledVector(d, -0.6).addScaledVector(ks(), -0.5), h.add(_V(0, -0.06, 0)), h.clone()]; } },
+    { dur: 5, cut: true, fov: [21, 18], hand: 0.008, room: H, text: 'Jarghal Khan: Kneel, and I may let them watch you die quickly.', start: () => { K.sw.drawn = true; audio.draw(0.9); },
+      cam: () => { const h = headOf(K); return [h.clone().addScaledVector(kd(), 2.2).addScaledVector(ks(), -0.35).add(_V(0, -0.2, 0)), h.clone().addScaledVector(kd(), 1.8).addScaledVector(ks(), -0.3).add(_V(0, -0.2, 0)), h, h.clone()]; } },
+    { dur: 2.6, cut: true, fov: [38, 44], hand: 0.01, room: H, start: () => { sword.drawn = true; audio.draw(); },
+      cam: () => { const a = headOf(K), b = headOf(soldier), m = a.clone().lerp(b, 0.5), n = ks(); return [m.clone().addScaledVector(n, 3.2).add(_V(0, -0.5, 0)), m.clone().addScaledVector(n, 2.6).add(_V(0, -0.6, 0)), m.clone().add(_V(0, -0.4, 0)), m.clone().add(_V(0, -0.4, 0))]; } });
+  playCine(shots, () => { K.cineTalk = 0; K.state = 'chase'; K.atkCool = 1.2; });
+}
+function endingScene() {
+  const C = window.__castle, H = HOUSES.find(h => h.keep), [yuki, hana] = FAMILY;
+  if (yuki) { const dx = player.pos.x - yuki.pos.x, dz = player.pos.z - yuki.pos.z, d = Math.hypot(dx, dz) || 1; player.pos.x = yuki.pos.x + dx / d * 1.25; player.pos.z = yuki.pos.z + dz / d * 1.25; player.yaw = Math.atan2(-dx, -dz); }
+  sword.drawn = false; player.vel.set(0, 0, 0);
+  const shots = yuki ? talkShots({ 'Yuki': { head: () => headOf(yuki), talk: on => { yuki.talking = on; } }, 'Kenshin': { head: () => headOf(soldier), talk: on => { soldier.talking = on; } } }, [
+    'Yuki: Kenshin! I told her. I told her every night that you would come.',
+    'Kenshin: I am sorry it took so long. Are you hurt?',
+    'Yuki: Not any more. Hana — look who it is.',
+  ], { room: H, wideDur: 3 }) : [];
+  if (hana) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, text: 'Hana: Father! I wasn’t scared. Not even once.', start: () => { for (const f of FAMILY) f.talking = false; hana.talking = true; },
+    cam: () => { const h = headOf(hana), d = _V(player.pos.x - h.x, 0, player.pos.z - h.z).normalize(); return [h.clone().addScaledVector(d, 1.4).add(_V(0.25, 0.25, 0)), h.clone().addScaledVector(d, 1.15).add(_V(0.2, 0.22, 0)), h, h.clone()]; } });
+  shots.push(
+    { dur: 7, preset: 1, fov: [36, 30], hand: 0.002, text: 'With the Khan dead, his raiders broke and fled for their ships before dawn.', start: () => { for (const f of FAMILY) f.talking = false; },
+      cam: () => [_V(C.x - C.s * 60 - C.c * 30, C.y + 10, C.z - C.c * 60 + C.s * 30), _V(C.x - C.s * 45 + C.c * 35, C.y + 16, C.z - C.c * 45 - C.s * 35), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 18, C.z)] },
+    { dur: 8, fov: [30, 26], hand: 0.002, text: 'You carried Hana down the thousand steps of the White Heron, and Yuki walked beside you as the sun broke over the sea.', cam: () => { const st = C.stairs; return [_V(st[0] + 40, st[2] + 20, st[1] + 30), _V(st[0] + 30, st[2] + 12, st[1] + 20), _V(st[0], st[2], st[1]), _V(C.x, C.y + 6, C.z)]; } },
+    { dur: 8, fov: [38, 34], hand: 0.002, text: 'In Kawabe they lit the beacon. Its smoke could be seen from every shore of the island.', cam: () => { const b = window.__beacon || VILLAGE; const y = groundH(b[0], b[1]); return [_V(b[0] + 50, y + 18, b[1] + 40), _V(b[0] + 32, y + 22, b[1] + 26), _V(b[0], y + 8, b[1]), _V(b[0], y + 26, b[1])]; } },
+    { dur: 10, fadeOut: true, fov: [44, 50], hand: 0.001, title: '<div style="font-size:30px;letter-spacing:30px;margin-bottom:10px;opacity:.85">風の島</div>KAZE NO SHIMA<div style="font-size:13px;letter-spacing:9px;margin-top:18px;opacity:.7">THE ISLAND IS FREE · THANK YOU FOR PLAYING</div>',
+      cam: () => [_V(C.x - C.s * 200, C.y + 90, C.z - C.c * 200), _V(C.x - C.s * 340, C.y + 150, C.z - C.c * 340), _V(C.x, C.y, C.z), _V(0, 20, 0)] });
+  playCine(shots, () => { for (const f of FAMILY) f.talking = false; toast('THE ISLAND IS YOURS TO WANDER', 3000); }, 1);
 }
 function objectiveText() {
   const n = (window.__camps2 || []).filter(c => !c.castle).length;
@@ -5776,9 +6008,8 @@ function updateStory(raw) {
   storyUI.obj.innerHTML = objectiveText(); storyUI.obj.style.opacity = mapEl.style.display === 'block' ? 0 : 0.92;
   // the elder
   const elder = villagers[2];
-  if (STORY.step === 0 && elder && elder.pos.distanceTo(player.pos) < 4) {
-    STORY.step = 1; saveStory(); elder.bow = 1.6;
-    say(['Genjirō: Kenshin... you live. The gods have not abandoned Kawabe.', 'Genjirō: The Khan holds your wife and little Hana in the keep at Shirasagi, on the high peak.', 'Genjirō: His raiders camp all over the island. Break them, and his castle will stand alone.', 'Genjirō: The mountain trail climbs to the castle stairs. Go — and come home.']);
+  if (STORY.step === 0 && elder && !player.mounted && !player.swim && elder.pos.distanceTo(player.pos) < 4 && Math.abs(elder.pos.y - player.pos.y) < 1.5) {
+    STORY.step = 1; saveStory(); meetElder(elder);
   }
   // camps freed
   for (const cp of window.__camps2 || []) {
@@ -5789,7 +6020,13 @@ function updateStory(raw) {
   const C = window.__castle;
   if (C && !STORY.castleSeen && Math.hypot(C.x - player.pos.x, C.z - player.pos.z) < 75) {
     STORY.castleSeen = true; saveStory();
-    playCine([{ dur: 7, text: 'Shirasagi. The White Heron, stained black with the Khan’s banners. Somewhere in the keep, Hana is waiting.', cam: () => [_V(player.pos.x, player.pos.y + 3, player.pos.z), _V(C.x - C.s * 30, C.y + 8, C.z - C.c * 30), _V(C.x, C.y + 12, C.z), _V(C.x, C.top, C.z)] }]);
+    const P = player.pos.clone(), toC = _V(C.x - P.x, 0, C.z - P.z).normalize(), side = _V(toC.z, 0, -toC.x);
+    playCine([
+      { dur: 6.5, fov: [22, 17], hand: 0.004, text: 'Shirasagi. The White Heron, stained black with the Khan’s banners.', cam: () => [P.clone().addScaledVector(side, 3).add(_V(0, 0.8, 0)), P.clone().addScaledVector(side, 2.4).add(_V(0, 1.1, 0)), _V(C.x, C.y + 8, C.z), _V(C.x, C.top - 2, C.z)] },
+      { dur: 5, cut: true, fov: [34, 30], hand: 0.006, text: 'Kenshin: Hold on, Hana. I am coming.', start: () => { player.yaw = Math.atan2(toC.x, toC.z); soldier.talking = true; }, done: () => { soldier.talking = false; },
+        cam: () => { const h = headOf(soldier); return [h.clone().addScaledVector(toC, 1.9).addScaledVector(side, 0.7).add(_V(0, -0.25, 0)), h.clone().addScaledVector(toC, 1.5).addScaledVector(side, 0.55).add(_V(0, -0.2, 0)), h, h.clone()]; } },
+      { dur: 6, fov: [48, 42], hand: 0.002, cam: () => [P.clone().addScaledVector(toC, -5).add(_V(0, 2.2, 0)), P.clone().addScaledVector(toC, 6).add(_V(0, 4, 0)), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 14, C.z)] },
+    ]);
   }
   const cc = (window.__camps2 || []).find(c => c.castle);
   if (cc && !STORY.guards && (cc.spawned || 0) >= (cc.max || 8) && enemies.every(e => e.camp !== cc || !e.alive)) { STORY.guards = true; saveStory(); toast('THE KHAN\u2019S GUARD IS BROKEN — FIND YOUR FAMILY IN THE KEEP', 3500); }
@@ -5797,17 +6034,12 @@ function updateStory(raw) {
     spawnKhan();
     if (KHAN) {
       const d = KHAN.pos.distanceTo(player.pos); bossUI.style.opacity = d < 30 && KHAN.alive ? 1 : 0; document.getElementById('bossfill').style.width = Math.max(0, KHAN.hp / KHAN.maxHp * 100) + '%';
-      if (d < 9 && !KHAN.taunted) { KHAN.taunted = true; say(['Jarghal Khan: So the last sword of Kawabe climbs my mountain.', 'Jarghal Khan: Kneel, and I may let them watch you die quickly.']); }
+      if (d < 9 && !KHAN.taunted && Math.abs(KHAN.pos.y - player.pos.y) < 2) { KHAN.taunted = true; khanScene(); }
       if (!KHAN.alive) { STORY.khan = true; saveStory(); bossUI.style.opacity = 0; toast('JARGHAL KHAN IS DEAD', 3000); }
     }
   }
   if (STORY.guards && STORY.khan && !STORY.done && FAMILY.length && FAMILY[0].pos.distanceTo(player.pos) < 3.2) {
-    STORY.done = true; saveStory(); say(['Yuki: Kenshin! We knew you would come.', 'Hana: Father!']);
-    playCine([
-      { dur: 7, text: 'The Khan lies dead on the floor of his stolen keep. His raiders flee for their ships.', cam: () => [_V(C.x - C.s * 40, C.y + 18, C.z - C.c * 40), _V(C.x + C.c * 40, C.y + 22, C.z - C.s * 40), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 18, C.z)] },
-      { dur: 8, text: 'Yuki and little Hana, alive. You carry them down from the White Heron as the sun breaks over the sea.', cam: () => [_V(C.x - C.s * 20, C.top - 4, C.z - C.c * 20), _V(C.x - C.s * 12, C.top + 2, C.z - C.c * 12), _V(C.x, C.top - 2, C.z), _V(C.x, C.top, C.z)] },
-      { dur: 8, text: 'Kaze no Shima is free. Thank you for playing.', cam: () => [_V(C.x - C.s * 200, C.y + 90, C.z - C.c * 200), _V(C.x - C.s * 320, C.y + 140, C.z - C.c * 320), _V(C.x, C.y, C.z), _V(0, 20, 0)] },
-    ]);
+    STORY.done = true; saveStory(); endingScene();
   }
 }
 // rest by a hearth: heal, and let the hours pass
@@ -5828,6 +6060,93 @@ function assassinate() {
   if (!sword.drawn) { sword.drawn = true; audio.draw(); }
   startSlash(); hitEnemy(e, 99, new THREE.Vector3(e.pos.x, e.pos.y + 1.4, e.pos.z)); hitStop = 0.3; toast('ASSASSINATION', 1100);
 }
+// ── Standoff (Y): at the edge of a Mongol camp, call out a challenge. Hold the left mouse button (or Space) and let go the instant your foe strikes ──
+const STANDOFF = { on: false, cp: null, foe: null, phase: '', t: 0, strikeAt: 0, feintAt: -1, win: 0.45, kills: 0, hold: false, ts: 1, slowT: 0 };
+const standHint = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;right:0;bottom:15%;text-align:center;color:#f4e9d8;font:13px Georgia,serif;letter-spacing:6px;text-shadow:0 2px 8px #000;z-index:53;opacity:0;transition:opacity .3s;pointer-events:none'; document.body.appendChild(d); return d; })();
+function standoffCamp() {
+  if (!started || player.mounted || player.swim || CINE.on || STANDOFF.on || player.dead || !sword) return null;
+  for (const cp of window.__camps2 || []) {
+    const d = Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z); if (d > 34 || d < 12) continue;
+    const foes = enemies.filter(e => e.camp === cp && e.alive);
+    if (foes.length && !foes.some(e => e.state === 'chase')) return cp;
+  }
+  return null;
+}
+function startStandoff() {
+  const cp = standoffCamp(); if (!cp) return;
+  Object.assign(STANDOFF, { on: true, cp, kills: 0, hold: false, slowT: 0 });
+  player.vel.set(0, 0, 0); if (!sword.drawn) { sword.drawn = true; audio.draw(); }
+  say(['Kenshin: Mongols! Which of you will face me?']);
+  document.body.classList.add('cine'); storyUI.barT.style.height = storyUI.barB.style.height = '9vh'; cineFX.g.style.opacity = 1;
+  nextFoe();
+}
+function nextFoe() {
+  const all = enemies.filter(e => e.camp === STANDOFF.cp && e.alive).sort((a, b) => a.pos.distanceTo(player.pos) - b.pos.distanceTo(player.pos));
+  const foe = all.find(e => !e.archer) || all[0];
+  if (!foe || STANDOFF.kills >= 3) return endStandoff(true);
+  STANDOFF.foe = foe; foe.sw.drawn = true; foe.state = 'idle';
+  const dx = foe.pos.x - player.pos.x, dz = foe.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+  foe.standMark = { x: player.pos.x + dx / d * 5, z: player.pos.z + dz / d * 5 };
+  player.yaw = Math.atan2(dx, dz);
+  const wait = STANDOFF.kills ? 1.6 + Math.random() * 2.6 : 3 + Math.random() * 3.5;
+  Object.assign(STANDOFF, { phase: 'approach', t: 0, strikeAt: wait, feintAt: Math.random() < 0.55 ? wait * (0.3 + Math.random() * 0.4) : -1, win: STANDOFF.kills ? 0.36 : 0.46 });
+}
+function standoffRelease() {
+  if (!STANDOFF.on || !STANDOFF.hold) return; STANDOFF.hold = false;
+  const S = STANDOFF, e = S.foe;
+  if (S.phase === 'strike' && S.t < S.win) {   // perfect: one cut, before his lands
+    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+    player.yaw = Math.atan2(dx, dz);
+    if (d > 1.4 && walkable(player.pos.x + dx / d * (d - 1.3), player.pos.z + dz / d * (d - 1.3))) { player.pos.x += dx / d * (d - 1.3); player.pos.z += dz / d * (d - 1.3); }
+    e.sw.combo = -1; startSlash(); hitEnemy(e, 99, new THREE.Vector3(e.pos.x, e.pos.y + 1.4, e.pos.z)); hitStop = 0.2; shake = Math.min(1, shake + 0.4);
+    S.kills++; S.slowT = 1.3; S.phase = 'after'; S.t = 0; RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 1);
+    toast(S.kills > 1 ? 'STANDOFF · ' + S.kills + ' IN A ROW' : 'STANDOFF WON', 1500);
+  } else if (S.phase === 'wait' || S.phase === 'strike') { toast(S.phase === 'wait' ? 'TOO SOON' : 'TOO LATE', 1300); foeStrikes(); endStandoff(false); }
+}
+function foeStrikes() { const e = STANDOFF.foe; if (e && e.alive) { e.state = 'chase'; e.atkCool = 0; beginSlash(e, 0); } }
+function endStandoff(won) {
+  if (!STANDOFF.on) return;
+  STANDOFF.on = false; STANDOFF.ts = 1; window.__freeCam = null; standHint.style.opacity = 0;
+  document.body.classList.remove('cine'); storyUI.barT.style.height = storyUI.barB.style.height = '0'; cineFX.g.style.opacity = 0;
+  for (const e of enemies) { e.standMark = null; if (e.camp === STANDOFF.cp && e.alive) { e.state = 'chase'; e.sw.drawn = true; } }
+  if (won) say(['Mongol: Demon! Kill him — all of you!']);
+}
+function updateStandoff(raw) {
+  const S = STANDOFF; if (!S.on) return;
+  for (const k in keys) keys[k] = false;
+  const dt = Math.min(raw, 0.1); S.t += dt;
+  S.slowT = Math.max(0, S.slowT - dt); S.ts = S.slowT > 0 ? 0.18 + 0.82 * smooth(0, 1.3, 1.3 - S.slowT) : 1;
+  const e = S.foe;
+  if (player.dead || !e) return endStandoff(false);
+  const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d;
+  if (S.phase === 'approach') {
+    const mx = e.standMark.x - e.pos.x, mz = e.standMark.z - e.pos.z, md = Math.hypot(mx, mz);
+    if (md > 0.35 && S.t < 6) { e.vel.x = mx / md * 1.7; e.vel.z = mz / md * 1.7; e.yaw += angDiff(e.yaw, Math.atan2(mx, mz)) * Math.min(1, dt * 5); }
+    else { S.phase = 'wait'; S.t = 0; }
+    standHint.innerHTML = S.hold ? 'WAIT FOR HIM…' : 'HOLD <b>LEFT MOUSE</b> OR <b>SPACE</b>'; standHint.style.opacity = 1;
+  } else if (S.phase === 'wait') {
+    e.yaw += angDiff(e.yaw, Math.atan2(-dx, -dz)) * Math.min(1, dt * 5);
+    standHint.innerHTML = S.hold ? 'RELEASE THE MOMENT HE STRIKES' : 'HOLD <b>LEFT MOUSE</b> OR <b>SPACE</b>'; standHint.style.opacity = S.hold ? 0.55 : 1;
+    if (S.feintAt > 0 && S.t > S.feintAt) { S.feintAt = -1; e.vel.x = -ux * 4; e.vel.z = -uz * 4; audio.draw(0.6); say(['Mongol: Hah!']); }   // a feint: a jerk of the shoulders, a shout
+    if (S.t > S.strikeAt) {
+      if (!S.hold) { toast('YOU WERE NOT READY', 1300); foeStrikes(); return endStandoff(false); }
+      S.phase = 'strike'; S.t = 0; audio.slash(0.9);
+    }
+  } else if (S.phase === 'strike') {   // the charge
+    standHint.style.opacity = 0;
+    if (d > 1.6) { e.vel.x = -ux * 10; e.vel.z = -uz * 10; } else if (e.sw.combo < 0) beginSlash(e, 0);
+    if (S.t > S.win) { STANDOFF.hold = false; toast('TOO LATE', 1300); foeStrikes(); return endStandoff(false); }
+  } else if (S.phase === 'after' && S.t > 2.2) { STANDOFF.hold = false; nextFoe(); }
+  // the camera: a long-lens profile that slowly closes in, a cut over your shoulder for the charge, and a low angle on the kill
+  const hp = headOf(soldier), eh = headOf(e), m = hp.clone().lerp(eh, 0.5), n = _V(-uz, 0, ux);
+  let pos, look, fov;
+  if (S.phase === 'strike') { pos = hp.clone().addScaledVector(_V(ux, 0, uz), -1.5).addScaledVector(n, 0.6).add(_V(0, -0.15, 0)); look = eh; fov = 34; }
+  else if (S.phase === 'after') { const k = smooth(0, 2.2, S.t); pos = m.clone().addScaledVector(n, -3.2 + k * 0.6).add(_V(0, -0.9 + k * 0.3, 0)).addScaledVector(_V(ux, 0, uz), 1.2); look = hp.clone().add(_V(0, -0.35, 0)); fov = 40 - k * 6; }
+  else { const k = S.phase === 'wait' ? smooth(0, S.strikeAt, S.t) : 0; pos = m.clone().addScaledVector(n, 4.2 - k * 1.2).add(_V(0, -0.35, 0)); look = m.clone().add(_V(0, -0.2, 0)); fov = 30 - k * 8; }
+  pos.y = Math.max(pos.y, groundH(pos.x, pos.z) + 0.3);
+  window.__freeCam = [pos, look, fov];
+  if ((frameNo & 31) === 0 && S.phase !== 'strike') window.__guideWind = { x: n.x, z: n.z, t: 2 };   // the wind blows leaves between you
+}
 // The guiding wind (J): the wind turns and carries the petals towards whatever you are seeking
 function objectiveTarget() {
   if (STORY.step === 0 && villagers[2]) return villagers[2].pos;
@@ -5842,6 +6161,25 @@ function guidingWind() {
   const dx = T.x - player.pos.x, dz = T.z - player.pos.z, l = Math.hypot(dx, dz) || 1;
   window.__guideWind = { x: dx / l, z: dz / l, t: 7 };
   audio.splash?.(0.2); toast(Math.round(l) + ' m', 1500);
+}
+function nearHaiku() { for (const q of HAIKU) if (Math.hypot(q.x - player.pos.x, q.z - player.pos.z) < 3.2) return q; return null; }
+function composeHaiku() {
+  const q = nearHaiku(); if (!q || player.mounted || CINE.on || STANDOFF.on) return false;
+  const vx = Math.cos(q.view), vz = Math.sin(q.view), side = _V(-vz, 0, vx), kx = q.x - vx * 1.3, kz = q.z - vz * 1.3;
+  const line = (s, n) => `<div style="font:italic 300 30px/1.4 Georgia,serif;letter-spacing:3px;text-transform:none">${s}</div><div style="font-size:11px;letter-spacing:8px;margin-top:14px;opacity:.6">${'· '.repeat(n).trim()}</div>`;
+  playCine([
+    { dur: 5, fov: [40, 36], hand: 0.002, start: () => { player.pos.set(kx, groundH(kx, kz), kz); player.vel.set(0, 0, 0); player.yaw = Math.atan2(vx, vz); sword.drawn = false; soldier.seizaK = 1; },
+      cam: () => { const P = player.pos; return [_V(P.x - vx * 3.2 + side.x * 1.2, P.y + 1.5, P.z - vz * 3.2 + side.z * 1.2), _V(P.x - vx * 2.6 + side.x * 0.9, P.y + 1.3, P.z - vz * 2.6 + side.z * 0.9), _V(P.x + vx * 60, P.y - 18, P.z + vz * 60), _V(P.x + vx * 60, P.y - 14, P.z + vz * 60)]; } },
+    { dur: 7, title: line(q.poem[0], 1), fov: [46, 42], hand: 0.0015, cam: () => { const P = player.pos; return [_V(P.x + vx * 4 - side.x * 18, P.y + 6, P.z + vz * 4 - side.z * 18), _V(P.x + vx * 4 + side.x * 18, P.y + 7, P.z + vz * 4 + side.z * 18), _V(P.x + vx * 160 - side.x * 30, P.y - 40, P.z + vz * 160 - side.z * 30), _V(P.x + vx * 160 + side.x * 30, P.y - 38, P.z + vz * 160 + side.z * 30)]; } },
+    { dur: 7, title: line(q.poem[1], 2), fov: [34, 30], hand: 0.002, cam: () => { const P = player.pos, h = headOf(soldier); return [_V(P.x + vx * 2.4 + side.x * 1.4, P.y + 0.7, P.z + vz * 2.4 + side.z * 1.4), _V(P.x + vx * 2.0 + side.x * 1.1, P.y + 0.75, P.z + vz * 2.0 + side.z * 1.1), h, h.clone()]; } },
+    { dur: 8, fadeOut: true, title: line(q.poem[2], 3), fov: [40, 52], hand: 0.001, cam: () => { const P = player.pos; return [_V(P.x - vx * 6, P.y + 2.5, P.z - vz * 6), _V(P.x - vx * 26, P.y + 16, P.z - vz * 26), _V(P.x + vx * 90, P.y - 20, P.z + vz * 90), _V(P.x + vx * 90, P.y - 10, P.z + vz * 90)]; } },
+  ], () => {
+    soldier.seizaK = 0;
+    if (!q.done) { q.done = true; STORY.hk = HAIKU.map((h, i) => h.done ? i : -1).filter(i => i >= 0); saveStory(); RESOLVE.max = Math.min(6, 3 + STORY.hk.length); toast('HAIKU COMPOSED · RESOLVE CAPACITY ' + RESOLVE.max, 2800); }
+    else toast('A QUIET MIND', 1500);
+    RESOLVE.n = RESOLVE.max;
+  });
+  return true;
 }
 function nearSpring() { for (const sp of SPRINGS) if (Math.hypot(sp.x - player.pos.x, sp.z - player.pos.z) < 4.5) return sp; return null; }
 function bathe() {
@@ -5862,9 +6200,11 @@ function bowHello() {
 }
 addEventListener('keydown', e => {
   if (CINE.on && (e.code === 'Enter' || e.code === 'Space' || e.code === 'Escape')) { e.preventDefault(); endCine(); return; }
+  if (STANDOFF.on) { if (e.code === 'Space') { e.preventDefault(); STANDOFF.hold = true; } return; }
+  if (e.code === 'KeyY') startStandoff();
   if (!started) return;
   if (e.code === 'F1' || e.code === 'KeyI') { e.preventDefault(); storyUI.help.style.display = storyUI.help.style.display === 'flex' ? 'none' : 'flex'; if (storyUI.help.style.display === 'flex') document.exitPointerLock?.(); }
-  if (e.code === 'KeyZ' && !bathe()) rest();
+  if (e.code === 'KeyZ' && !composeHaiku() && !bathe()) rest();
   if (e.code === 'KeyX') assassinate();
   if (e.code === 'KeyC') heal();
   if (e.code === 'KeyJ') guidingWind();
@@ -5873,13 +6213,41 @@ addEventListener('keydown', e => {
   const d = /^Digit([1-8])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
 });
 let gameT = 0, realDt = 1 / 60;
-window.__story = { playCine, introShots, STORY, groundH, endCine };
+// ── Pause menu: losing the mouse (Esc) pauses the world ──
+let PAUSED = false;
+const pauseEl = (() => {
+  const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at center, rgba(10,8,6,.55), rgba(4,3,2,.88));z-index:58;color:#f4e9d8;font:15px Georgia,serif;letter-spacing:6px';
+  const b = 'background:none;border:1px solid rgba(244,233,216,.35);color:#f4e9d8;font:14px Georgia,serif;letter-spacing:6px;padding:11px 0;width:260px;cursor:pointer';
+  d.innerHTML = `<div style="font-size:26px;letter-spacing:26px;opacity:.85">風の島</div><div style="font-size:12px;letter-spacing:10px;opacity:.6;margin-bottom:26px">PAUSED</div>
+    <button data-p="resume" style="${b}">RESUME</button><button data-p="controls" style="${b}">CONTROLS</button><button data-p="gfx" style="${b}">GRAPHICS</button><button data-p="new" style="${b};opacity:.6">NEW GAME</button>
+    <div id="pauseStat" style="margin-top:22px;font-size:11px;letter-spacing:4px;opacity:.55;text-align:center;line-height:2"></div>`;
+  document.body.appendChild(d);
+  d.addEventListener('click', e => {
+    const p = e.target.dataset?.p; if (!p) return;
+    if (p === 'resume') { setPaused(false); renderer.domElement.requestPointerLock?.(); }
+    if (p === 'controls') { storyUI.help.style.display = 'flex'; }
+    if (p === 'gfx') { toggleGfxMenu(); }
+    if (p === 'new' && confirm('Start a new game? Your progress on the island will be forgotten.')) { try { localStorage.removeItem('kns-story'); localStorage.removeItem('kns-intro'); } catch (er) {} location.reload(); }
+  });
+  return d;
+})();
+function setPaused(on) {
+  PAUSED = on; pauseEl.style.display = on ? 'flex' : 'none';
+  if (on) { const camps = (window.__camps2 || []).filter(c => !c.castle).length, hk = HAIKU.filter(h => h.done).length;
+    document.getElementById('pauseStat').innerHTML = `CAMPS TAKEN ${STORY.cleared.size} / ${camps} &nbsp;·&nbsp; HAIKU ${hk} / ${HAIKU.length} &nbsp;·&nbsp; HOT SPRINGS ${SPRINGS.filter(q => q.used).length} / ${SPRINGS.length}<br>${STORY.done ? 'YOUR FAMILY IS SAFE' : STORY.khan ? 'THE KHAN IS DEAD' : ''}`; }
+}
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement) { if (PAUSED) setPaused(false); return; }
+  if (started && !TOUCH && !CINE.on && !STANDOFF.on && gfxEl.style.display !== 'block' && storyUI.help.style.display !== 'flex' && mapEl.style.display !== 'block' && !player.dead) setPaused(true);
+});
+window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN };
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
+  if (PAUSED) { if (GFX.post === false) renderer.render(scene, camera); else composer.render(); requestAnimationFrame(loop); return; }   // the world holds still
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve(); updateSmoke();
-  if (started) audio.music(Math.min(raw, 0.1), CINE.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
+  realDt = Math.min(raw, 0.05); updateCine(raw); updateStandoff(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve(); updateSmoke();
+  if (started) audio.music(Math.min(raw, 0.1), CINE.on || STANDOFF.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); dt *= aim.ts * STANDOFF.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt); updateArrows(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
