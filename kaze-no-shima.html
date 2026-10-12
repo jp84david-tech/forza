@@ -127,7 +127,7 @@ const LOW = params.get('q') === 'low' || (!params.get('q') && TOUCH), ULTRA = pa
 // ─────────────────────────── Renderer / scene ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
-const targetPR = () => LOW ? Math.min(devicePixelRatio, 1) : Math.min(2, Math.max(devicePixelRatio, 1080 / innerHeight));   // ≥ 1080p internal
+const targetPR = () => LOW ? Math.min(devicePixelRatio, 1) : Math.min(2, Math.max(Math.min(devicePixelRatio, ULTRA ? 2 : 1.25), 1080 / innerHeight));   // ≥ 1080p internal, but no 4x-pixel cost on high-DPI laptop screens
 renderer.setPixelRatio(targetPR());
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.42;
@@ -2817,12 +2817,33 @@ const texIron = makeTex(256, (u, v) => {     // dark iron splints with a lacquer
   const k = (0.07 + 0.04 * n) * (0.5 + 0.5 * edge);
   return [k, k * 0.98, k * 0.95, edge * 0.7 + n * 0.15];
 }, [1, 1], 4);
+// Mongol lamellar: rows of small riveted bronze-brown scales laced with teal leather, a bold gold-and-red
+// meander border along each row — unmistakably different from the samurai's lacquered lames
+function makeLamellarTex(plate, lace, accent) {
+  return makeTex(512, (u, v) => {
+    const rows = 3, rv = fract(v * rows), row = Math.floor(v * rows), cu = fract(u * 14 + (row % 2) * 0.5), n = pfbm(u, v, 8, 3);
+    let [r, g, b] = plate, h = 0.5;
+    const scale = smooth(0.0, 0.07, cu) * (1 - smooth(0.93, 1.0, cu)), dome = Math.sin(cu * Math.PI) * 0.25;
+    const k = (0.62 + 0.3 * n + dome) * (0.45 + 0.55 * scale);
+    r *= k; g *= k; b *= k; h = scale * 0.6 + dome;
+    const scr = Math.pow(Math.max(0, pnoise(u * 60 + v * 9, v * 30, 60, 30) * 2 - 1), 10) * 3; r += scr * 0.2; g += scr * 0.16; b += scr * 0.1;
+    if (rv > 0.78) {   // the ornamental band: a gold key-fret (meander) on red felt
+      const bu = fract(u * 10), bv = (rv - 0.78) / 0.22, fret = (bv < 0.2 || bv > 0.8 || (bu < 0.15) || (bv > 0.4 && bv < 0.6 && bu < 0.65) || (bu > 0.5 && bu < 0.65 && bv > 0.4));
+      [r, g, b] = fret ? accent : [0.42, 0.05, 0.04]; h = fret ? 0.9 : 0.7;
+    }
+    if (Math.abs(cu - 0.5) < 0.06 && rv < 0.76 && (fract(rv * 6) < 0.5)) { [r, g, b] = lace; h = 0.8; }   // leather thongs through the scales
+    if (Math.hypot(cu - 0.5, (rv - 0.12) * 2.5) < 0.07 || Math.hypot(cu - 0.5, (rv - 0.66) * 2.5) < 0.07) { r = 0.75; g = 0.6; b = 0.3; h = 1.1; }   // brass rivets
+    if (rv < 0.035) { r *= 0.2; g *= 0.2; b *= 0.2; h = 0; }
+    return [r, g, b, h];
+  }, [1, 1], 5);
+}
 const ARMOUR_PALETTES = {
   vIndigo: { under: [0.05, 0.07, 0.16], sash: 0x8a6a3a, villager: true }, vBrown: { under: [0.16, 0.1, 0.06], sash: 0x2a2a3a, villager: true },
   vSage:   { under: [0.1, 0.13, 0.09], sash: 0x6a2a20, villager: true }, vRust: { under: [0.22, 0.08, 0.05], sash: 0x1e2236, villager: true },
   vPlum:   { under: [0.14, 0.05, 0.1], sash: 0xc0a060, villager: true }, vSand: { under: [0.26, 0.22, 0.15], sash: 0x34261a, villager: true },
   hero:   { plate: [0.1, 0.12, 0.16], cord: [0.5, 0.05, 0.04], knot: [0.9, 0.7, 0.28], under: [0.02, 0.024, 0.04], sash: 0x5a0e0c, trim: 0xc09a48 },
   bandit: { plate: [0.12, 0.09, 0.06], cord: [0.16, 0.2, 0.12], knot: [0.35, 0.3, 0.2], under: [0.05, 0.045, 0.04], sash: 0x3a3428, trim: 0x6a5a40, hat: 'kasa' },
+  mongol: { plate: [0.4, 0.24, 0.11], cord: [0.06, 0.32, 0.34], knot: [0.9, 0.68, 0.22], under: [0.2, 0.05, 0.035], sash: 0x1d5a5e, trim: 0xc89a3a, hat: 'mongol', lamellar: true, face: 'mongol' },
 };
 const lacquer = (tex, rough = 0.38) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: rough, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2, side: THREE.DoubleSide, envMapIntensity: 0.8 });
 
@@ -2887,7 +2908,7 @@ function mergeLeaves(root) {
 }
 function buildArmour(model, rig, B, paletteName) {
   const P = ARMOUR_PALETTES[paletteName];
-  const lame = lacquer(makeLameTex(P.plate, P.cord, P.knot));
+  const lame = lacquer(P.lamellar ? makeLamellarTex(P.plate, P.cord, P.knot) : makeLameTex(P.plate, P.cord, P.knot), P.lamellar ? 0.55 : 0.38);
   const kabutoM = lacquer(texKabuto, 0.3), ironM = lacquer(texIron, 0.45);
   const trimM = M(P.trim, 0.3, 0.85), sashM = new THREE.MeshStandardMaterial({ color: P.sash, roughness: 0.9 });
   const wp = b => rig.worldToLocal(b.getWorldPosition(new THREE.Vector3()));
@@ -2984,7 +3005,23 @@ function buildArmour(model, rig, B, paletteName) {
   // ── kabuto: ridged bowl, flared neck guard, turned-back flaps, visor, crest; menpō face mask ──
   const hc = head.clone().lerp(top, 0.42), hr = girth(hc, up, 0.07, 0.22, 0.9) + 0.022;
   const fc = hc.clone().addScaledVector(up, -0.03);                       // centre of the human head that replaces the helmet
-  attach(B.Head, makeHead(P.hat === 'kasa' ? 'bandit' : 'hero', fc, up, fwd));
+  attach(B.Head, makeHead(P.face || (P.hat === 'kasa' ? 'bandit' : 'hero'), fc, up, fwd));
+  if (P.hat === 'mongol') {   // steppe helmet: a tall iron cone with a spike and red horsehair plume, a fur brim, lamellar neck and ear guards
+    const hat = new THREE.Group(); hat.position.copy(fc).addScaledVector(up, 0.045 * HEAD_K); hat.scale.setScalar(HEAD_K);
+    const ironH = new THREE.MeshStandardMaterial({ color: 0x3a3632, roughness: 0.38, metalness: 0.85 });
+    const furM = new THREE.MeshStandardMaterial({ map: texMane.map, color: 0x8a6a48, roughness: 1 });
+    const plumeM = new THREE.MeshStandardMaterial({ color: 0x9a1a10, roughness: 0.9 });
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.098, 0.17, 24, 1, true), ironH); bowl.position.y = 0.075; hat.add(bowl);
+    const ribs = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.1, 0.17, 8, 1, true), trimM); ribs.position.y = 0.075; ribs.scale.set(1.01, 1, 1.01); hat.add(ribs);
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.09, 8), trimM); spike.position.y = 0.2; hat.add(spike);
+    for (let i = 0; i < 9; i++) { const st = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.16, 5), plumeM); const a = i / 9 * 6.283; st.position.set(Math.cos(a) * 0.012, 0.15, Math.sin(a) * 0.012 - 0.01); st.rotation.set(Math.PI + Math.sin(a) * 0.7 - 0.3, 0, Math.cos(a) * 0.7); hat.add(st); }   // the horsehair plume falls around the spike
+    const brim = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.026, 8, 30), furM); brim.rotation.x = Math.PI / 2; brim.position.y = -0.005; brim.scale.set(1, 1.12, 1.35); hat.add(brim);
+    const neck = lamePanel(Math.PI * 1.25 * 0.11, 0.15, 3, 0.11, lame, 0.012); neck.rotation.y = Math.PI; neck.position.set(0, -0.02, 0); neck.children.forEach(m => m.position.z += 0.11); hat.add(neck);
+    for (const sd of [-1, 1]) { const ear = lamePanel(0.06, 0.1, 2, 0.15, lame, 0); ear.position.set(sd * 0.1, -0.02, 0.02); ear.rotation.set(0, sd * 1.45, sd * 0.12); hat.add(ear); }
+    hat.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    attach(B.Head, hat); out.kabuto = hat;
+    return out;
+  }
   if (P.hat === 'kasa') { // ronin: wide straw hat over a cloth headband
     const hat = new THREE.Group(); hat.position.copy(fc); hat.scale.setScalar(HEAD_K);
     const strawM = TM(texStraw, 0.95, 0, { side: THREE.DoubleSide });
@@ -3039,7 +3076,7 @@ function updateArmour(ch) {
 // The motion-capture body came with a trooper's helmet for a head. Those head vertices are folded away
 // inside the skull, and a human head is built in its place: a painted face on a head-shaped mesh,
 // with a sculpted nose, ears and hair.
-const HEAD_S = 1.55, HEAD_K = HEAD_S / 1.12;   // big, characterful heads (a touch of chibi); helmets and hats follow
+const HEAD_S = 1.68, HEAD_K = HEAD_S / 1.12;   // big, strong heads; helmets and hats follow
 function prepareHeadCollapse(mesh) {
   const g = mesh.geometry;
   if (g.userData.headC) return g.userData.headC;
@@ -3056,12 +3093,13 @@ function prepareHeadCollapse(mesh) {
   return g.userData.headC;
 }
 const FACE_STYLES = {
-  hero:   { skin: [214, 168, 132], hair: [22, 18, 16], beard: 'short', brow: 2.6, eye: [58, 34, 20], cute: 1.4 },
+  hero:   { skin: [200, 152, 116], hair: [20, 16, 14], beard: 'short', brow: 2.5, eye: [40, 26, 18] },
   bandit: { skin: [182, 136, 104], hair: [26, 22, 18], beard: 'stubble', brow: 2.4, eye: [30, 20, 14], scar: true },
   man:    { skin: [210, 164, 128], hair: [24, 20, 18], beard: 'mustache', brow: 1.8, eye: [44, 28, 20], top: 'chonmage' },
   elder:  { skin: [196, 156, 126], hair: [190, 186, 180], beard: 'long', brow: 2.0, eye: [48, 34, 24], top: 'chonmage', wrinkles: true },
   woman:  { skin: [226, 186, 154], hair: [20, 17, 16], beard: null, brow: 1.3, eye: [36, 24, 18], lips: true, top: 'bun' },
-  boy:    { skin: [214, 170, 134], hair: [24, 20, 18], beard: null, brow: 1.4, eye: [40, 26, 18], top: 'bowl', cute: 1.25 },
+  boy:    { skin: [214, 170, 134], hair: [24, 20, 18], beard: null, brow: 1.4, eye: [40, 26, 18], top: 'bowl' },
+  mongol: { skin: [172, 118, 82], hair: [18, 14, 12], beard: 'mustache', brow: 2.8, eye: [26, 16, 10], scar: true, stubble: true },
 };
 const _faceTex = {};
 function faceTexture(name) {
@@ -3122,7 +3160,7 @@ function faceTexture(name) {
   if (st.wrinkles) { x.strokeStyle = 'rgba(90,50,35,0.45)'; for (const s of [-1, 1]) { x.beginPath(); x.moveTo(cx + s * 10, eyeY + 22); x.quadraticCurveTo(cx + s * 17, my - 2, cx + s * 15, my + 9); x.stroke(); } }
   // beard
   const hairStroke = (n, x0, x1, y0, y1, len, al) => { for (let i = 0; i < n; i++) { const hx = x0 + R() * (x1 - x0), hy = y0 + R() * (y1 - y0); x.strokeStyle = rgb(st.hair, 0.7 + R() * 0.6, al); x.lineWidth = 1.3; x.beginPath(); x.moveTo(hx, hy); x.lineTo(hx + (R() - 0.5) * 2, hy + len); x.stroke(); } };
-  if (st.beard === 'stubble') { x.fillStyle = rgb(st.hair, 1, 0.25); x.beginPath(); x.ellipse(cx, my + 4, 40, 26, 0, 0, 3.1416); x.fill(); hairStroke(600, cx - 38, cx + 38, my - 10, my + 26, 2, 0.4); }
+  if (st.beard === 'stubble' || st.stubble) { x.fillStyle = rgb(st.hair, 1, 0.25); x.beginPath(); x.ellipse(cx, my + 4, 40, 26, 0, 0, 3.1416); x.fill(); hairStroke(600, cx - 38, cx + 38, my - 10, my + 26, 2, 0.4); }
   if (st.beard === 'short' || st.beard === 'mustache' || st.beard === 'long') {
     x.fillStyle = rgb(st.hair); for (const s of [-1, 1]) { x.beginPath(); x.moveTo(cx, my - 6); x.quadraticCurveTo(cx + s * 12, my - 9, cx + s * 20, my + 3); x.quadraticCurveTo(cx + s * 10, my - 3, cx, my - 3); x.fill(); }   // moustache
   }
@@ -3482,7 +3520,7 @@ function spawnEnemies() {
 }
 function makeBandit(home, i) {
   {
-    const w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, 'bandit');
+    const w = makeWarrior(SkeletonUtils.clone(pristineSoldier), soldierGLTF.animations, 'mongol');
     const root = new THREE.Group(); root.add(w.rig); scene.add(root);
     const mats = []; w.rig.traverse(o => { if (o.isMesh && o.material && !mats.includes(o.material)) mats.push(o.material); });
     const bar = document.createElement('div'); bar.className = 'ebar'; bar.innerHTML = '<div></div>'; document.body.appendChild(bar);
@@ -3518,7 +3556,7 @@ function hitEnemy(e, dmg, p) {
   hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.hit();
   for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
-  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast('RONIN DEFEATED', 1600); }
+  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast('MONGOL WARRIOR DEFEATED', 1600); }
 }
 function hitPlayer(tg, dmg, p) {
   if (player.invuln > 0 || player.dead) return;
@@ -4611,7 +4649,8 @@ const godRays = new ShaderPass({ // screen-space light shafts streaming from the
     }`,
 });
 composer.addPass(godRays);
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.45, 3.0);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.22, 0.45, 3.0);
+{ const ss = bloom.setSize.bind(bloom); bloom.setSize = (w, h) => ss(Math.ceil(w / 2), Math.ceil(h / 2)); }   // glow is soft anyway: half resolution costs a quarter
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const fxaa = new ShaderPass(FXAAShader);
@@ -5106,7 +5145,7 @@ function loop() {
   realDt = Math.min(raw, 0.05); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt);
-  if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
+  if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
   SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
   FOGU.uFogSunV.value.copy(SH.uSunDir.value).transformDirection(camera.matrixWorldInverse);
   FOGU.uFogUpV.value.set(0, 1, 0).transformDirection(camera.matrixWorldInverse); FOGU.uFogCamY.value = camera.position.y;
