@@ -3857,11 +3857,13 @@ function hitEnemy(e, dmg, p) {
   for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
   if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35);
+    if (!e.boss && !STANDOFF.on && !enemies.some(o => o !== e && o.alive && o.state === 'chase' && o.pos.distanceTo(player.pos) < 30)) KILLCAM.t = 1.0;   // the last blow: a beat of slow motion
     const grp = e.camp || e.patrol, rest = grp && !e.boss ? enemies.filter(o => o.alive && (o.camp || o.patrol) === grp && !o.boss) : [];
     if (rest.length === 1 && !grp.castle && (grp.spawned === true || (grp.spawned || 0) >= (grp.max || grp.n || 3)) && Math.random() < 0.6) { const L = rest[0]; L.flee = true; L.fleeT = 7; L.sw.drawn = false; L.sw.combo = -1; setTimeout(() => say(['Mongol: He is a demon! Run — run!']), 500); }   // morale breaks: the last one runs for it
   }
 }
 const BLOCK = { on: false, t0: -9 };
+const KILLCAM = { t: 0, k: 0 };
 let curFoe = null;   // whose blade is being checked against you
 function perilGlint(e) {
   const h = e.B.RightHand.getWorldPosition(new THREE.Vector3());
@@ -5762,7 +5764,7 @@ function update(dt, t) {
   const sh = shake * 0.12;
   camera.position.set(camPos.x + (Math.sin(t * 53) + Math.sin(t * 31)) * sh, camPos.y + (Math.sin(t * 61) + Math.sin(t * 23)) * sh, camPos.z + Math.sin(t * 47) * sh);
   camera.lookAt(camLook);
-  camFov = lerp(camFov, lerp(55 + fast * 13, 46, ak), Math.min(1, Math.max(dt, realDt * 0.9) * (3 + ak * 6)));
+  camFov = lerp(camFov, lerp(55 + fast * 13, 46, ak) * (1 - 0.2 * KILLCAM.k), Math.min(1, Math.max(dt, realDt * 0.9) * (3 + ak * 6)));
   if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
 
   if (window.__freeCam) { camera.position.copy(window.__freeCam[0]); camera.lookAt(window.__freeCam[1]); const fv = window.__freeCam[2]; if (fv && Math.abs(camera.fov - fv) > 0.01) { camera.fov = fv; camera.updateProjectionMatrix(); } }   // cutscenes choose their own lens
@@ -6605,7 +6607,7 @@ function loop() {
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
   realDt = Math.min(raw, 0.05); updateCine(raw); updateStandoff(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve(); updateSmoke();
-  if (started) audio.music(Math.min(raw, 0.1), CINE.on || STANDOFF.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); dt *= aim.ts * STANDOFF.ts; gameT += dt;            // slow motion while aiming kunai
+  if (started) audio.music(Math.min(raw, 0.1), CINE.on || STANDOFF.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); KILLCAM.t = Math.max(0, KILLCAM.t - raw); KILLCAM.k += ((KILLCAM.t > 0 ? 1 : 0) - KILLCAM.k) * Math.min(1, raw * 6); dt *= aim.ts * STANDOFF.ts * (1 - 0.72 * KILLCAM.k); gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt); updateArrows(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
