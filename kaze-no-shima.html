@@ -48,6 +48,7 @@
   #map { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(86vh, 92vw); height: min(86vh, 92vw); display: none; z-index: 30; border: 1px solid rgba(244,233,216,0.35); box-shadow: 0 10px 60px rgba(0,0,0,0.6); }
   #gfx { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(14,10,8,0.88); border: 1px solid rgba(244,233,216,0.3);
     color: #f4e9d8; padding: 22px 28px; font-family: 'Segoe UI', sans-serif; font-size: 13px; letter-spacing: 1px; display: none; min-width: 300px; z-index: 10; }
+  body.cine #title, body.cine #hint, body.cine #prompt, body.cine #gfxBtn, body.cine #hp, body.cine #fps { opacity: 0 !important; transition: opacity .4s; }
   #gfxBtn { position: fixed; top: 12px; right: 12px; z-index: 60; background: rgba(14,10,8,0.55); color: #f4e9d8; border: 1px solid rgba(244,233,216,0.35); padding: 8px 14px; font: 12px Georgia, serif; letter-spacing: 3px; cursor: pointer; }
   #gfx { z-index: 61; }
   #gfx h3 { font-family: Georgia, serif; font-weight: 400; letter-spacing: 6px; margin-bottom: 14px; }
@@ -5379,13 +5380,13 @@ const storyUI = (() => {
 })();
 const CINE = { on: false, shots: null, i: 0, t: 0, end: null };
 function playCine(shots, end) {
-  Object.assign(CINE, { on: true, shots, i: 0, t: 0, end });
+  Object.assign(CINE, { on: true, shots, i: 0, t: 0, end }); document.body.classList.add('cine');
   storyUI.barT.style.height = storyUI.barB.style.height = '11vh'; storyUI.skip.style.opacity = 1; storyUI.obj.style.opacity = 0;
   document.exitPointerLock?.();
 }
 function endCine() {
   if (!CINE.on) return;
-  CINE.on = false; window.__freeCam = null;
+  CINE.on = false; window.__freeCam = null; document.body.classList.remove('cine');
   storyUI.barT.style.height = storyUI.barB.style.height = '0'; storyUI.sub.style.opacity = 0; storyUI.skip.style.opacity = 0;
   const f = CINE.end; CINE.end = null; if (f) f();
 }
