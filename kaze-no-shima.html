@@ -103,7 +103,7 @@ addEventListener('unhandledrejection', e => { const g = document.getElementById(
   <div class="go" id="go">LOADING THE ISLAND…</div>
   <div class="keys">
     W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — sprint / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse &nbsp;·&nbsp; R — open doors &nbsp;·&nbsp; V — wave<br>
-    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; Q — block / parry &nbsp;·&nbsp; X — assassinate &nbsp;·&nbsp; J — guiding wind &nbsp;·&nbsp; 1–8 — time of day &amp; weather &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
+    G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; Right mouse — aim kunai in slow motion, click to throw &nbsp;·&nbsp; R — doors &nbsp;·&nbsp; Z — rest at a hearth &nbsp;·&nbsp; V / B — wave / bow &nbsp;·&nbsp; Q — block / parry &nbsp;·&nbsp; X — assassinate &nbsp;·&nbsp; C — heal with Resolve &nbsp;·&nbsp; J — guiding wind &nbsp;·&nbsp; 1–8 — time of day &amp; weather &nbsp;·&nbsp; F1 — all controls &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
     Sound on 🔊
   </div>
 </div>
@@ -3420,7 +3420,7 @@ function updateVillagers(dt, t) {
       tx = ax; tz = az; sp = 1.6; v.afraid = 1;
     } else if (dP < 3.2 && !player.mounted) {   // stop, turn to you, and bow the first time you come close
       v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 4); v.target = null;
-      if (!v.greeted) { v.greeted = true; v.bow = 1.6; }
+      if (!v.greeted) { v.greeted = true; v.bow = 1.6; if (!subQueue.length && i !== 2) say([['Villager: Kenshin-sama, you live!', 'Villager: The gods be thanked — the lord\u2019s son.', 'Villager: Please... drive them off our island.', 'Villager: My brother was taken to the camp by the falls.', 'Villager: Be careful on the mountain road, samurai.', 'Villager: Rest by our hearth, if you need it.'][Math.floor(Math.random() * 6)]]); }
     } else {
       if (dP > 8) v.greeted = false;
       v.wait -= dt;
@@ -3674,7 +3674,7 @@ function wakeCamps() {
   for (const cp of (window.__camps2 || [])) {
     if ((cp.spawned || 0) >= (cp.max || 3) || Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z) > 230) continue;
     const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
-    const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) nb.camp = cp;
+    const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) { nb.camp = cp; nb.archer = (cp.spawned || 0) % 3 === 1; nb.shotT = 1.5 + Math.random() * 2; }
     cp.spawned = (cp.spawned || 0) + 1;
     return;   // one per frame keeps the hitch small
   }
@@ -3691,7 +3691,7 @@ function hitEnemy(e, dmg, p) {
   hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.hit();
   for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
-  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast('MONGOL WARRIOR DEFEATED', 1600); }
+  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? 'JARGHAL KHAN FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35); }
 }
 const BLOCK = { on: false, t0: -9 };
 function nearestFoe(r) { let b = null, bd = r; for (const e of enemies) { if (!e.alive) continue; const d = e.pos.distanceTo(player.pos); if (d < bd) { bd = d; b = e; } } return b; }
@@ -3701,7 +3701,7 @@ function hitPlayer(tg, dmg, p) {
     const foe = nearestFoe(3.8), sp = p.clone ? p.clone() : new THREE.Vector3(player.pos.x, player.pos.y + 1.3, player.pos.z);
     for (let i = 0; i < 18; i++) emit(sp.clone(), new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5), SPARK, 0.04, 0.4, 9, 0, 1, 1, 1);
     audio.hit();
-    if (clock.elapsedTime - BLOCK.t0 < 0.3) { if (foe) { foe.stagger = 1.5; foe.sw.combo = -1; } hitStop = 0.14; shake = Math.min(1, shake + 0.35); toast('PARRY', 700); player.invuln = 0.5; return; }
+    if (clock.elapsedTime - BLOCK.t0 < 0.3) { RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.5); if (foe) { foe.stagger = 1.5; foe.sw.combo = -1; } hitStop = 0.14; shake = Math.min(1, shake + 0.35); toast('PARRY', 700); player.invuln = 0.5; return; }
     dmg *= 0.25; player.invuln = 0.35; shake = Math.min(1, shake + 0.2);
   }
   player.hp -= 16 * dmg; player.invuln = 0.6; lastHurt = clock.elapsedTime;
@@ -3736,14 +3736,14 @@ function updateEnemy(e, dt, t) {
   const dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, dP = Math.hypot(dx, dz);
   if (!e.alive) {
     e.deathT += dt; e.vel.multiplyScalar(Math.exp(-dt * 4)); moveEnemy(e, dt, 0, 0, 0);
-    if (e.deathT > 25) resetEnemy(e);
+    if (e.deathT > 25 && !e.camp && !e.boss) resetEnemy(e);   // a camp you have taken stays taken
   } else if (e.stagger > 0) {
     e.stagger -= dt; moveEnemy(e, dt, 0, 0, 0);
   } else {
     const fromHome = Math.hypot(player.pos.x - e.home.x, player.pos.z - e.home.z);
     const engaged = !player.dead && dP < (e.state === 'chase' ? 24 : 15) && fromHome < 48;
     if (engaged) {
-      if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); }
+      if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); if (!subQueue.length && Math.random() < 0.6 && !e.boss) say([['Mongol: There! The samurai!', 'Mongol: Kill him!', 'Mongol: Surround him!', 'Mongol: For the Khan!', 'Mongol: Archers — loose!'][Math.floor(Math.random() * 5)]]); }
       e.sw.drawn = true;
       const want = Math.atan2(dx, dz); e.yaw += angDiff(e.yaw, want) * Math.min(1, dt * (e.sw.combo >= 0 ? 2 : 7));
       if (e.sw.combo >= 0) moveEnemy(e, dt, 0, 0, 0);
@@ -3799,7 +3799,14 @@ function updateEnemies(dt, t) {
     const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70;
     e.root.visible = dP < 180 && (e.alive || e.deathT < 12);   // far bandits are not drawn at all
     if (near || e.state === 'chase') {
+      const px = e.pos.x, pz = e.pos.z;
       updateEnemy(e, dt, t);
+      if (e.archer && e.alive && e.state === 'chase' && e.stagger <= 0 && !player.dead) {   // archers hold their ground at bow range, back off if you close in, and loose arrows
+        const ax = e.pos.x - player.pos.x, az = e.pos.z - player.pos.z, ad = Math.hypot(ax, az) || 1;
+        if (ad > 7 && ad < 26) { e.pos.x = px; e.pos.z = pz; e.vel.x *= 0.5; e.vel.z *= 0.5; e.yaw += angDiff(e.yaw, Math.atan2(-ax, -az)) * Math.min(1, dt * 6); e.atkCool = Math.max(e.atkCool, 0.5); }
+        else if (ad <= 7 && ad > 3.5) { e.pos.x += ax / ad * 2.4 * dt; e.pos.z += az / ad * 2.4 * dt; }
+        e.shotT -= dt; if (ad < 34 && ad > 5 && e.shotT < 0) { e.shotT = 2.6 + Math.random() * 1.4; shootArrow(e); }
+      }
       const d = Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z);
       const onScreen = _eb.set(e.pos.x, e.pos.y + 1, e.pos.z).sub(camera.position).dot(camera.getWorldDirection(_ec)) > -1;
       if (onScreen && (d < 45 || (frameNo & 3) === 0)) animateEnemy(e, d < 45 ? dt : dt * 4);   // far ones animate at quarter rate
@@ -3816,6 +3823,44 @@ function updateEnemies(dt, t) {
   hpEl.style.width = (player.hp / player.maxHp * 100) + '%';
   hpBox.style.opacity = player.hp < player.maxHp - 0.5 ? 1 : 0.25;
 }
+// ── arrows: real projectiles with drop; a raised blade (Q with the katana drawn) knocks them aside ──
+const arrowGeo = (() => { const sh = new THREE.CylinderGeometry(0.008, 0.008, 0.8, 5).toNonIndexed(), hd = new THREE.ConeGeometry(0.02, 0.07, 5).translate(0, 0.43, 0).toNonIndexed(), fl = new THREE.BoxGeometry(0.05, 0.12, 0.003).translate(0, -0.34, 0).toNonIndexed();
+  [sh, hd, fl].forEach(g => g.deleteAttribute('uv')); return mergeGeometries([sh, hd, fl]); })();
+const arrowMat = new THREE.MeshStandardMaterial({ color: 0x6a5238, roughness: 0.7 });
+const ARROWS = Array.from({ length: 24 }, () => { const m = new THREE.Mesh(arrowGeo, arrowMat); m.visible = false; scene.add(m); return { m, pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), state: 0, life: 0 }; });
+let arrowIdx = 0;
+function shootArrow(e) {
+  const A = ARROWS[arrowIdx++ % ARROWS.length], from = new THREE.Vector3(e.pos.x, e.pos.y + 1.5, e.pos.z), to = new THREE.Vector3(player.pos.x + player.vel.x * 0.5, player.pos.y + 1.2, player.pos.z + player.vel.z * 0.5);
+  const d = from.distanceTo(to), sp = 34; A.pos.copy(from); A.prev.copy(from); A.vel.copy(to).sub(from).normalize().multiplyScalar(sp); A.vel.y += 0.5 * 9.8 * d / sp;
+  A.vel.x += (Math.random() - 0.5) * 1.2; A.vel.z += (Math.random() - 0.5) * 1.2; A.state = 1; A.life = 0; A.m.visible = true; audio.cut?.();
+}
+const _aq = new THREE.Quaternion(), _ay = new THREE.Vector3(0, 1, 0), _ad = new THREE.Vector3();
+function updateArrows(dt) {
+  for (const A of ARROWS) {
+    if (!A.state) continue; A.life += dt;
+    if (A.state === 1) {
+      A.prev.copy(A.pos); A.vel.y -= 9.8 * dt; A.pos.addScaledVector(A.vel, dt);
+      const c = _ad.set(player.pos.x, player.pos.y + 1.1, player.pos.z), seg = A.pos.clone().sub(A.prev), u = Math.max(0, Math.min(1, c.clone().sub(A.prev).dot(seg) / (seg.lengthSq() || 1)));
+      if (!player.dead && A.prev.clone().addScaledVector(seg, u).distanceTo(c) < 0.5) {
+        if (BLOCK.on && sword.drawn && !player.mounted) { A.vel.multiplyScalar(-0.25); A.vel.y = 3; A.state = 3; audio.hit(); for (let i = 0; i < 10; i++) emit(A.pos.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.3, 9, 0, 1, 1, 1); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.15); }
+        else { hitPlayer(null, 0.9, A.pos.clone()); A.state = 0; A.m.visible = false; continue; }
+      }
+      if (A.pos.y < groundH(A.pos.x, A.pos.z) || A.life > 5) { A.state = 2; A.life = 0; }
+    } else if (A.state === 3) { A.vel.y -= 9.8 * dt; A.pos.addScaledVector(A.vel, dt); if (A.pos.y < groundH(A.pos.x, A.pos.z)) { A.state = 2; A.life = 0; } }
+    else if (A.life > 20) { A.state = 0; A.m.visible = false; }
+    if (A.state !== 2) { _ad.copy(A.vel).normalize(); A.m.quaternion.setFromUnitVectors(_ay, _ad); }
+    A.m.position.copy(A.pos);
+  }
+}
+// ── Resolve: earned by parries, kills and quiet takedowns; press C to spend one and heal ──
+const RESOLVE = { n: 1, max: 3 };
+const resolveEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:28px;bottom:62px;color:#e8c46a;font:14px Georgia,serif;letter-spacing:6px;text-shadow:0 2px 6px #000;z-index:20;pointer-events:none'; document.body.appendChild(d); return d; })();
+function heal() {
+  if (RESOLVE.n < 1 || player.hp >= player.maxHp || player.dead || CINE.on) return;
+  RESOLVE.n -= 1; player.hp = Math.min(player.maxHp, player.hp + 45); toast('RESOLVE', 900);
+  for (let i = 0; i < 16; i++) emit(new THREE.Vector3(player.pos.x, player.pos.y + 0.4 + Math.random() * 1.4, player.pos.z), new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6), new THREE.Color(2.2, 1.7, 0.8), 0.05, 1.2, -0.2, 0, 0.9);
+}
+function updateResolve() { const n = RESOLVE.n, s = [0, 1, 2].map(i => n >= i + 1 ? '◆' : n > i ? '◈' : '◇').join(''); if (resolveEl.textContent !== s) resolveEl.textContent = s; resolveEl.style.opacity = started && !CINE.on ? 1 : 0; }
 function toast(text, ms = 2000) { toastEl.textContent = text; toastEl.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.style.opacity = 0, ms); }
 
 // ─────────────────────────── Flora & props: red maples, bamboo grove, lanterns, shrine, campfires ───────────────────────────
@@ -5585,7 +5630,7 @@ const storyUI = (() => {
   const obj = mk('position:fixed;left:22px;top:104px;color:#f4e9d8;font:14px/1.5 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 6px #000;z-index:20;max-width:360px;opacity:0;transition:opacity .6s;pointer-events:none');
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
-    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>X</b> — assassinate from behind<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
+    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>X</b> — assassinate from behind<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
     <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — call your horse<br><b>R</b> — open / close doors<br>
     <b>Z</b> — rest by a hearth (heals, time passes)<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
@@ -5753,6 +5798,7 @@ addEventListener('keydown', e => {
   if (e.code === 'F1' || e.code === 'KeyI') { e.preventDefault(); storyUI.help.style.display = storyUI.help.style.display === 'flex' ? 'none' : 'flex'; if (storyUI.help.style.display === 'flex') document.exitPointerLock?.(); }
   if (e.code === 'KeyZ') rest();
   if (e.code === 'KeyX') assassinate();
+  if (e.code === 'KeyC') heal();
   if (e.code === 'KeyJ') guidingWind();
   if (e.code === 'KeyQ' && !e.repeat) { BLOCK.on = true; BLOCK.t0 = clock.elapsedTime; }
   if (e.code === 'KeyB') bowHello();
@@ -5764,10 +5810,10 @@ function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1));
+  realDt = Math.min(raw, 0.05); updateCine(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve();
   if (started) audio.music(Math.min(raw, 0.1), CINE.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
-  updateKunai(dt);
+  updateKunai(dt); updateArrows(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
   SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
   FOGU.uFogSunV.value.copy(SH.uSunDir.value).transformDirection(camera.matrixWorldInverse);
