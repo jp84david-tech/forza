@@ -86,11 +86,13 @@
 <div id="fade"></div>
 <div id="hint">Tab map · G graphics · Space jump · F katana · Click ×3 combo · T time of day · P photo mode · M sound</div>
 <div id="loading">GROWING GRASS…</div>
+<script>addEventListener('error', e => { const g = document.getElementById('go'); if (g && /LOADING/.test(g.textContent)) g.textContent = 'COULD NOT LOAD: ' + (e.message || 'error'); });
+addEventListener('unhandledrejection', e => { const g = document.getElementById('go'); if (g && /LOADING/.test(g.textContent)) g.textContent = 'COULD NOT LOAD: ' + (e.reason && e.reason.message || e.reason); });</script>
 <div id="start">
   <h2>KAZE NO SHIMA</h2>
   <div class="jp">風 の 島</div>
   <div class="sub">A wandering samurai. A horse. An island of wind.</div>
-  <div class="go">CLICK TO BEGIN</div>
+  <div class="go" id="go">LOADING THE ISLAND…</div>
   <div class="keys">
     W A S D — walk / ride &nbsp;·&nbsp; Mouse — look &nbsp;·&nbsp; Shift — run / gallop &nbsp;·&nbsp; Space — jump &nbsp;·&nbsp; E — mount / dismount &nbsp;·&nbsp; H — call your horse<br>
     G — graphics settings &nbsp;·&nbsp; F — draw katana &nbsp;·&nbsp; Click — slash (keep clicking for a 3-hit combo) &nbsp;·&nbsp; T — time of day &nbsp;·&nbsp; P — photo mode &nbsp;·&nbsp; M — sound &nbsp;·&nbsp; Esc — release mouse<br>
@@ -113,7 +115,8 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const params = new URLSearchParams(location.search);
-const LOW = params.get('q') === 'low', ULTRA = params.get('q') === 'ultra';
+const TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+const LOW = params.get('q') === 'low' || (!params.get('q') && TOUCH), ULTRA = params.get('q') === 'ultra';
 
 // ─────────────────────────── Renderer / scene ───────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -572,7 +575,7 @@ const GFX_PRESETS = {
 };
 const GFX = (() => {
   let saved = null; try { saved = JSON.parse(localStorage.getItem('kns-gfx') || 'null'); } catch (e) {}
-  const preset = params.get('q') ? (LOW ? 'low' : ULTRA ? 'high' : 'medium') : (saved?.preset || 'medium');
+  const preset = params.get('q') ? (LOW ? 'low' : ULTRA ? 'high' : 'medium') : (saved?.preset || (TOUCH ? 'potato' : 'medium'));
   return Object.assign({ preset, fps: false, auto: true, grassStyle: 'cards' }, GFX_PRESETS[preset] || GFX_PRESETS.medium, saved && !params.get('q') ? saved : {});
 })();
 // Uniforms shared by the grass, flower and cloud shaders (one object, so a single update reaches all of them)
@@ -1996,7 +1999,16 @@ addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') 
 addEventListener('keyup', e => keys[e.code] = false);
 const startEl = document.getElementById('start');
 let started = false;
-startEl.addEventListener('click', () => { started = true; audio.init(); renderer.domElement.requestPointerLock?.(); startEl.style.opacity = 0; setTimeout(() => startEl.style.display = 'none', 600); });
+function beginGame() {
+  if (started) return; started = true;
+  startEl.style.opacity = 0; setTimeout(() => startEl.style.display = 'none', 600);   // hide first, so nothing below can leave it stuck
+  try { audio.init(); } catch (e) {}
+  try { if (!TOUCH) renderer.domElement.requestPointerLock?.(); } catch (e) {}
+}
+startEl.addEventListener('click', beginGame);
+startEl.addEventListener('touchend', e => { e.preventDefault(); beginGame(); }, { passive: false });
+{ const go = document.getElementById('go'); go.textContent = TOUCH ? 'TAP TO BEGIN' : 'CLICK TO BEGIN';
+  if (TOUCH) startEl.querySelector('.keys').innerHTML = 'Left side: drag to walk (far to run) · double-tap to mount<br>Right side: drag to look · tap to strike · double-tap to jump · hold to draw katana<br>Three fingers: call your horse'; }
 renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock?.());
 let dragging = false;
 addEventListener('mousedown', e => { dragging = true; if (started && document.pointerLockElement && e.button === 0) startSlash(); }); addEventListener('mouseup', () => dragging = false);
