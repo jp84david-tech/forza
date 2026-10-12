@@ -5289,7 +5289,7 @@ function updateWorld(dt, t) {
   updateTiles(player.pos.x, player.pos.z);
   trampleAcc += dt; if ((frameNo & 1) === 0) { updateTrample(trampleAcc, player.pos.x, player.pos.z); trampleAcc = 0; }
   updateEnemies(dt, t);
-  updateVillagers(dt, t);
+  updateVillagers(dt, t); updateBlobs();
   updateDoors(dt);
   updateFlora(dt, t);
   // shadows into grass + flowers
@@ -5593,6 +5593,23 @@ let first = true, camFov = 55;
 document.getElementById('loading').remove();
 setTimeout(() => document.getElementById('title').style.opacity = 0.55, 6000);
 
+// ── Contact shadows: a soft dark pool under every foot and hoof, so nobody floats ──
+const AO_BLOB = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.45, 'rgba(0,0,0,0.3)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, fog: true }), 96);
+  m.frustumCulled = false; m.count = 0; m.renderOrder = 1; scene.add(m); REFL_HIDE.push(m); return m;
+})();
+function updateBlobs() {
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0); let n = 0;
+  const put = (x, y, z, sx, sz, yaw, k = 1) => { if (n >= 96 || Math.hypot(x - camera.position.x, z - camera.position.z) > 70) return; q.setFromAxisAngle(Y, yaw); AO_BLOB.setMatrixAt(n++, m4.compose(p.set(x, y + 0.035, z), q, sc.set(sx * k, 1, sz * k))); };
+  if (!player.swim && !(player.wade > 0.2)) put(player.pos.x, player.mounted ? groundH(player.pos.x, player.pos.z, hs.y) : player.pos.y - (player.sink || 0), player.pos.z, 0.95, 0.95, 0, player.onGround || player.mounted ? 1 : 0.7);
+  { const hg = groundH(hs.pos.x, hs.pos.z, hs.y); if (waterAt(hs.pos.x, hs.pos.z) - hg < 0.25) put(hs.pos.x, hg, hs.pos.z, 1.1, 2.6, hs.yaw); }
+  for (const v of villagers) if (v.root.visible) put(v.pos.x, v.pos.y, v.pos.z, 0.85, 0.85, 0, v.face === 'boy' ? 0.8 : 1);
+  for (const e of enemies) if (e.root.visible && (e.alive || e.deathT < 10)) put(e.pos.x, e.pos.y, e.pos.z, e.alive ? 0.95 : 1.3, e.alive ? 0.95 : 2.0, e.yaw, e.brute ? 1.15 : 1);
+  for (const d of DEER) if (d.root.visible) put(d.pos.x, d.pos.y, d.pos.z, 0.7, 1.5, d.yaw);
+  AO_BLOB.count = n; AO_BLOB.instanceMatrix.needsUpdate = true;
+}
 function update(dt, t) {
   const ease = 1 - Math.exp(-dt * 16);
   camYaw += (lookYaw - camYaw) * ease; camPitch += (lookPitch - camPitch) * ease;
