@@ -4053,8 +4053,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
       piece(B, 'iron', new THREE.CylinderGeometry(0.9, 0.55, 0.6, 14, 1, true), 0, TH + 0.5, 0); piece(B, 'iron', new THREE.CylinderGeometry(0.55, 0.55, 0.08, 14), 0, TH + 0.22, 0);
       for (const sd of [-1, 1]) box(B, 'tile', 4.6, 0.16, 2.8, 0, TH + 3.3, sd * 1.15, sd * 0.45, 0, 0);   // a small roof over the fire
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(B, 'wood', 0.12, 2.6, 0.12, a * 1.7, TH + 1.6, b * 1.7);
-      campfire(bx, bz); const cf = campfires[campfires.length - 1]; cf.g.position.y = by + TH + 0.3; cf.y = by + TH + 0.3; cf.g.scale.setScalar(2.4); cf.beacon = true;
-      window.__beacon = [bx, by + TH, bz];
+      window.__beacon = [bx, by + TH, bz];   // the signal fire itself is lit once the fire system exists (below)
     }
     // trodden earth inside the walls, kept clear of houses
     window.__shrine = [cx, cz];
@@ -4351,6 +4350,10 @@ function campfire(x, z) {
   campfires.push({ g, flames, x, y, z });
 }
 campSpots().forEach((c, i) => { if (i % 2 === 0) { const a = i * 1.7; campfire(c.x + Math.cos(a) * 2.6, c.z + Math.sin(a) * 2.6); } });
+if (window.__beacon) {   // the shrine's beacon: a big signal fire on top of its tower
+  const [bx, by, bz] = window.__beacon; campfire(bx, bz); COLLIDERS_INIT.pop();
+  const cf = campfires[campfires.length - 1]; cf.g.position.y = by + 0.3; cf.y = by + 0.3; cf.g.scale.setScalar(2.4); cf.beacon = true;
+}
 // three fire lights shared by all the campfires: they follow the nearest ones (a fixed light count keeps every shader as it is)
 const FIRE_LIGHTS = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff8a3a, 0, 11, 1.6); scene.add(l); return l; });
 
