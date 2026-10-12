@@ -3894,9 +3894,31 @@ function wakePatrols() {
     return;
   }
 }
+// shieldmen: a round wicker-and-leather shield on the left arm turns frontal blows until the guard is broken
+const SHIELD_GEO = (() => { const d = new THREE.CylinderGeometry(0.34, 0.34, 0.04, 20).rotateX(Math.PI / 2), r = new THREE.TorusGeometry(0.34, 0.025, 6, 24), b = new THREE.SphereGeometry(0.07, 10, 6).scale(1, 1, 0.6).translate(0, 0, 0.03);
+  return [d, r, b].map(g => g.index ? g.toNonIndexed() : g); })();
+const SHIELD_MATS = [new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.85 }), new THREE.MeshStandardMaterial({ color: 0x3a3a3c, roughness: 0.45, metalness: 0.7 }), new THREE.MeshStandardMaterial({ color: 0x8a6a2a, roughness: 0.35, metalness: 0.8 })];
+function giveShield(e) { const g = new THREE.Group(); SHIELD_GEO.forEach((geo, i) => { const m = new THREE.Mesh(geo, SHIELD_MATS[i]); m.castShadow = true; g.add(m); }); scene.add(g); e.shield = g; e.guard = 0; }
+const _sv = new THREE.Vector3();
+function placeShield(e) {
+  const g = e.shield; if (!g) return; g.visible = e.root.visible && e.alive; if (!g.visible) return;
+  e.B.LeftForeArm.getWorldPosition(_sv); const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
+  g.position.set(_sv.x + fx * 0.16 + fz * 0.05, _sv.y - 0.02, _sv.z + fz * 0.16 - fx * 0.05); g.rotation.set(0, e.yaw - 0.35, 0);
+}
+function shieldBlocks(e, dmg) {
+  if (!e.shield || !e.alive || e.stagger > 0 || dmg >= 50) return false;
+  const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw), dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, l = Math.hypot(dx, dz) || 1;
+  if ((fx * dx + fz * dz) / l < 0.45) return false;   // from the side or behind, the shield is no help
+  e.guard++; const p = e.shield.position.clone();
+  for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.3, 9, 0, 1, 1, 1);
+  audio.hit(); hitStop = 0.05; shake = Math.min(1, shake + 0.15); e.state = 'chase';
+  if (e.guard >= 3) { scene.remove(e.shield); e.shield = null; e.stagger = 1.4; toast('GUARD BROKEN', 900); }
+  return true;
+}
 function spawnCampOne(cp) {
   const a = cp.yaw + 0.9 + (cp.spawned || 0) * (cp.max ? 6.283 / cp.max : 2.1), r = cp.r || 3;
   const nb = makeBandit({ x: cp.x + Math.cos(a) * r, z: cp.z + Math.sin(a) * r }, enemies.length); if (nb) { nb.camp = cp; nb.archer = (cp.spawned || 0) % 3 === 1; nb.shotT = 1.5 + Math.random() * 2; nb.yaw = a + Math.PI;
+    if (!nb.archer && (cp.spawned || 0) % 4 === 2) giveShield(nb);
     if (nb.archer && cp.tower && !cp.towerMan) { cp.towerMan = nb; nb.tower = true; nb.pos.set(cp.tower[0], cp.tower[2], cp.tower[1]); nb.home.set(cp.tower[0], 0, cp.tower[1]); }   // a lookout with a bow up on the tower
     if ((cp.spawned || 0) % 4 === 3 || (cp.castle && (cp.spawned || 0) % 3 === 2)) { nb.brute = true; nb.hp = nb.maxHp = 6; nb.root.scale.setScalar(1.17); } }   // a brute: twice the man, and his red-glint blows can't be blocked
   cp.spawned = (cp.spawned || 0) + 1;
@@ -3907,6 +3929,7 @@ function resetEnemy(e) {
   e.rig.rotation.set(0, 0, 0); e.rig.position.set(0, 0, 0); e.root.visible = true; e.sw.combo = -1; e.sw.drawn = false;
 }
 function hitEnemy(e, dmg, p) {
+  if (shieldBlocks(e, dmg)) return;
   e.hp -= dmg; e.flash = 1; e.stagger = 0.5; e.sw.combo = -1; e.state = 'chase';
   const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, dl = Math.hypot(dx, dz) || 1;
   e.vel.x = dx / dl * 4.5; e.vel.z = dz / dl * 4.5;
@@ -4038,6 +4061,7 @@ function animateEnemy(e, dt) {
   } else { e.rig.rotation.set(e.stagger > 0 ? -0.18 * smooth(0, 0.5, e.stagger) : 0, 0, 0); e.rig.position.y = -0.07 * atk; }
   e.root.updateMatrixWorld(true);
   if (e.alive) { applySwordPose(e, sw.last, sw.drawT); lungeLegs(e, sw); }
+  placeShield(e);
   updateArmour(e);
   e.drawn.visible = sw.drawT > 0.25; e.handle.visible = !e.drawn.visible;
   e.flash = Math.max(0, e.flash - dt * 5);
@@ -4052,7 +4076,8 @@ function updateEnemies(dt, t) {
   if ((frameNo & 31) === 4) wakePatrols();
   for (const e of enemies) {
     const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70 || (CINE.on && Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z) < 90);   // a cutscene can look at a far camp
-    e.root.visible = (dP < 180 || near) && (e.alive || e.deathT < 12);   // far bandits are not drawn at all
+    e.root.visible = (dP < 180 || near) && (e.alive || e.deathT < 12);
+    if (e.shield && !near) e.shield.visible = false;   // far bandits are not drawn at all
     if (near || e.state === 'chase') {
       const px = e.pos.x, pz = e.pos.z;
       updateEnemy(e, dt, t);
@@ -6151,7 +6176,7 @@ const storyUI = (() => {
   const obj = mk('position:fixed;left:22px;top:104px;color:#f4e9d8;font:14px/1.5 Georgia,serif;letter-spacing:1px;text-shadow:0 2px 6px #000;z-index:20;max-width:360px;opacity:0;transition:opacity .6s;pointer-events:none');
   const help = mk('position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,6,4,.82);z-index:60;color:#f4e9d8;font:15px/2 Georgia,serif');
   help.innerHTML = `<div style="columns:2;column-gap:56px;max-width:860px"><h3 style="letter-spacing:8px;font-weight:400;column-span:all;margin-bottom:12px">CONTROLS</h3>
-    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>Ctrl</b> — dodge (a red glint means a blow you can't block)<br><b>X</b> — assassinate from behind<br><b>Y</b> — standoff: challenge a camp (hold, release as they strike)<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
+    <b>W A S D</b> — walk / ride<br><b>Shift</b> — sprint / gallop<br><b>Space</b> — jump<br><b>Mouse</b> — look<br><b>F</b> — draw / sheathe katana<br><b>Left click</b> — strike (click again: 3-hit combo)<br><b>Q</b> (hold) — block · tap just before a blow to parry<br><b>Ctrl</b> — dodge (a red glint means a blow you can't block)<br>Shields turn blows from the front: break the guard, parry, or go round<br><b>X</b> — assassinate from behind<br><b>Y</b> — standoff: challenge a camp (hold, release as they strike)<br><b>C</b> — spend Resolve (◆) to heal<br><b>J</b> — guiding wind (petals blow toward your goal)<br>
     <b>Right mouse</b> — aim kunai, slow motion<br><b>Left click while aiming</b> — throw<br><b>E</b> — mount / dismount<br><b>H</b> — whistle for your horse &nbsp; <b>N</b> — pat her<br><b>R</b> — open / close doors · cut a prisoner free · trade with the smith<br>
     <b>Z</b> — rest by a hearth · bathe in a hot spring · compose a haiku · bamboo strike<br><b>V</b> — wave &nbsp; <b>B</b> — bow<br><b>T</b> — next time of day / weather &nbsp; <b>1–8</b> — choose it<br><b>Tab</b> — map &nbsp; <b>G</b> — graphics<br>
     <b>P</b> — photo mode &nbsp; <b>M</b> — sound<br><b>Enter</b> — skip a cutscene<br><b>F1 / I</b> — this card</div>`;
