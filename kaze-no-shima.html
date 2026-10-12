@@ -4841,12 +4841,12 @@ function update(dt, t) {
     want.set(H.x + cx * H.c + cz * H.s, Math.min(want.y, H.base + H.eave - 0.25), H.z - cx * H.s + cz * H.c);
   }
   if (first) { camPos.copy(want); camLook.copy(camTarget); first = false; }
-  else { camPos.lerp(want, 1 - Math.exp(-dt * 9)); camLook.lerp(camTarget, 1 - Math.exp(-dt * 14)); }
+  else { const cdt = Math.max(dt, realDt * 0.9); camPos.lerp(want, 1 - Math.exp(-cdt * (9 + aim.k * 5))); camLook.lerp(camTarget, 1 - Math.exp(-cdt * 14)); }   // the camera keeps real-time pace in slow motion
   shake *= Math.exp(-dt * 6);
   const sh = shake * 0.12;
   camera.position.set(camPos.x + (Math.sin(t * 53) + Math.sin(t * 31)) * sh, camPos.y + (Math.sin(t * 61) + Math.sin(t * 23)) * sh, camPos.z + Math.sin(t * 47) * sh);
   camera.lookAt(camLook);
-  camFov = lerp(camFov, lerp(55 + fast * 13, 46, ak), Math.min(1, dt * (3 + ak * 6)));
+  camFov = lerp(camFov, lerp(55 + fast * 13, 46, ak), Math.min(1, Math.max(dt, realDt * 0.9) * (3 + ak * 6)));
   if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
 
   if (window.__freeCam) { camera.position.copy(window.__freeCam[0]); camera.lookAt(window.__freeCam[1]); }
@@ -5094,12 +5094,12 @@ function updateAim(raw) {
 addEventListener('contextmenu', e => { if (started) e.preventDefault(); });
 addEventListener('mousedown', e => { if (e.button === 2 && started) aim.on = true; });
 addEventListener('mouseup', e => { if (e.button === 2) aim.on = false; });
-let gameT = 0;
+let gameT = 0, realDt = 1 / 60;
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (hitStop > 0) { hitStop -= raw; dt *= 0.08; }   // a beat of hit-stop when steel lands
   if (!params.get('fixed')) adaptQuality(raw);
-  updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
+  realDt = Math.min(raw, 0.05); updateAim(raw); dt *= aim.ts; gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
   updateKunai(dt);
   if (GFX.shadows) sun.shadow.needsUpdate = (frameNo & 1) === 0 || frameNo < 3;   // shadows refresh every other frame
