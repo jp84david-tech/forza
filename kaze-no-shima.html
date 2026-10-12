@@ -3850,7 +3850,10 @@ function hitEnemy(e, dmg, p) {
   hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.hit();
   for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
-  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35); }
+  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35);
+    const grp = e.camp || e.patrol, rest = grp && !e.boss ? enemies.filter(o => o.alive && (o.camp || o.patrol) === grp && !o.boss) : [];
+    if (rest.length === 1 && !grp.castle && (grp.spawned === true || (grp.spawned || 0) >= (grp.max || grp.n || 3)) && Math.random() < 0.6) { const L = rest[0]; L.flee = true; L.fleeT = 7; L.sw.drawn = false; L.sw.combo = -1; setTimeout(() => say(['Mongol: He is a demon! Run — run!']), 500); }   // morale breaks: the last one runs for it
+  }
 }
 const BLOCK = { on: false, t0: -9 };
 let curFoe = null;   // whose blade is being checked against you
@@ -3904,6 +3907,9 @@ function updateEnemy(e, dt, t) {
   if (!e.alive) {
     e.deathT += dt; e.vel.multiplyScalar(Math.exp(-dt * 4)); moveEnemy(e, dt, 0, 0, 0);
     if (e.deathT > 25 && !e.camp && !e.boss && !e.patrol) resetEnemy(e);   // a camp you have taken stays taken
+  } else if (e.flee) {   // running for the ships; gone once out of sight
+    e.fleeT -= dt; const l = dP || 1; e.yaw += angDiff(e.yaw, Math.atan2(-dx, -dz)) * Math.min(1, dt * 6); moveEnemy(e, dt, -dx / l, -dz / l, 5.4);
+    if (e.fleeT < 0 && dP > 30) { e.alive = false; e.deathT = 99; e.root.visible = false; e.flee = false; }
   } else if (e.stagger > 0) {
     e.stagger -= dt; moveEnemy(e, dt, 0, 0, 0);
   } else if ((CINE.on || STANDOFF.on) && !e.cineWalk) {   // in a cutscene or a standoff everyone holds their mark, eyes on you
@@ -4042,7 +4048,7 @@ function heal() {
   RESOLVE.n -= 1; player.hp = Math.min(player.maxHp, player.hp + 45); toast('RESOLVE', 900);
   for (let i = 0; i < 16; i++) emit(new THREE.Vector3(player.pos.x, player.pos.y + 0.4 + Math.random() * 1.4, player.pos.z), new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.8 + Math.random(), (Math.random() - 0.5) * 0.6), new THREE.Color(2.2, 1.7, 0.8), 0.05, 1.2, -0.2, 0, 0.9);
 }
-function updateResolve() { const n = RESOLVE.n, s = Array.from({ length: RESOLVE.max }, (_, i) => i).map(i => n >= i + 1 ? '◆' : n > i ? '◈' : '◇').join(''); if (resolveEl.textContent !== s) resolveEl.textContent = s; resolveEl.style.opacity = started && !CINE.on ? 1 : 0; }
+function updateResolve() { const n = RESOLVE.n, s = Array.from({ length: RESOLVE.max }, (_, i) => i).map(i => n >= i + 1 ? '◆' : n > i ? '◈' : '◇').join(''); if (resolveEl.textContent !== s) resolveEl.textContent = s; resolveEl.style.opacity = started && !CINE.on && !STANDOFF.on ? 1 : 0; }
 function toast(text, ms = 2000) { toastEl.textContent = text; toastEl.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.style.opacity = 0, ms); }
 
 // ─────────────────────────── Flora & props: red maples, bamboo grove, lanterns, shrine, campfires ───────────────────────────
@@ -4447,14 +4453,14 @@ const HAIKU = [];
     ['Snow on the high stones.', 'The castle is a white bird', 'with a broken wing.'],
     ['Grass bends, and rises.', 'The river does not recall', 'the boats that it bore.'],
   ];
-  for (let i = 0; i < 9000 && HAIKU.length < 4; i++) {
+  for (let i = 0; i < 30000 && HAIKU.length < 4; i++) {
     const x = (R() - 0.5) * 1150, z = (R() - 0.5) * 1150, h = terrainH(x, z);
-    if (h < 28 || h > 230 || pathMask(x, z) > 0.02 || riverWet(x, z) > 0) continue;
+    if (h < 20 || h > 260 || pathMask(x, z) > 0.02 || riverWet(x, z) > 0) continue;
     if (Math.abs(terrainH(x + 3, z) - terrainH(x - 3, z)) > 1.2 || Math.abs(terrainH(x, z + 3) - terrainH(x, z - 3)) > 1.2) continue;
-    if (Math.hypot(x - C.x, z - C.z) < 150 || HAIKU.some(q => Math.hypot(q.x - x, q.z - z) < 260) || SPRINGS.some(q => Math.hypot(q.x - x, q.z - z) < 60)) continue;
+    if (Math.hypot(x - C.x, z - C.z) < 150 || HAIKU.some(q => Math.hypot(q.x - x, q.z - z) < 200) || SPRINGS.some(q => Math.hypot(q.x - x, q.z - z) < 60)) continue;
     let best = -1, drop = 0;   // which way the land falls away the furthest: that's the view
     for (let k = 0; k < 16; k++) { const a = k / 16 * 6.283, d = h - Math.max(terrainH(x + Math.cos(a) * 45, z + Math.sin(a) * 45), terrainH(x + Math.cos(a) * 110, z + Math.sin(a) * 110) + 12); if (d > drop) { drop = d; best = a; } }
-    if (drop < 30) continue;
+    if (drop < 22) continue;
     HAIKU.push({ x, z, y: h, view: best, poem: POEMS[HAIKU.length], done: false });
   }
   const geos = [], paper = new THREE.MeshStandardMaterial({ color: 0xf2ece0, roughness: 0.9, side: THREE.DoubleSide }), wood = new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 0.85 });
@@ -6039,6 +6045,10 @@ function updateCine(raw) {
   const pos = a0.clone().lerp(a1, k), look = b0.clone().lerp(b1, k), T = CINE.T, h = (S.hand ?? 0.004) * pos.distanceTo(look);   // a camera operator's breathing
   look.x += (Math.sin(T * 0.83) + Math.sin(T * 2.1) * 0.35) * h; look.y += (Math.sin(T * 1.17 + 1) + Math.sin(T * 2.7) * 0.3) * h * 0.7; look.z += Math.sin(T * 0.71 + 2) * h;
   if (S.room) clampToRoom(S.room, pos); else pos.y = Math.max(pos.y, terrainH(pos.x, pos.z) + 0.75, 0.6);   // never let the lens sink into the grass or the sea
+  if (!S.room) for (let it = 0; it < 10; it++) {   // and never let a hill stand between the lens and the subject
+    let blocked = false; for (let q = 1; q < 10; q++) { const f = q / 10; if (terrainH(pos.x + (look.x - pos.x) * f, pos.z + (look.z - pos.z) * f) + 0.3 > pos.y + (look.y - pos.y) * f) { blocked = true; break; } }
+    if (!blocked) break; pos.y += 0.6;
+  }
   const fov = Array.isArray(S.fov) ? lerp(S.fov[0], S.fov[1], k) : S.fov || 40;
   window.__freeCam = [pos, look, fov];
   if (S.key) { const d = pos.clone().sub(look); d.y = 0; d.normalize(); CINE.key = look.clone().addScaledVector(d, 1.1).add(_V(-d.z * 0.75, 0.55, d.x * 0.75)); CINE.keyI = PRESETS[presetIdx].fromMoon ? 3.4 : PRESETS[presetIdx].rain ? 2.6 : 1.5; } else CINE.key = null;
@@ -6363,8 +6373,12 @@ function updateStandoff(raw) {
   let pos, look, fov;
   if (S.phase === 'strike') { pos = hp.clone().addScaledVector(_V(ux, 0, uz), -1.5).addScaledVector(n, 0.6).add(_V(0, -0.15, 0)); look = eh; fov = 34; }
   else if (S.phase === 'after') { const k = smooth(0, 2.2, S.t); pos = m.clone().addScaledVector(n, -3.2 + k * 0.6).add(_V(0, -0.9 + k * 0.3, 0)).addScaledVector(_V(ux, 0, uz), 1.2); look = hp.clone().add(_V(0, -0.35, 0)); fov = 40 - k * 6; }
-  else { const k = S.phase === 'wait' ? smooth(0, S.strikeAt, S.t) : 0; pos = m.clone().addScaledVector(n, Math.max(4.2, d * 0.95) - k * 1.2).add(_V(0, -0.35, 0)); look = m.clone().add(_V(0, -0.2, 0)); fov = 30 - k * 8; }   // wide enough to hold both of you as he walks out
+  else { const k = S.phase === 'wait' ? smooth(0, S.strikeAt, S.t) : 0; pos = m.clone().addScaledVector(n, Math.max(4.2, d * 0.8) - k * 1.2).add(_V(0, -0.35 + Math.max(0, d - 6) * 0.1, 0)); look = m.clone().add(_V(0, -0.2, 0)); fov = 30 - k * 8; }   // wide enough to hold both of you as he walks out
   pos.y = Math.max(pos.y, groundH(pos.x, pos.z) + 0.3);
+  for (let it = 0; it < 12; it++) {   // keep a clear line of sight over the rise of the land
+    let blocked = false; for (let k = 1; k < 10; k++) { const f = k / 10, x = pos.x + (look.x - pos.x) * f, z = pos.z + (look.z - pos.z) * f, y = pos.y + (look.y - pos.y) * f; if (terrainH(x, z) + 0.45 > y) { blocked = true; break; } }
+    if (!blocked) break; pos.y += 0.5;
+  }
   window.__freeCam = [pos, look, fov];
   if ((frameNo & 31) === 0 && S.phase !== 'strike') window.__guideWind = { x: n.x, z: n.z, t: 2 };   // the wind blows leaves between you
 }
