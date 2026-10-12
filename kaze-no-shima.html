@@ -721,7 +721,7 @@ const SHADOW_GLSL = `#define SHADOW_RES ${SHADOW_RES}
 // built straight from the height function (cart ruts, lumps, ragged path edges), and the coarse mesh
 // cuts itself away underneath them. Keeps the big island about as cheap to draw as the small one was.
 // The village's footprint: inside its fence the ground is trodden mud, not meadow
-const VMUD = { cx: 340, cz: 326, ux: 0.76, uz: 0.65, U: 92, V: 46 };
+const VMUD = { cx: 340, cz: 326, ux: 0.76, uz: 0.65, U: 92, V: 52 };
 function villageMud(x, z) {
   const dx = x - VMUD.cx, dz = z - VMUD.cz, u = dx * VMUD.ux + dz * VMUD.uz, v = -dx * VMUD.uz + dz * VMUD.ux;
   if (Math.abs(u) > VMUD.U + 10 || Math.abs(v) > VMUD.V + 10) return 0;
@@ -3242,7 +3242,7 @@ function spawnVillagers() {
     villagers.push(Object.assign(w, { root, face, pos: new THREE.Vector3(x, groundH(x, z), z), vel: new THREE.Vector3(), yaw: Math.random() * 6.28, target: null, wait: Math.random() * 4, bow: 0, greeted: false, idx: i }));
   });
 }
-const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 95, at: () => VILLAGE }, { name: 'SHRINE OF THE BEACON · 狼煙神社', r: 20, at: () => window.__shrine }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
+const PLACES = [{ name: 'KAWABE VILLAGE · 川辺村', r: 95, at: () => VILLAGE }, { name: 'SHRINE OF THE BEACON · 狼煙神社', r: 24, at: () => window.__shrine }, { name: 'SUMMIT SHRINE · 山頂', r: 22, at: () => window.__summit }];
 function updatePlaces() {   // the name of a place appears as you arrive
   for (const pl of PLACES) {
     const c = pl.at(); if (!c) continue;
@@ -3935,7 +3935,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
   }
   const PERP = [-VDIR[1], VDIR[0]], at = (u, v) => [VILLAGE[0] + VDIR[0] * u + PERP[0] * v, VILLAGE[1] + VDIR[1] * u + PERP[1] * v];
   const layout = [[-34, 12.5, 7.5, 5.2], [-17, 12.5, 8.5, 5.6], [1, 12.5, 7.2, 5.2], [19, 12.5, 9, 5.8], [-34, -12.5, 8, 5.4], [29, -12.5, 7.8, 5.4], [43, 1, 11, 6.5, true]];
-  const inPlaza = (u, v) => Math.abs(u) < 23 && v < -8 && v > -46;   // the shrine compound
+  const inPlaza = (u, v) => Math.abs(u) < 27 && v < -7 && v > -50;   // the shrine compound
   const placed = [];
   const fits = (x, z, yaw, w, d) => {
     const c = Math.cos(yaw), sn = Math.sin(yaw); let lo = 1e9, hi = -1e9;
@@ -3970,8 +3970,8 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
   // ── The great shrine in the middle of the village: a walled compound with a vermilion fence, a big hall,
   //    a tall beacon tower whose signal fire burns day and night, guardian statues and a lantern-lined approach ──
   {
-    const [cx, cz] = at(0, -27), yaw = faceFor(-27), C = Math.cos(yaw), Sn = Math.sin(yaw);
-    const hw = 19, hd = 15, gateW = 3.4;   // compound half-width (along the street) and half-depth; the gate opening's half-width
+    const [cx, cz] = at(0, -28), yaw = faceFor(-28), C = Math.cos(yaw), Sn = Math.sin(yaw);
+    const hw = 23, hd = 18, gateW = 3.4;   // compound half-width (along the street) and half-depth; the gate opening's half-width
     const L = (lx, lz) => [cx + lx * C + lz * Sn, cz - lx * Sn + lz * C];
     const S0 = { x: cx, z: cz, yaw, base: 0, c: C, s: Sn };
     const at0 = (lx, lz) => terrainH(...L(lx, lz));
@@ -4000,14 +4000,14 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
       piece(K, 'stone', new THREE.SphereGeometry(0.2, 10, 8), 0, 2.05, 0.6); box(K, 'stone', 0.25, 0.5, 0.25, -0.25, 1.25, 0.35); box(K, 'stone', 0.25, 0.5, 0.25, 0.25, 1.25, 0.35);
       COLLIDERS_INIT.push({ x: kx, z: kz, r: 0.85 });
     }
-    for (let k = 0; k < 4; k++) for (const sd of [-1, 1]) { const [lx, lz] = L(sd * 3.2, hd - 2.5 - k * 3.2); stoneLantern(lx, lz, yaw); }
+    for (let k = 0; k < 3; k++) for (const sd of [-1, 1]) { const [lx, lz] = L(sd * 3.4, hd - 2.5 - k * 3.4); stoneLantern(lx, lz, yaw); }
     // the main hall on a stone terrace, double roof of grey tile, chigi and katsuogi on the ridge
-    const hz0 = -4.5, w = 11, d = 8, tp = 1.1;
-    let lo = 1e9, hi = -1e9; for (const [a, b] of [[-7, -6], [7, -6], [-7, 6], [7, 6]]) { const gy = at0(a, hz0 + b); lo = Math.min(lo, gy); hi = Math.max(hi, gy); }
+    const hz0 = -5.5, w = 15, d = 10.5, tp = 1.3, TW = 9.8, TD = 7.5;   // hall size; terrace half-width / half-depth
+    let lo = 1e9, hi = -1e9; for (const [a, b] of [[-TW, -TD], [TW, -TD], [-TW, TD], [TW, TD]]) { const gy = at0(a, hz0 + b); lo = Math.min(lo, gy); hi = Math.max(hi, gy); }
     const S = { x: L(0, hz0)[0], z: L(0, hz0)[1], yaw, base: hi + 0.1, c: C, s: Sn };
-    box(S, 'stone', 14, tp + hi - lo + 0.6, 12, 0, tp - (tp + hi - lo + 0.6) / 2, 0);
-    for (let k = 0; k < 4; k++) box(S, 'stone', 4.5, 0.3, 0.55, 0, 0.15 + k * 0.28, 6 + (3 - k) * 0.5);
-    const fl = tp + 0.55, eave = fl + 3.6;
+    box(S, 'stone', TW * 2, tp + hi - lo + 0.6, TD * 2, 0, tp - (tp + hi - lo + 0.6) / 2, 0);
+    for (let k = 0; k < 5; k++) box(S, 'stone', 5, 0.28, 0.55, 0, 0.14 + k * 0.26, TD + (4 - k) * 0.5 + 0.25);
+    const fl = tp + 0.6, eave = fl + 4.6;
     box(S, 'wood', w + 2.2, 0.16, d + 2, 0, fl, 0);
     for (let a = -1; a <= 1; a += 0.5) for (const b of [-1, 1]) box(S, 'red', 0.36, eave - tp, 0.36, a * w / 2, (eave + tp) / 2, b * d / 2);
     for (const a of [-1, 1]) for (const b of [-0.5, 0, 0.5]) box(S, 'red', 0.36, eave - tp, 0.36, a * w / 2, (eave + tp) / 2, b * d / 2);
@@ -4019,25 +4019,25 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     piece(S, 'straw', new THREE.CylinderGeometry(0.16, 0.16, w + 0.6, 12).rotateZ(Math.PI / 2), 0, eave - 0.35, d / 2 + 0.85);
     box(S, 'wood', 2, 0.85, 1, 0, fl + 0.5, d / 2 + 2.2); box(S, 'wood', 2.1, 0.1, 1.1, 0, fl + 0.95, d / 2 + 2.2);
     piece(S, 'iron', new THREE.SphereGeometry(0.3, 16, 12), 0, eave - 0.7, d / 2 + 1.4); piece(S, 'red', new THREE.CylinderGeometry(0.045, 0.045, eave - fl - 1.6, 6), 0.08, fl + (eave - fl - 1.6) / 2 + 0.6, d / 2 + 1.45);
-    for (const [rh, half, pitch, extra] of [[eave, d / 2 + 2.6, 0.38, 1.0], [eave + 2.0, d / 2 + 1.0, 0.55, 0]]) {   // two tiers of roof
+    for (const [rh, half, pitch, extra] of [[eave, d / 2 + 3.0, 0.38, 1.2], [eave + 2.6, d / 2 + 1.2, 0.55, 0]]) {   // two tiers of roof
       const rise = half * Math.tan(pitch), slab = half / Math.cos(pitch) + 0.3;
       for (const sd of [-1, 1]) box(S, 'tile', w + 3.6 - (rh > eave ? 2 : 0), 0.3, slab, 0, rh + rise / 2, sd * half / 2 + (sd > 0 ? extra : 0), sd * pitch, 0, 0);
       if (rh > eave) {
         box(S, 'tile', w + 1.2, 0.45, 0.7, 0, rh + rise + 0.15, 0);
         for (const sd of [-1, 1]) for (const k of [-1, 1]) box(S, 'wood', 0.15, 1.7, 0.15, sd * (w / 2 + 0.4), rh + rise + 0.8, k * 0.3, k * 0.6, 0, 0);
-        for (let i = 0; i < 5; i++) piece(S, 'wood', new THREE.CylinderGeometry(0.17, 0.17, 1.0, 10).rotateX(Math.PI / 2), -2.4 + i * 1.2, rh + rise + 0.5, 0);
+        for (let i = 0; i < 7; i++) piece(S, 'wood', new THREE.CylinderGeometry(0.2, 0.2, 1.2, 10).rotateX(Math.PI / 2), -3.6 + i * 1.2, rh + rise + 0.55, 0);
         for (const sd of [-1, 1]) { const tri = new THREE.Shape([new THREE.Vector2(-half + 0.4, 0), new THREE.Vector2(half - 0.4, 0), new THREE.Vector2(0, rise * 0.85)]);
           piece(S, 'plaster', new THREE.ExtrudeGeometry(tri, { depth: 0.1, bevelEnabled: false }).translate(0, 0, -0.05), sd * (w / 2 - 0.6), rh, 0, 0, Math.PI / 2, 0); }
       }
     }
-    box(S, 'plaster', w - 1.2, 2.0, d - 0.8, 0, eave + 1.0, -0.2);   // the upper storey between the two roofs
-    FLOORS.push({ x: S.x, z: S.z, c: C, s: Sn, hw: 7, hd0: -6, hd1: 6, y: S.base + tp }, { x: S.x, z: S.z, c: C, s: Sn, hw: w / 2 + 1.1, hd0: -d / 2 - 1, hd1: d / 2 + 1, y: S.base + fl + 0.08 });
-    for (let k = 0; k < 4; k++) FLOORS.push({ x: S.x, z: S.z, c: C, s: Sn, hw: 2.25, hd0: 6 + (3 - k) * 0.5 - 0.25, hd1: 6 + (3 - k) * 0.5 + 0.25, y: S.base + 0.3 + k * 0.28 });
+    box(S, 'plaster', w - 1.4, 2.6, d - 1.0, 0, eave + 1.3, -0.2);   // the upper storey between the two roofs
+    FLOORS.push({ x: S.x, z: S.z, c: C, s: Sn, hw: TW, hd0: -TD, hd1: TD, y: S.base + tp }, { x: S.x, z: S.z, c: C, s: Sn, hw: w / 2 + 1.1, hd0: -d / 2 - 1, hd1: d / 2 + 1, y: S.base + fl + 0.08 });
+    for (let k = 0; k < 5; k++) FLOORS.push({ x: S.x, z: S.z, c: C, s: Sn, hw: 2.5, hd0: TD + (4 - k) * 0.5, hd1: TD + (4 - k) * 0.5 + 0.5, y: S.base + 0.28 + k * 0.26 });
     const wc = (lx, lz, r = 0.32) => COLLIDERS_INIT.push({ x: S.x + lx * C + lz * Sn, z: S.z - lx * Sn + lz * C, r });
     for (let a = -w / 2; a <= w / 2; a += 0.55) wc(a, -d / 2); for (let b = -d / 2; b <= d / 2; b += 0.55) { wc(-w / 2, b); wc(w / 2, b); }
     for (let a = -1; a <= 1; a += 0.5) wc(a * w / 2, d / 2 + 1.6, 0.25); wc(0, d / 2 + 2.2, 0.75);
     // the beacon tower: four splayed legs braced in tiers, a ladder, a railed platform and an iron brazier with the signal fire
-    { const tx = hw - 6, tz = -hd + 6, [bx, bz] = L(tx, tz), by = terrainH(bx, bz), TH = 15, B = { x: bx, z: bz, yaw, base: by, c: C, s: Sn };
+    { const tx = hw - 6.5, tz = -hd + 6.5, [bx, bz] = L(tx, tz), by = terrainH(bx, bz), TH = 17, B = { x: bx, z: bz, yaw, base: by, c: C, s: Sn };
       for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         piece(B, 'wood', new THREE.CylinderGeometry(0.2, 0.28, TH + 0.6, 8).translate(0, (TH + 0.6) / 2, 0).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(b * 0.07, 0, -a * 0.07))), a * 1.6, 0, b * 1.6);
         COLLIDERS_INIT.push({ x: bx + a * 2.4 * C + b * 2.4 * Sn, z: bz - a * 2.4 * Sn + b * 2.4 * C, r: 0.4 });
@@ -4131,7 +4131,7 @@ const SPECIES = [
     const h = sampleHM(x, z, 0); if (h < 1.1 || h > 60) return false;
     if (pathMask(x, z) > 0.03 || riverWet(x, z) > 0 || _rd < _rw + 3) return false;
     if (Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 9) return false;
-    if (window.__shrine && Math.hypot(x - window.__shrine[0], z - window.__shrine[1]) < 26) return false;   // keep the shrine compound open
+    if (window.__shrine && Math.hypot(x - window.__shrine[0], z - window.__shrine[1]) < 31) return false;   // keep the shrine compound open
     for (const hs of VILLAGE_HOUSES) if (Math.hypot(hs.x - x, hs.z - z) < hs.w / 2 + 7) return false;
     if (Math.abs(sampleHM(x + 2, z, 0) - sampleHM(x - 2, z, 0)) > 2.4) return false;   // not on cliffs
     return mapleSpots.every(p => Math.hypot(p[0] - x, p[1] - z) > gap);
