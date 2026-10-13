@@ -425,11 +425,43 @@ function mountainH(x, z) {
   const ridged = (f, o) => { const n = 1 - Math.abs(2 * fbm(x * f + o, z * f - o, 5) - 1); return n * n; };
   return m * m * (80 + 400 * ridged(0.0032, 7) * (0.55 + 0.45 * m) + 70 * ridged(0.011, 3) * m + 28 * ridged(0.034, 11) * m * m);   // crags and gullies on the high ground
 }
+// ── Landforms: big rounded hills, and cuestas — tilted plateaus you walk up from behind that end in a sheer cliff (vantage points) ──
+const LANDFORMS = [];
+{
+  const R = rng32(97531), RIV = [[[-120, -700], [-90, -520], [-60, -280], [-100, -60], [10, 180], [40, 400], [110, 660]], [[300, -680], [330, -500], [450, -300], [650, -260], [800, -240]], [[330, 40], [300, 160], [345, 250], [400, 330], [420, 430], [440, 560], [450, 740]]];
+  const segD = (x, z, L) => { let d = 1e9; for (let i = 0; i < L.length - 1; i++) { const [ax, az] = L[i], [bx, bz] = L[i + 1], ex = bx - ax, ez = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez))); d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t)); } return d; };
+  const pts = pathPts.filter((_, k) => k % 3 === 0);
+  const want = [['hill', 5], ['cuesta', 5]];
+  for (const [type, count] of want) for (let i = 0, made = 0; i < 4000 && made < count; i++) {
+    const x = (R() - 0.5) * 1150, z = (R() - 0.5) * 1150, Rd = type === 'hill' ? 105 + R() * 70 : 70 + R() * 45;
+    const t = Math.hypot(x, z) / islandRadius(x, z); if (t > 0.62 || Math.hypot(x, z) + Rd > islandRadius(x, z) * 0.7) continue;
+    if (mountainH(x, z) > 8 || Math.hypot(x - 340, z - 326) < Rd + 160) continue;   // not on the range, not on Kawabe
+    if (pts.some(p => Math.hypot(p[0] - x, p[1] - z) < Rd + 22) || RIV.some(L => segD(x, z, L) < Rd + 40)) continue;   // clear of every road and river
+    if (LANDFORMS.some(L => Math.hypot(L.x - x, L.z - z) < L.r + Rd + 40)) continue;
+    const a = R() * 6.283;
+    LANDFORMS.push({ type, x, z, r: Rd, h: type === 'hill' ? 38 + R() * 38 : 24 + R() * 20, dx: Math.cos(a), dz: Math.sin(a), seed: R() * 50 });
+    made++;
+  }
+}
+function landformH(x, z) {
+  let h = 0;
+  for (const L of LANDFORMS) {
+    const dx = x - L.x, dz = z - L.z, d2 = dx * dx + dz * dz; if (d2 > L.r * L.r * 1.6) continue;
+    const ang = Math.atan2(dz, dx), d = Math.sqrt(d2) * (1 + (fbm(Math.cos(ang) * 1.5 + L.seed, Math.sin(ang) * 1.5 - L.seed) - 0.5) * 0.5);   // ragged, not round
+    if (L.type === 'hill') { const k = Math.max(0, 1 - d / L.r); h += L.h * k * k * (3 - 2 * k) * (0.85 + 0.3 * fbm(x * 0.02 + L.seed, z * 0.02)); }
+    else {   // rises gently from the back to a flat-ish top, then drops away in a cliff at the front and sides
+      const u = (dx * L.dx + dz * L.dz) / L.r, ramp = smooth(-1.05, 0.55, u), rim = 1 - smooth(L.r - 10, L.r - 1, d);
+      h += L.h * ramp * rim * (0.92 + 0.16 * fbm(x * 0.03 + L.seed, z * 0.03));
+    }
+  }
+  return h;
+}
 function terrainBase(x, z, pm) {
   const t = Math.hypot(x, z) / islandRadius(x, z);
   const land = 1 - smooth(0.6, 1.0, t);
   let h = lerp(-6, 0.35, 1 - smooth(0.93, 1.35, t));
   h += land * mountainH(x, z);
+  if (LANDFORMS.length) h += land * landformH(x, z);
   h += land * (24 * smooth(0.2, 0.8, fbm(x * 0.0022 + 1, z * 0.0022 + 4)) + 1.2 + 16 * fbm(x * 0.0065 + 3, z * 0.0065 - 5) + 3 * fbm(x * 0.025 + 9, z * 0.025) + 1.3 * fbm(x * 0.05, z * 0.05) + 0.35 * fbm(x * 0.17, z * 0.17));
   if (pm > 0) {
     if (_pyReady) h = lerp(h, _py, pm * 0.9);                                   // roads are levelled across the slope (a cut ledge on hillsides)
@@ -538,6 +570,11 @@ const HMF = new Float32Array(HM * HM * 4); // height, path, shore, meadow patch
 for (let j = 0; j < HM; j++) for (let i = 0; i < HM; i++) {
   const x = HM_MIN + i / (HM - 1) * HM_SIZE, z = HM_MIN + j / (HM - 1) * HM_SIZE, pm = pathMask(x, z), h = terrainHp(x, z, pm), o = (j * HM + i) * 4;
   HMF[o] = h; HMF[o + 1] = pm; HMF[o + 2] = smooth(0.5, 1.3, h) * (1 - riverWet(x, z)); HMF[o + 3] = fbm(x * 0.05 + 40, z * 0.05);
+}
+{ // bare rock on cliff faces: grass (which reads the shore channel) gives up where the land is steeper than about 60 degrees
+  const cs = HM_SIZE / (HM - 1);
+  for (let j = 1; j < HM - 1; j++) for (let i = 1; i < HM - 1; i++) { const o = (j * HM + i) * 4, sx = (HMF[o + 4] - HMF[o - 4]) / (2 * cs), sz = (HMF[o + HM * 4] - HMF[o - HM * 4]) / (2 * cs);
+    HMF[o + 2] *= 1 - smooth(1.15, 1.9, Math.hypot(sx, sz)); }
 }
 function sampleHM(x, z, ch) {
   const fx = (x - HM_MIN) / HM_SIZE * (HM - 1), fz = (z - HM_MIN) / HM_SIZE * (HM - 1);
@@ -814,7 +851,7 @@ function terrainCompile(sh) {
     float grassy = vGrassy;
     // alpine bands: tufts give way to bare rock, then snowfields; steep faces stay rocky
     float slopeA = 1.0 - normalize(vWNrm).y, altN = vWPos.y + (vnoise2(vWPos.xz * 0.02) - 0.5) * 22.0;
-    float rockW = max(smoothstep(58.0, 85.0, altN), smoothstep(0.34, 0.52, slopeA) * smoothstep(12.0, 30.0, vWPos.y));
+    float rockW = max(smoothstep(58.0, 85.0, altN), smoothstep(0.34, 0.52, slopeA) * smoothstep(2.0, 8.0, vWPos.y));   // every steep face is bare rock: cliffs read as cliffs
     float snowW = smoothstep(165.0, 195.0, altN + (vnoise2(vWPos.xz * 0.05 + 9.0) - 0.5) * 16.0) * (1.0 - smoothstep(0.3, 0.52, slopeA));
     grassy *= 1.0 - max(rockW, snowW);
     float sandW = (1.0 - smoothstep(0.55, 1.15, vWPos.y + (vnoise2(vWPos.xz * 0.08) - 0.5) * 0.5)) * (1.0 - rockW), wetW = 1.0 - smoothstep(0.05, 0.38, vWPos.y);   // the beach, darker where the waves reach
