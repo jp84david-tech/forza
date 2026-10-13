@@ -5051,10 +5051,12 @@ const mapleSpots = [];   // [x, z, species, scale, template]
 const SPECIES = [
   { name: 'red maple', leaf: 0, hsl: [0.985, 0.85, 0.34], var: [0.04, 0.05, 0.08], ground: 'leaf', map: '#d8452f' },
   { name: 'gold maple', leaf: 0, hsl: [0.1, 0.88, 0.46], var: [0.035, 0.05, 0.08], ground: 'leaf', map: '#e0a526' },
-  { name: 'zelkova', leaf: 0, hsl: [0.27, 0.5, 0.26], var: [0.05, 0.08, 0.06], ground: null, map: '#4f7a3a', tall: true },
+  { name: 'zelkova', leaf: 2, hsl: [0.27, 0.5, 0.26], var: [0.05, 0.08, 0.06], ground: null, map: '#4f7a3a', tall: true },
   { name: 'cherry', leaf: 1, hsl: [0.94, 0.55, 0.8], var: [0.02, 0.15, 0.06], ground: 'petal', map: '#f2a7c3', cherry: true },
   { name: 'red cherry', leaf: 1, hsl: [0.975, 0.68, 0.6], var: [0.02, 0.12, 0.07], ground: 'petal', map: '#d9467a', cherry: true },
   { name: 'white cherry', leaf: 1, hsl: [0.95, 0.35, 0.9], var: [0.015, 0.1, 0.04], ground: 'petal', map: '#f6eef0', cherry: true },
+  { name: 'cedar', leaf: 3, hsl: [0.33, 0.42, 0.14], var: [0.03, 0.06, 0.035], ground: null, map: '#22402a', conifer: true },   // sugi: tall, straight, nearly black-green
+  { name: 'camphor', leaf: 2, hsl: [0.26, 0.48, 0.17], var: [0.04, 0.08, 0.045], ground: 'leaf', groundHsl: [0.075, 0.5, 0.26], map: '#2d4a25', bushy: true },   // kusunoki: dense, dark, bushy crowns over dry leaf litter
 ];
 {
   const pick = r => r < 0.44 ? 0 : r < 0.6 ? 1 : r < 0.78 ? 2 : r < 0.93 ? 3 : 4;
@@ -5079,6 +5081,18 @@ const SPECIES = [
   grove(0, 0, 600, 260, 14, 44);                                      // scattered across the island
   grove(0, -560, 260, 60, 14, 45, 2);                                 // green trees climbing the foothills
   grove(0, 0, 640, 300, 12, 46);                                      // and many more scattered everywhere
+  // Forests: cedar stands on the foothills and in the west, dark camphor woods in the east and south-west
+  const forest = (cx, cz, r, n, gap, seed, sp, hmax = 140) => { const R = rng32(seed); let made = 0;
+    for (let i = 0; i < n * 25 && made < n; i++) {
+      const a = R() * 6.283, d = Math.sqrt(R()) * r, x = cx + Math.cos(a) * d * 1.25, z = cz + Math.sin(a) * d, h = sampleHM(x, z, 0);
+      if (h < 2 || h > hmax || pathMask(x, z) > 0.03 || riverWet(x, z) > 0) continue;
+      if (Math.abs(sampleHM(x + 2, z, 0) - sampleHM(x - 2, z, 0)) > 2.6 || Math.abs(sampleHM(x, z + 2, 0) - sampleHM(x, z - 2, 0)) > 2.6) continue;
+      if (Math.hypot(x - VILLAGE[0], z - VILLAGE[1]) < 120 || Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 40 || (window.__shrine && Math.hypot(x - window.__shrine[0], z - window.__shrine[1]) < 40)) continue;
+      if (mapleSpots.some(p => Math.hypot(p[0] - x, p[1] - z) < gap)) continue;
+      mapleSpots.push([x, z, sp, 0.85 + R() * 0.6, Math.floor(R() * 1e6)]); made++;
+    } };
+  forest(0, -470, 180, LOW ? 120 : 240, 6, 61, 6); forest(-440, -60, 115, LOW ? 70 : 140, 6, 62, 6); forest(520, 150, 85, LOW ? 40 : 80, 6, 65, 6);
+  forest(330, -120, 100, LOW ? 60 : 120, 5.5, 63, 7); forest(-330, 420, 95, LOW ? 55 : 110, 5.5, 64, 7); forest(-150, 200, 70, LOW ? 30 : 60, 6, 66, 7);
   grove(-300, 120, 70, 24, 6, 47, 0); grove(300, -150, 60, 20, 6, 48, 4); grove(-60, 330, 60, 18, 6, 49, 3); grove(420, 60, 55, 18, 6, 50, 1); grove(-380, -380, 60, 18, 6.5, 51, 5);
   // A few ancient giants, ten times a man's height or more, standing alone in the meadows: red maples, white and pink cherries, gold
   {
@@ -5096,31 +5110,58 @@ const SPECIES = [
 }
 window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
 const mapleClusters = [];   // world positions of canopy clusters (for falling leaves): [x, y, z, species]
-const leafClusterTex = (kind) => canvasTex(256, (x, S) => {
-  const R = rng32(kind ? 91 : 77);
-  const mapleLeaf = (r) => { x.beginPath(); for (let i = 0; i <= 70; i++) { const a = i / 70 * Math.PI * 2 - Math.PI / 2, lobe = Math.pow(Math.abs(Math.cos(a * 3.5)), 0.7), back = a > 0.6 && a < 2.55 ? 0.35 : 1, rr = r * (0.32 + 0.68 * lobe) * back; i ? x.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : x.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); } x.fill(); };
-  const flower = (r) => { for (let k = 0; k < 5; k++) { x.save(); x.rotate(k * 1.2566); x.beginPath(); x.ellipse(0, -r * 0.55, r * 0.36, r * 0.55, 0, 0, 6.283); x.fill(); x.restore(); } };
-  const n = kind ? 120 : 46;
+// Leaf sprays for the tree crowns, painted twig by twig: grey value only (each card takes its colour from its tree), with
+// shading across every leaf, a midrib and veins, so a canopy reads as foliage and not as flat stars.
+// 0 maple · 1 cherry blossom · 2 broadleaf (zelkova, camphor) · 3 cedar needle sprays
+const leafClusterTex = (kind) => canvasTex(LOW ? 256 : 512, (x, S) => {
+  const R = rng32([77, 91, 63, 45][kind]), k = S / 512;
+  x.lineCap = 'round';
+  const twig = (x0, y0, a, len, w, depth) => {   // the woody spray the leaves hang from
+    const x1 = x0 + Math.cos(a) * len, y1 = y0 + Math.sin(a) * len;
+    x.strokeStyle = `rgb(${38 + depth * 6},${30 + depth * 5},${26 + depth * 4})`; x.lineWidth = w; x.beginPath(); x.moveTo(x0, y0); x.quadraticCurveTo((x0 + x1) / 2 + (R() - 0.5) * len * 0.25, (y0 + y1) / 2 + (R() - 0.5) * len * 0.25, x1, y1); x.stroke();
+    const tips = [[x1, y1, a]];
+    if (depth < 3) for (let i = 0; i < 2 + (R() < 0.4 ? 1 : 0); i++) tips.push(...twig(x0 + (x1 - x0) * (0.4 + R() * 0.6), y0 + (y1 - y0) * (0.4 + R() * 0.6), a + (R() - 0.5) * 1.6, len * (0.5 + R() * 0.2), w * 0.62, depth + 1));
+    return tips;
+  };
+  const shade = (r, v) => { const g = x.createRadialGradient(-r * 0.2, -r * 0.3, r * 0.05, 0, 0, r * 1.05); g.addColorStop(0, `rgb(${Math.min(255, v + 40)},${Math.min(255, v + 40)},${Math.min(255, v + 40)})`); g.addColorStop(1, `rgb(${v * 0.55 | 0},${v * 0.55 | 0},${v * 0.55 | 0})`); return g; };
+  const veins = (r, n, spread) => { x.strokeStyle = 'rgba(0,0,0,0.28)'; x.lineWidth = Math.max(1, r * 0.06); x.beginPath(); x.moveTo(0, r * 0.95); x.lineTo(0, -r * 0.85); x.stroke(); x.lineWidth = Math.max(0.6, r * 0.03);
+    for (let i = 1; i <= n; i++) { const t = i / (n + 1); for (const sd of [-1, 1]) { x.beginPath(); x.moveTo(0, r * (0.8 - t * 1.5)); x.lineTo(sd * r * spread * Math.sin(t * Math.PI), r * (0.55 - t * 1.6)); x.stroke(); } } };
+  const maple = r => { x.beginPath(); for (let i = 0; i <= 90; i++) { const a = i / 90 * Math.PI * 2 - Math.PI / 2, lobe = Math.pow(Math.abs(Math.cos(a * 3.5)), 0.6), back = a > 0.6 && a < 2.55 ? 0.3 : 1, saw = 1 + 0.06 * Math.sin(a * 40), rr = r * (0.42 + 0.58 * lobe) * back * saw; x.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } x.fill();
+    x.strokeStyle = 'rgba(0,0,0,0.3)'; x.lineWidth = Math.max(0.7, r * 0.045); for (const a of [-Math.PI / 2, -Math.PI / 2 - 1.05, -Math.PI / 2 + 1.05, -Math.PI / 2 - 2.0, -Math.PI / 2 + 2.0]) { x.beginPath(); x.moveTo(0, 0); x.lineTo(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85); x.stroke(); } };
+  const oval = r => { x.beginPath(); for (let i = 0; i <= 60; i++) { const t = i / 60 * Math.PI * 2, saw = 1 + 0.05 * Math.abs(Math.sin(t * 18)); x.lineTo(Math.sin(t) * r * 0.42 * saw, -Math.cos(t) * r * (Math.cos(t) < 0 ? 1.05 : 0.8)); } x.fill(); veins(r, 6, 0.38); };
+  const blossom = r => { for (let p = 0; p < 5; p++) { x.save(); x.rotate(p * 1.2566); x.beginPath(); x.moveTo(0, 0); x.bezierCurveTo(-r * 0.5, -r * 0.3, -r * 0.45, -r * 0.95, -r * 0.08, -r); x.lineTo(0, -r * 0.86); x.lineTo(r * 0.08, -r); x.bezierCurveTo(r * 0.45, -r * 0.95, r * 0.5, -r * 0.3, 0, 0); x.fill(); x.restore(); }
+    x.fillStyle = 'rgba(70,40,40,0.75)'; x.beginPath(); x.arc(0, 0, r * 0.16, 0, 6.283); x.fill(); x.strokeStyle = 'rgba(80,50,40,0.6)'; x.lineWidth = Math.max(0.6, r * 0.04); for (let i = 0; i < 9; i++) { const a = i * 0.7; x.beginPath(); x.moveTo(0, 0); x.lineTo(Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.42); x.stroke(); } };
+  if (kind === 3) {   // cedar: flat fans of scale-like needles along drooping shoots
+    for (let i = 0; i < 26; i++) {
+      const a = -Math.PI / 2 + (R() - 0.5) * 2.6, x0 = S / 2 + (R() - 0.5) * S * 0.15, y0 = S * 0.62 + R() * S * 0.3, len = S * (0.22 + R() * 0.2), v = 90 + R() * 120 | 0;
+      for (let j = 0; j < 30; j++) { const t = j / 30, px = x0 + Math.cos(a) * len * t, py = y0 + Math.sin(a) * len * t + t * t * len * 0.25, nl = (1 - t * 0.7) * S * 0.045 * (0.7 + R() * 0.6);
+        for (const sd of [-1, 1]) { const b = a + sd * (0.9 + R() * 0.4); x.strokeStyle = `rgb(${v * (0.7 + R() * 0.4) | 0},${v | 0},${v * 0.85 | 0})`; x.lineWidth = 2.2 * k; x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(b) * nl, py + Math.sin(b) * nl + nl * 0.25); x.stroke(); } }
+    }
+    return;
+  }
+  const tips = []; for (let i = 0; i < 5; i++) tips.push(...twig(S / 2 + (R() - 0.5) * S * 0.1, S / 2 + (R() - 0.5) * S * 0.1, R() * 6.283, S * (0.16 + R() * 0.08), 5 * k, 0));
+  const n = kind === 1 ? 150 : kind === 2 ? 130 : 70;
   for (let i = 0; i < n; i++) {
-    const a = R() * 6.283, d = Math.sqrt(R()) * S * 0.4, v = 150 + R() * 105 | 0;
-    x.save(); x.translate(S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d); x.rotate(R() * 6.283);
-    x.fillStyle = `rgb(${v},${v},${v})`;
-    if (kind) { flower(S * (0.035 + R() * 0.02)); x.fillStyle = 'rgba(90,60,60,0.7)'; x.beginPath(); x.arc(0, 0, S * 0.008, 0, 6.283); x.fill(); }
-    else mapleLeaf(S * (0.07 + R() * 0.04));
+    const tp = tips[i % tips.length], f = R(), px = S / 2 + (tp[0] - S / 2) * (0.35 + 0.75 * f) + (R() - 0.5) * S * 0.08, py = S / 2 + (tp[1] - S / 2) * (0.35 + 0.75 * f) + (R() - 0.5) * S * 0.08;
+    if (Math.hypot(px - S / 2, py - S / 2) > S * 0.47) continue;
+    const v = 130 + R() * 115 | 0, r = S * (kind === 1 ? 0.03 + R() * 0.018 : kind === 2 ? 0.045 + R() * 0.025 : 0.06 + R() * 0.035);
+    x.save(); x.translate(px, py); x.rotate(kind === 1 ? R() * 6.283 : tp[2] + Math.PI / 2 + (R() - 0.5) * 1.8);
+    x.fillStyle = shade(r, v);
+    if (kind === 1) { if (R() < 0.15) { x.beginPath(); x.ellipse(0, 0, r * 0.35, r * 0.55, 0, 0, 6.283); x.fill(); } else blossom(r); }   // buds among the open flowers
+    else if (kind === 2) oval(r); else maple(r);
     x.restore();
   }
-  if (kind) { x.strokeStyle = 'rgba(60,40,35,0.6)'; x.lineWidth = 2; for (let i = 0; i < 6; i++) { x.beginPath(); x.moveTo(S / 2, S / 2); x.lineTo(S / 2 + (R() - 0.5) * S * 0.7, S / 2 + (R() - 0.5) * S * 0.7); x.stroke(); } }
 });
 const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); x.moveTo(S / 2, S * 0.1); x.quadraticCurveTo(S * 0.95, S * 0.45, S / 2, S * 0.92); x.quadraticCurveTo(S * 0.05, S * 0.45, S / 2, S * 0.1); x.fill(); x.fillStyle = 'rgba(160,160,160,0.6)'; x.beginPath(); x.moveTo(S * 0.45, S * 0.1); x.lineTo(S / 2, S * 0.22); x.lineTo(S * 0.55, S * 0.1); x.fill(); });
 {
   const barkM = TM(texBark, 0.9);
-  const leafTex = [leafClusterTex(0), leafClusterTex(1)];
+  const leafTex = [leafClusterTex(0), leafClusterTex(1), leafClusterTex(2), leafClusterTex(3)];
   const leafMats = leafTex.map(t => foliageMaterial(t));
   const groundMats = { leaf: new THREE.MeshStandardMaterial({ map: mapleLeafTex, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.85 }), petal: new THREE.MeshStandardMaterial({ map: petalTex, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 }) };
   // branching skeletons
   const TEMPLATES = [];
-  for (let ti = 0; ti < 15; ti++) {
-    const kind = ti % 3, R = rng32(9000 + ti * 131), parts = [], clusters = [];   // 0 maple, 1 cherry (low, spreading), 2 tall zelkova
+  for (let ti = 0; ti < 20; ti++) {
+    const kind = ti < 15 ? ti % 3 : 3, R = rng32(9000 + ti * 131), parts = [], clusters = [];   // 0 maple, 1 cherry (low, spreading), 2 tall zelkova
     const tube = (a, b, c, r0, r1) => {
       const curve = new THREE.QuadraticBezierCurve3(a, b, c), TS = 4, RS = 5, g = new THREE.TubeGeometry(curve, TS, 1, RS, false), pos = g.attributes.position, P = new THREE.Vector3(), V = new THREE.Vector3();
       for (let i = 0; i < pos.count; i++) { const t = Math.floor(i / (RS + 1)) / TS; curve.getPoint(t, P); V.fromBufferAttribute(pos, i).sub(P).multiplyScalar(lerp(r0, r1, t)).add(P); pos.setXYZ(i, V.x, V.y, V.z); }
@@ -5141,8 +5182,20 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
         branch(end, nd, len * (0.66 + R() * 0.16) * (kind === 1 && depth === 0 ? 1.15 : 1), r * 0.6, depth + 1);
       }
     };
+    if (kind === 3) {   // a cedar: one straight tapering trunk, whorls of drooping branches shortening towards the spire
+      const H = 13 + R() * 4, V3 = (a, b, c) => new THREE.Vector3(a, b, c);
+      tube(V3(0, -0.4, 0), V3((R() - 0.5) * 0.3, H * 0.5, (R() - 0.5) * 0.3), V3((R() - 0.5) * 0.4, H, (R() - 0.5) * 0.4), 0.34, 0.05);
+      for (let y = 3.4; y < H - 0.4; y += 0.85) {
+        const f = (y - 3.4) / (H - 3.4), L = (1 - f) * 2.6 + 0.35, nb = 4 + (R() < 0.5 ? 1 : 0), a0 = R() * 6.283;
+        for (let b = 0; b < nb; b++) { const a = a0 + b / nb * 6.283 + R() * 0.4, d = V3(Math.cos(a), -0.22 - R() * 0.18, Math.sin(a)).normalize(), p = V3(0, y, 0), e = p.clone().addScaledVector(d, L);
+          if (R() < 0.45) tube(p, p.clone().lerp(e, 0.5).add(V3(0, 0.1, 0)), e, 0.05 * (1 - f) + 0.025, 0.015);
+          clusters.push(p.clone().lerp(e, 0.72)); }
+      }
+      clusters.push(V3(0, H + 0.3, 0));
+    } else {
     const trunkLen = kind === 1 ? 1.6 + R() * 0.4 : kind === 2 ? 3.3 + R() * 0.8 : 2.3 + R() * 0.7;
     branch(new THREE.Vector3(0, -0.3, 0), new THREE.Vector3((R() - 0.5) * 0.3, 1, (R() - 0.5) * 0.3).normalize(), trunkLen, 0.26 + R() * 0.06, 0);
+    }
     const geo = mergeGeometries(parts); geo.deleteAttribute('normal'); geo.computeVertexNormals();
     TEMPLATES.push({ kind, geo, clusters });
   }
@@ -5150,10 +5203,10 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
   const CELL = 180, cells = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
   for (const t of mapleSpots) { const k = t[3] > 2 ? 'giant' + t[4] : Math.floor(t[0] / CELL) + ',' + Math.floor(t[1] / CELL); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
   for (const list of cells.values()) {
-    const trunks = [], leaves = [[], []], ground = { leaf: [], petal: [] };
+    const trunks = [], leaves = [[], [], [], []], ground = { leaf: [], petal: [] };
     let cx = 0, cz = 0;
     for (const [tx, tz, si, scale, seed] of list) {
-      const S = SPECIES[si], R = rng32(seed), kind = S.cherry ? 1 : S.tall ? 2 : 0;
+      const S = SPECIES[si], R = rng32(seed), kind = S.cherry ? 1 : S.tall ? 2 : S.conifer ? 3 : 0;
       const T = TEMPLATES.filter(tp => tp.kind === kind)[Math.floor(R() * 5)], ty = terrainH(tx, tz), yaw = R() * 6.283;
       cx += tx; cz += tz;
       const tm = new THREE.Matrix4().compose(p.set(tx, ty, tz), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), sc.setScalar(scale));
@@ -5162,10 +5215,10 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
       const base = col.setHSL(S.hsl[0], S.hsl[1], S.hsl[2]), hue = (R() - 0.5) * S.var[0];
       for (const c0 of T.clusters) {
         const wc = c0.clone().applyMatrix4(tm); mapleClusters.push([wc.x, wc.y, wc.z, si, scale]);
-        const cs = Math.min(scale, 1.7), nk = Math.round((S.cherry ? 8 : 7) * Math.min(9, (scale / cs) ** 2));   // giants: many leaf-sized cards, not a few huge ones
+        const cs = Math.min(scale, 1.7), nk = Math.round((S.conifer ? 3 : S.bushy ? 10 : S.cherry ? 8 : 7) * Math.min(9, (scale / cs) ** 2)), spr = S.conifer ? 0.62 : S.bushy ? 1.35 : 1;   // giants: many leaf-sized cards, not a few huge ones
         for (let k = 0; k < nk; k++) {
           const o = new THREE.Vector3((R() - 0.5) * 2, (R() - 0.35) * 1.1, (R() - 0.5) * 2); if (o.length() > 1) o.normalize();
-          const pp = wc.clone().add(o.multiply(new THREE.Vector3(1.2, 0.6, 1.2)).multiplyScalar(scale));
+          const pp = wc.clone().add(o.multiply(new THREE.Vector3(1.2 * spr, 0.6 * spr, 1.2 * spr)).multiplyScalar(scale));
           q.setFromEuler(e.set((R() - 0.5) * 1.6, R() * 6.28, (R() - 0.5) * 1.6)); const s = (0.95 + R() * 0.55) * cs;
           leaves[S.leaf].push([m4.compose(pp, q, sc.setScalar(s)).clone(), new THREE.Color().setHSL((S.hsl[0] + hue + (R() - 0.5) * S.var[0] * 0.5 + 1) % 1, Math.min(1, S.hsl[1] + (R() - 0.5) * S.var[1]), S.hsl[2] + (R() - 0.5) * S.var[2]), [tx, tz, ty, 6 * scale]]);
         }
@@ -5177,7 +5230,7 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
           if (pathMask(gx, gz) > 0.5 || riverWet(gx, gz) > 0) continue;
           q.setFromEuler(e.set(-Math.PI / 2 + (R() - 0.5) * 0.9, 0, R() * 6.283, 'YXZ')); const s = S.ground === 'petal' ? 0.055 + R() * 0.035 : 0.1 + R() * 0.05;
           const rest = R() < 0.35 ? 0.03 : 0.12 + R() * 0.38;   // some on the earth, most caught on top of the grass
-          ground[S.ground].push([m4.compose(p.set(gx, terrainH(gx, gz) + rest, gz), q, sc.setScalar(s)).clone(), new THREE.Color().setHSL((S.hsl[0] + (R() - 0.5) * S.var[0] + 1) % 1, S.hsl[1] * 0.9, S.hsl[2] * (0.75 + R() * 0.3))]);
+          ground[S.ground].push([m4.compose(p.set(gx, terrainH(gx, gz) + rest, gz), q, sc.setScalar(s)).clone(), (G => new THREE.Color().setHSL((G[0] + (R() - 0.5) * 0.05 + 1) % 1, G[1] * (0.7 + R() * 0.4), G[2] * (0.7 + R() * 0.5)))(S.groundHsl || [S.hsl[0], S.hsl[1] * 0.9 / 0.85, S.hsl[2]])]);   // dry litter keeps its own browns
         }
       }
     }
@@ -5186,7 +5239,7 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
     const trunkMesh = new THREE.Mesh(mergeGeometries(trunks), barkM); trunkMesh.castShadow = trunkMesh.receiveShadow = true; scene.add(trunkMesh); objs.push(trunkMesh); REFL_HIDE.push(trunkMesh);
     const giant = list.some(t => t[3] > 2);
     FLORA_LOD.push({ objs: [trunkMesh], x: cx, z: cz, far: giant ? 1600 : 300 });
-    for (let L = 0; L < 2; L++) {
+    for (let L = 0; L < 4; L++) {
       if (!leaves[L].length) continue;
       const g = new THREE.PlaneGeometry(1, 1); g.setAttribute('aSway', swayAttr(leaves[L].flatMap(l => l[2])));
       const im = new THREE.InstancedMesh(g, leafMats[L], leaves[L].length);
@@ -5244,7 +5297,38 @@ const fallingLeaves = (() => {
   m.frustumCulled = false; scene.add(m); m.userData.ph = ph; return m;
 })();
 const _nearCl = [];
+// Dry leaves skittering over the ground: they lie still, then a gust picks them up, tumbles them a few metres downwind and drops them
+const SKITTER = (() => {
+  const N = LOW ? 60 : 140, im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ map: mapleLeafTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.9 }), N);
+  im.frustumCulled = false; im.receiveShadow = true; scene.add(im); REFL_HIDE.push(im);
+  const L = Array.from({ length: N }, (_, i) => ({ x: 0, y: -999, z: 0, vx: 0, vz: 0, vy: 0, air: 0, rx: 0, ry: Math.random() * 6.28, rz: 0, s: 0.09 + Math.random() * 0.07, ph: Math.random() * 100 }));
+  const c = new THREE.Color(); L.forEach((l, i) => im.setColorAt(i, c.setHSL(0.03 + Math.random() * 0.09, 0.45 + Math.random() * 0.35, 0.18 + Math.random() * 0.2)));
+  return { im, L };
+})();
+const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(), _se = new THREE.Euler();
+function updateSkitter(dt, t) {
+  const S = SKITTER, P = player.pos, wx = 0.94, wz = 0.33, rain = PRESETS[presetIdx].rain;
+  S.L.forEach((l, i) => {
+    const dx = l.x - P.x, dz = l.z - P.z;
+    if (l.y < -900 || dx * dx + dz * dz > 30 * 30) {   // re-seed round the player, mostly upwind so they blow past
+      const a = Math.random() * 6.283, r = 4 + Math.random() * 24; l.x = P.x + Math.cos(a) * r - wx * 6; l.z = P.z + Math.sin(a) * r - wz * 6;
+      const h = sampleHM(l.x, l.z, 0); if (h < 1 || riverWet(l.x, l.z) > 0) { l.y = -999; return; } l.y = h + 0.03; l.air = 0; l.vx = l.vz = l.vy = 0; l.rx = -Math.PI / 2 + (Math.random() - 0.5) * 0.4; l.rz = Math.random() * 6.28;
+    }
+    const gust = Math.max(0, Math.sin(t * 0.55 + l.x * 0.045 + l.z * 0.02) * 0.6 + Math.sin(t * 1.7 + l.ph) * 0.4) * (rain ? 0.3 : 1);
+    const ground = sampleHM(l.x, l.z, 0) + 0.03;
+    if (l.air <= 0 && gust > 0.55 && Math.random() < dt * 3) { l.air = 1; l.vy = 0.8 + Math.random() * 1.2; }   // caught by the gust
+    if (l.air > 0) {
+      l.vx += (wx * (2.5 + gust * 3) - l.vx) * Math.min(1, dt * 2); l.vz += (wz * (2.5 + gust * 3) - l.vz) * Math.min(1, dt * 2); l.vy -= 3.5 * dt;
+      l.x += l.vx * dt; l.z += l.vz * dt; l.y += l.vy * dt; l.rx += dt * 9; l.rz += dt * 6;
+      if (l.y <= ground) { l.y = ground; if (gust < 0.4 || Math.random() < dt * 1.5) { l.air = 0; l.rx = -Math.PI / 2 + (Math.random() - 0.5) * 0.4; } else l.vy = 0.4 + Math.random() * 0.6; }   // a hop, or it settles
+    } else { l.y = ground; l.x += wx * gust * 0.3 * dt; l.z += wz * gust * 0.3 * dt; }   // a shiver along the ground
+    _sq.setFromEuler(_se.set(l.rx, l.ry, l.rz, 'YXZ'));
+    S.im.setMatrixAt(i, _sm.compose(_sp.set(l.x, l.y, l.z), _sq, _ss.setScalar(l.s)));
+  });
+  S.im.instanceMatrix.needsUpdate = true;
+}
 function updateFallingLeaves(dt, t) {
+  updateSkitter(dt, t);
   if (!mapleClusters.length) return;
   if ((frameNo % 60) === 0 || !_nearCl.length) { _nearCl.length = 0; for (const c of mapleClusters) if (Math.abs(c[0] - player.pos.x) < 70 && Math.abs(c[2] - player.pos.z) < 70) _nearCl.push(c); }
   const a = fallingLeaves.geometry.attributes.position.array, cl = fallingLeaves.geometry.attributes.color.array, ph = fallingLeaves.userData.ph;
@@ -5408,6 +5492,7 @@ function buildWatchtower(cp) {
     if (Math.abs(terrainH(x + 6, z) - terrainH(x - 6, z)) > 2.2 || Math.abs(terrainH(x, z + 6) - terrainH(x, z - 6)) > 2.2) continue;   // fairly level
     if (Math.hypot(x - VILLAGE[0], z - VILLAGE[1]) < 230 || Math.hypot(x - spawnPt[0], z - spawnPt[1]) < 200) continue;
     if (avoid.some(([ax, az]) => Math.hypot(ax - x, az - z) < 150) || EXTRA_CAMPS.some(c => Math.hypot(c.x - x, c.z - z) < 140)) continue;
+    if (mapleSpots.some(t => Math.hypot(t[0] - x, t[1] - z) < 19)) continue;   // a camp is a clearing, not the middle of a wood
     let road = 1e9; for (const p of roadPts) road = Math.min(road, Math.hypot(p[0] - x, p[1] - z));
     if (road < 16 || road > 90) continue;                                                   // just off a road, where travellers can be robbed
     if (mapleSpots.some(t => Math.hypot(t[0] - x, t[1] - z) < 9)) continue;
@@ -5659,11 +5744,11 @@ const godRays = new ShaderPass({ // screen-space light shafts streaming from the
       vec2 uv = vUv + st * jit; float decay = 1.0; vec3 acc = vec3(0.0);
       for (int i = 0; i < 28; i++) {
         uv += st; vec3 s = texture2D(tDiffuse, clamp(uv, 0.0, 1.0)).rgb; s = any(isnan(s)) ? vec3(0.0) : min(s, vec3(5.0));
-        float l = max(dot(s, vec3(0.3, 0.59, 0.11)) - 1.8, 0.0);
-        acc += s * min(l, 2.0) * decay; decay *= 0.91;
+        float l = max(dot(s, vec3(0.3, 0.59, 0.11)) - 1.35, 0.0);   // bright sky between trunks and leaves sends its own shafts
+        acc += s * min(l, 2.0) * decay; decay *= 0.935;
       }
       float edge = smoothstep(0.0, 0.25, min(min(uSun.x, 1.0 - uSun.x), min(uSun.y, 1.0 - uSun.y)) + 0.25);
-      gl_FragColor = vec4(base.rgb + min(acc * uAmt * 0.04 * edge, vec3(1.5)), base.a);
+      gl_FragColor = vec4(base.rgb + min(acc * uAmt * 0.052 * edge, vec3(1.6)), base.a);
     }`,
 });
 composer.addPass(godRays);
