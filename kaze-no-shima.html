@@ -954,8 +954,8 @@ function terrainCompile(sh) {
     // mud: on roads and trodden ground the low spots hold water — dark, glassy puddles that mirror the sky — and the rest is wet and dark at the edges
     float mudW = (1.0 - clamp(grassy * 1.6, 0.0, 1.0)) * (1.0 - rockW) * (1.0 - sandW) * (1.0 - snowW) * smoothstep(0.7, 1.6, vWPos.y);
     float pudN = vnoise2(vWPos.xz * 0.23 + 3.0) * 0.7 + vnoise2(vWPos.xz * 1.3 + 9.0) * 0.3;
-    float pud = mudW * smoothstep(0.7 - 0.08 * uWet, 0.76 - 0.08 * uWet, pudN) * (0.45 + 0.55 * uWet);
-    float damp = mudW * smoothstep(0.5, 0.72, pudN) * 0.35;
+    float pud = mudW * smoothstep(0.8 - 0.12 * uWet, 0.83 - 0.12 * uWet, pudN) * (0.55 + 0.45 * uWet);   // a few hollows hold water when it's dry; the rain fills many more
+    float damp = mudW * smoothstep(0.62, 0.8, pudN) * (0.12 + 0.2 * uWet);
     diffuseColor.rgb *= (1.0 - 0.5 * pud) * (1.0 - damp * 0.5); dH -= pud * 0.015;`)
     .replace('#include <normal_fragment_maps>', `vec3 nGeo = normal;
     #include <normal_fragment_maps>
@@ -4832,9 +4832,12 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
     const k = (0.55 + 0.35 * streak + 0.15 * fine) * (0.75 + 0.3 * n) * (0.7 + 0.3 * smooth(0, 0.25, row));
     return [0.42 * k, 0.33 * k, 0.2 * k, streak * 0.6 + fine * 0.3 - (row < 0.06 ? 0.4 : 0)];
   }, [1, 1], 4);
-  const shoji = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
-    x.fillStyle = '#e8e0cc'; x.fillRect(0, 0, 128, 128); x.fillStyle = '#4a3627';
-    for (let i = 0; i <= 4; i++) x.fillRect(i * 31, 0, 4, 128); for (let j = 0; j <= 6; j++) x.fillRect(0, j * 21, 128, 3);
+  const shoji = (() => { const S = 512, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'), R = rng32(2024);
+    x.fillStyle = '#e9e1cd'; x.fillRect(0, 0, S, S);
+    for (let i = 0; i < 2600; i++) { x.strokeStyle = `rgba(${150 + R() * 60 | 0},${135 + R() * 50 | 0},${100 + R() * 40 | 0},${0.05 + R() * 0.1})`; x.lineWidth = 0.6 + R(); const px = R() * S, py = R() * S, a = R() * 6.28, l = 3 + R() * 14; x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke(); }   // washi fibres
+    for (let i = 0; i < 6; i++) { const g = x.createRadialGradient(R() * S, R() * S, 0, R() * S, R() * S, 40 + R() * 80); g.addColorStop(0, 'rgba(160,130,80,0.08)'); g.addColorStop(1, 'rgba(160,130,80,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S); }   // age stains
+    const wood = (px, py, w, h) => { const g = x.createLinearGradient(px, py, px + w, py + h); g.addColorStop(0, '#3e2c1f'); g.addColorStop(0.5, '#59402c'); g.addColorStop(1, '#3a2a1d'); x.fillStyle = g; x.fillRect(px, py, w, h); };
+    for (let i = 0; i <= 4; i++) wood(i * 124 - 2, 0, 14, S); for (let j = 0; j <= 6; j++) wood(0, j * 84 - 2, S, 10);   // the kumiko lattice
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const M = {
     thatch: TM(thatch, 0.95), plaster: TM(texPlaster, 0.93, 0, { color: 0xeee6d4 }),
