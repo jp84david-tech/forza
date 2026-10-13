@@ -235,7 +235,33 @@ function cells(u, v, P) { // periodic Worley noise → [nearest, second nearest,
   return [d1, d2, id];
 }
 const fract = x => x - Math.floor(x);
+const LOADT = []; const mark = n => LOADT.push([n, Math.round(performance.now())]); window.__loadt = LOADT;
+// Painted textures are kept in the browser (IndexedDB) after the first visit, keyed by the painting code itself, so later loads skip the painting
+const TEXDB = await (async () => {
+  const out = new Map(); out.used = new Set();
+  try {
+    const db = await new Promise((res, rej) => { const r = indexedDB.open('kns-tex', 1); r.onupgradeneeded = () => r.result.createObjectStore('t'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); setTimeout(() => rej('slow'), 4000); });
+    const [ks, vs] = await new Promise(res => { const tx = db.transaction('t', 'readonly'), st = tx.objectStore('t'), a = st.getAllKeys(), b = st.getAll(); tx.oncomplete = () => res([a.result, b.result]); tx.onerror = () => res([[], []]); });
+    await Promise.all(ks.map(async (k, i) => { try { out.set(k, await createImageBitmap(vs[i], { imageOrientation: 'flipY' })); } catch (e) {} }));
+    out.db = db; out.stale = ks;
+  } catch (e) {}
+  return out;
+})();
+const strHash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+let texSeq = 0, texLoading = true;
 function makeTex(size, fn, repeat = [1, 1], bumpStrength = 3) {
+  const key = texLoading ? 'k' + (texSeq++) + '_' + size + '_' + bumpStrength + '_' + strHash(fn.toString()) : null;
+  if (key && TEXDB.has(key + 'c') && TEXDB.has(key + 'n')) {   // painted on an earlier visit
+    TEXDB.used.add(key + 'c'); TEXDB.used.add(key + 'n');
+    const wrap = (bm, srgb) => { const t = new THREE.Texture(bm); t.flipY = false; t.needsUpdate = true; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = ANISO; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+    return { map: wrap(TEXDB.get(key + 'c'), true), normalMap: wrap(TEXDB.get(key + 'n'), false) };
+  }
+  const _t0 = performance.now(); try { const T = makeTex0(size, fn, repeat, bumpStrength);
+    if (key && TEXDB.db) { TEXDB.used.add(key + 'c'); TEXDB.used.add(key + 'n');
+      for (const [img, sfx] of [[T.map.image, 'c'], [T.normalMap.image, 'n']]) img.toBlob(b => { if (!b) return; try { TEXDB.db.transaction('t', 'readwrite').objectStore('t').put(b, key + sfx); } catch (e) {} }, 'image/png'); }
+    return T; } finally { const d = performance.now() - _t0; if (d > 150) mark('tex' + size + ':' + Math.round(d)); }
+}
+function makeTex0(size, fn, repeat = [1, 1], bumpStrength = 3) {
   if (size <= 256 && !LOW) { size *= 2; bumpStrength *= 2; }   // small textures are drawn at double resolution
   const cc = document.createElement('canvas'), nc = document.createElement('canvas');
   cc.width = cc.height = nc.width = nc.height = size;
@@ -328,7 +354,7 @@ const texCloth = makeTex(LOW ? 512 : 1024, (u, v) => {
   return [0.12 * k, 0.14 * k, 0.26 * k, t * 0.5 + n * 0.3];
 }, [3, 3], 3);
 // Charcoal hakama with thin pin stripes
-const texHakama = makeTex(LOW ? 512 : 1024, (u, v) => {
+const texHakama = makeTex(512, (u, v) => {
   const N = 140, t = Math.sin(fract(u * N) * Math.PI) * Math.sin(fract(v * N) * Math.PI);
   const stripe = fract(u * 18) < 0.06 ? 1 : 0, n = pfbm(u, v, 5, 4);
   const k = (0.75 + 0.3 * t) * (0.85 + 0.3 * n);
@@ -357,7 +383,7 @@ const texStraw = makeTex(512, (u, v) => {
   const n = pfbm(u, v, 8, 4), k = (0.7 + 0.35 * s) * (0.85 + 0.3 * n) * (ring ? 0.7 : 1);
   return [0.68 * k, 0.52 * k, 0.28 * k, s * 0.6 - ring * 0.5 + n * 0.2];
 }, [1, 1], 3);
-const texSkin = makeTex(LOW ? 256 : 1024, (u, v) => {
+const texSkin = makeTex(LOW ? 256 : 512, (u, v) => {
   const n = pfbm(u, v, 6, 4), pore = pnoise(u * 200, v * 200, 200), k = 0.92 + 0.12 * n;
   return [0.74 * k, 0.53 * k * (0.97 + 0.04 * pore), 0.41 * k, n * 0.2 + pore * 0.25];
 }, [1, 1], 1.5);
@@ -467,12 +493,12 @@ const LANDFORMS = [];
   const segD = (x, z, L) => { let d = 1e9; for (let i = 0; i < L.length - 1; i++) { const [ax, az] = L[i], [bx, bz] = L[i + 1], ex = bx - ax, ez = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez))); d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t)); } return d; };
   const pts = pathPts.filter((_, k) => k % 3 === 0);
   const want = [['hill', 5], ['cuesta', 5]];
-  for (const [type, count] of want) for (let i = 0, made = 0; i < 4000 && made < count; i++) {
-    const x = (R() - 0.5) * 1150, z = (R() - 0.5) * 1150, Rd = type === 'hill' ? 105 + R() * 70 : 70 + R() * 45;
-    const t = Math.hypot(x, z) / islandRadius(x, z); if (t > 0.62 || Math.hypot(x, z) + Rd > islandRadius(x, z) * 0.7) continue;
-    if (mountainH(x, z) > 8 || Math.hypot(x - 340, z - 326) < Rd + 160) continue;   // not on the range, not on Kawabe
-    if (pts.some(p => Math.hypot(p[0] - x, p[1] - z) < Rd + 22) || RIV.some(L => segD(x, z, L) < Rd + 40)) continue;   // clear of every road and river
-    if (LANDFORMS.some(L => Math.hypot(L.x - x, L.z - z) < L.r + Rd + 40)) continue;
+  for (const [type, count] of want) for (let i = 0, made = 0; i < 20000 && made < count; i++) {
+    const hill = type === 'hill', x = (R() - 0.5) * 1150, z = (R() - 0.5) * 1150, Rd = hill ? 90 + R() * 70 : 50 + R() * 40;
+    const t = Math.hypot(x, z) / islandRadius(x, z); if (t > 0.72 || Math.hypot(x, z) + Rd * 0.6 > islandRadius(x, z) * 0.8) continue;
+    if (mountainH(x, z) > 15 || Math.hypot(x - 340, z - 326) < Rd + 150) continue;   // not on the range, not on Kawabe
+    if (pts.some(p => Math.hypot(p[0] - x, p[1] - z) < (hill ? Rd * 0.55 + 10 : Rd + 12)) || RIV.some(L => segD(x, z, L) < (hill ? Rd * 0.6 + 18 : Rd + 25))) continue;   // a road may climb a hill's flank, but never runs into a cliff; rivers keep their valleys
+    if (LANDFORMS.some(L => Math.hypot(L.x - x, L.z - z) < (L.r + Rd) * 0.8)) continue;
     const a = R() * 6.283;
     LANDFORMS.push({ type, x, z, r: Rd, h: type === 'hill' ? 38 + R() * 38 : 24 + R() * 20, dx: Math.cos(a), dz: Math.sin(a), seed: R() * 50 });
     made++;
@@ -599,6 +625,7 @@ function terrainH(x, z) { return terrainHp(x, z, pathMask(x, z)); }
   const yaw = Math.atan2(pk[0] - hiT[0], pk[1] - hiT[1]);
   CSITE = { x: pk[0], z: pk[1], y: pk[2] - 7, yaw, c: Math.cos(yaw), s: Math.sin(yaw), hw: 24, hd: 20, trail };
 }
+mark('pre-hm');
 // Terrain sampled once on a grid shared by the terrain mesh, the GPU grass and placement code
 const HM = LOW ? 961 : 1281, HM_MIN = -950, HM_SIZE = 1900;
 const HMF = new Float32Array(HM * HM * 4); // height, path, shore, meadow patch
@@ -611,6 +638,7 @@ for (let j = 0; j < HM; j++) for (let i = 0; i < HM; i++) {
   for (let j = 1; j < HM - 1; j++) for (let i = 1; i < HM - 1; i++) { const o = (j * HM + i) * 4, sx = (HMF[o + 4] - HMF[o - 4]) / (2 * cs), sz = (HMF[o + HM * 4] - HMF[o - HM * 4]) / (2 * cs);
     HMF[o + 2] *= 1 - smooth(1.15, 1.9, Math.hypot(sx, sz)); }
 }
+mark('hm-baked');
 function sampleHM(x, z, ch) {
   const fx = (x - HM_MIN) / HM_SIZE * (HM - 1), fz = (z - HM_MIN) / HM_SIZE * (HM - 1);
   const i = Math.max(0, Math.min(HM - 2, Math.floor(fx))), j = Math.max(0, Math.min(HM - 2, Math.floor(fz)));
@@ -3088,13 +3116,13 @@ function makeLameTex(plate, cord, knot, accent = [0.85, 0.82, 0.74]) {
     return [r, g, b, h];
   }, [1, 1], 5);
 }
-const texKabuto = makeTex(LOW ? 256 : 1024, (u, v) => {   // black lacquer bowl with raised ridges and gilt rivets
+const texKabuto = makeTex(LOW ? 256 : 512, (u, v) => {   // black lacquer bowl with raised ridges and gilt rivets
   const ridge = Math.pow(Math.abs(Math.sin(u * Math.PI * 32)), 6), n = pfbm(u, v, 6, 3);
   const rivet = (Math.abs(fract(u * 32) - 0.5) < 0.12 && Math.abs(fract(v * 9) - 0.5) < 0.12) ? 1 : 0;
   const k = 0.05 + 0.03 * n + ridge * 0.04;
   return rivet ? [0.7, 0.52, 0.2, 1] : [k * 1.05, k, k * 0.95, ridge * 0.8 + n * 0.1];
 }, [1, 1], 5);
-const texIron = makeTex(LOW ? 256 : 1024, (u, v) => {     // dark iron splints with a lacquer sheen
+const texIron = makeTex(LOW ? 256 : 512, (u, v) => {     // dark iron splints with a lacquer sheen
   const sp = fract(u * 5), edge = smooth(0.0, 0.08, sp) * (1 - smooth(0.92, 1.0, sp)), n = pfbm(u, v, 6, 4);
   const k = (0.07 + 0.04 * n) * (0.5 + 0.5 * edge);
   return [k, k * 0.98, k * 0.95, edge * 0.7 + n * 0.15];
@@ -3709,7 +3737,7 @@ function updateVillagers(dt, t) {
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
     const dx = player.pos.x - v.pos.x, dz = player.pos.z - v.pos.z, dP = Math.hypot(dx, dz);
-    if (dP > 160) { v.root.visible = false; continue; }
+    if (dP > 115) { v.root.visible = false; continue; }   // past ~115 m a villager is a few pixels: not worth a dozen draw calls
     v.root.visible = true;
     let tx = 0, tz = 0, sp = 0;
     const night = PRESETS[presetIdx].fromMoon || PRESETS[presetIdx].rain;
@@ -4242,7 +4270,7 @@ function updateEnemies(dt, t) {
   if ((frameNo & 31) === 4) wakePatrols();
   for (const e of enemies) {
     const dP = Math.hypot(e.pos.x - player.pos.x, e.pos.z - player.pos.z), near = dP < 70 || (CINE.on && Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z) < 90);   // a cutscene can look at a far camp
-    e.root.visible = (dP < 180 || near) && (e.alive || e.deathT < 12);
+    e.root.visible = (dP < 140 || near) && (e.alive || e.deathT < 12);
     if (e.shield && !near) e.shield.visible = false;   // far bandits are not drawn at all
     if (near || e.state === 'chase') {
       const px = e.pos.x, pz = e.pos.z;
@@ -4768,7 +4796,7 @@ const DEER = [];
 function updateDeer(dt) {
   for (const d of DEER) {
     const dx = player.pos.x - d.pos.x, dz = player.pos.z - d.pos.z, dP = Math.hypot(dx, dz);
-    d.root.visible = dP < 220; if (dP > 230) continue;
+    d.root.visible = dP < 170; if (dP > 180) continue;
     const loud = (player.mounted && Math.abs(hs.speed) > 7) || sword.drawn || enemies.some(e => e.state === 'chase' && e.pos.distanceTo(d.pos) < 40);
     if (dP < (loud ? 38 : player.speed > 3 ? 22 : 13)) { if (d.state !== 'flee') for (const o of DEER) if (o.herd === d.herd && o !== d && o.pos.distanceTo(d.pos) < 30) { o.state = 'flee'; o.fleeT = 5 + Math.random() * 2; } d.state = 'flee'; d.fleeT = 5 + Math.random() * 2; }   // one bolts, the herd bolts
     else if (d.state !== 'flee') d.state = dP < (loud ? 75 : 45) ? 'alert' : 'graze';
@@ -5116,7 +5144,7 @@ const VILLAGE_HOUSES = [], HOUSE_KIT = {}, VILLAGE_HOMES = [];
   function flushHouses() {
     for (const [k, list] of Object.entries(G)) {
       if (!list.length) continue;
-      const mesh = new THREE.Mesh(mergeGeometries(list.map(g => (g.index ? g.toNonIndexed() : g)).map(g => { for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n); if (WORLD_UV[k]) worldUV(g, WORLD_UV[k]); return g; })), M[k]);
+      const mesh = new THREE.Mesh(mergeGeometries(list.map(g => (g.index ? g.toNonIndexed() : g)).map(g => { for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n); if (WORLD_UV[k] && g.attributes.normal) worldUV(g, WORLD_UV[k]); return g; })), M[k]);
       mesh.castShadow = mesh.receiveShadow = !['ember', 'lamp'].includes(k); scene.add(mesh);
     }
     G = Object.fromEntries(Object.keys(M).map(k => [k, []]));
@@ -5195,6 +5223,7 @@ const SPECIES = [
 window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
 const FOREST_GRID = new Map(); for (const t of mapleSpots) { const k = Math.floor(t[0] / 40) + ',' + Math.floor(t[1] / 40); FOREST_GRID.set(k, (FOREST_GRID.get(k) || 0) + 1); }
 function forestDensity(x, z) { const i = Math.floor(x / 40), j = Math.floor(z / 40); let n = 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) n += FOREST_GRID.get((i + a) + ',' + (j + b)) || 0; return n / 3; }
+mark('trees-placed');
 const mapleClusters = [];   // world positions of canopy clusters (for falling leaves): [x, y, z, species]
 // Leaf sprays for the tree crowns, painted twig by twig: grey value only (each card takes its colour from its tree), with
 // shading across every leaf, a midrib and veins, so a canopy reads as foliage and not as flat stars.
@@ -7025,7 +7054,7 @@ document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement) { if (PAUSED) setPaused(false); return; }
   if (started && !TOUCH && !CINE.on && !STANDOFF.on && smithEl.style.display !== 'flex' && journalEl.style.display !== 'flex' && gfxEl.style.display !== 'block' && storyUI.help.style.display !== 'flex' && mapEl.style.display !== 'block' && !player.dead) setPaused(true);
 });
-window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN, startStandoff, STANDOFF, composeHaiku, HAIKU, DEER, PATROLS, spawnCampOne, shoreSpot, FLEET };
+window.__story = { playCine, introShots, STORY, groundH, endCine, CINE, meetElder, khanScene, endingScene, spawnKhan, khan: () => KHAN, startStandoff, STANDOFF, composeHaiku, HAIKU, DEER, PATROLS, spawnCampOne, shoreSpot, FLEET, LANDFORMS };
 function loop() {
   const raw = clock.getDelta(), t = clock.elapsedTime; let dt = Math.min(raw, 0.05);
   if (PAUSED) { if (GFX.post === false) renderer.render(scene, camera); else composer.render(); requestAnimationFrame(loop); return; }   // the world holds still
@@ -7094,7 +7123,8 @@ function updateOcclusion() {
   }
 }
 window.__occ = () => ({ n: OCC.length, hidden: OCC.filter(t => t.hid).length, chunks: TERRAIN_CHUNKS.length });
-registerOccluders();
+registerOccluders(); mark('ready'); texLoading = false;
+setTimeout(() => { try { if (TEXDB.db) { const st = TEXDB.db.transaction('t', 'readwrite').objectStore('t'); for (const k of TEXDB.stale || []) if (!TEXDB.used.has(k)) st.delete(k); } } catch (e) {} }, 20000);   // forget paintings this build no longer uses
 loop();
 </script>
 </body>
