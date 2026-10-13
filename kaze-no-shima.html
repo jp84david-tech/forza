@@ -3559,9 +3559,19 @@ function updateVillagers(dt, t) {
     const night = PRESETS[presetIdx].fromMoon || PRESETS[presetIdx].rain;
     if (night && v.home && i > 2) {   // after dark (and in a storm) most of the village goes indoors
       const fr = v.home.d / 2 + 1.6, hx = v.home.x + v.home.s * fr, hz = v.home.z + v.home.c * fr, dd = Math.hypot(hx - v.pos.x, hz - v.pos.z);
-      if (dd < 1.2) { v.root.visible = false; v.indoors = true; continue; }
+      if (dd < 1.2 || v.indoors) {   // home for the night: kneeling round the hearth (look in through the door)
+        v.indoors = true; if (v.hearth === undefined) v.hearth = HEARTHS.find(h => houseAt(h.x, h.z, 0) === v.home) || null;
+        if (!v.hearth || dP > 60) { v.root.visible = !!v.hearth && dP < 60; continue; }
+        const a = v.idx * 2.4, hx = v.hearth.x + Math.cos(a) * 1.05, hz = v.hearth.z + Math.sin(a) * 1.05, sc = v.face === 'boy' ? 0.78 : 1;
+        v.pos.set(hx, v.hearth.y, hz); v.yaw = Math.atan2(v.hearth.x - hx, v.hearth.z - hz); v.vel.set(0, 0, 0);
+        v.root.visible = true; v.act.Idle.setEffectiveWeight(1); v.act.Walk.setEffectiveWeight(0); if (v.act.Run) v.act.Run.setEffectiveWeight(0); v.mixer.update(dt);
+        v.root.position.set(hx, v.hearth.y - 0.5 * sc, hz); v.root.rotation.set(0, v.yaw, 0); v.root.updateMatrixWorld(true);
+        rotBoneRig(v.rig, v.B.LeftUpLeg, AX, -1.5); rotBoneRig(v.rig, v.B.RightUpLeg, AX, -1.5); rotBoneRig(v.rig, v.B.LeftLeg, AX, 2.5); rotBoneRig(v.rig, v.B.RightLeg, AX, 2.5);
+        rotBoneRig(v.rig, v.B.LeftArm, AX, -0.45); rotBoneRig(v.rig, v.B.RightArm, AX, -0.45 - Math.max(0, Math.sin(t * 0.4 + v.idx)) * 0.5); rotBoneRig(v.rig, v.B.Neck, AX, 0.15 + Math.sin(t * 0.3 + v.idx) * 0.1);   // warming hands, nodding off
+        continue;
+      }
       v.target = { x: hx, z: hz }; v.wait = 0;
-    } else if (v.indoors) { v.indoors = false; v.root.visible = true; }
+    } else if (v.indoors) { v.indoors = false; v.root.visible = true; if (v.home) { const fr = v.home.d / 2 + 1.6; v.pos.set(v.home.x + v.home.s * fr, 0, v.home.z + v.home.c * fr); v.pos.y = groundH(v.pos.x, v.pos.z); } }   // morning: out through the door
     if (sword.drawn && dP < 8 && !player.mounted) {   // a drawn blade: they back away, wary, hands raised
       const ax = -dx / (dP || 1), az = -dz / (dP || 1); v.target = { x: v.pos.x + ax * 6, z: v.pos.z + az * 6 }; v.wait = 4;
       v.yaw += angDiff(v.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 5);
@@ -3654,7 +3664,7 @@ function updateDoors(dt) {
   }
   if (dirty) doorMesh.instanceMatrix.needsUpdate = true;
   const D = !player.mounted && started ? nearestDoor(2.4) : null;
-  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : !player.mounted && started && !BSTRIKE.on && nearBamboo() ? '<b>Z</b>BAMBOO STRIKE' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : nearSmith() ? '<b>R</b>THE SMITH · ⬢ ' + (STORY.sup || 0) : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF — CHALLENGE THE CAMP' : ''));
+  doorPrompt = D ? (D.want ? '<b>R</b>CLOSE DOOR' : '<b>R</b>OPEN DOOR') : (!player.mounted && started && nearHearth() ? '<b>Z</b>REST BY THE FIRE' : !player.mounted && started && nearSpring() ? '<b>Z</b>BATHE IN THE HOT SPRING' : !player.mounted && started && nearHaiku() ? '<b>Z</b>KNEEL AND COMPOSE A HAIKU' : !player.mounted && started && !BSTRIKE.on && nearBamboo() ? '<b>Z</b>BAMBOO STRIKE' : (nearPrisoner() ? '<b>R</b>CUT THE PRISONER FREE' : nearSmith() ? '<b>R</b>THE SMITH · ⬢ ' + (STORY.sup || 0) : assassinTarget() ? '<b>X</b>ASSASSINATE' : standoffCamp() ? '<b>Y</b>STANDOFF' : ''));
 }
 let soldierGLTF = null, pristineSoldier = null;
 gltfLoader.load(MODEL_BASE + 'Soldier.glb', g => {
