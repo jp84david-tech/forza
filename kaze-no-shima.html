@@ -617,7 +617,7 @@ const SH = {
   uFogCol: { value: scene.fog.color }, uFogDen: { value: scene.fog.density },
   uShadowMap: { value: null }, uShadowMatrix: { value: sun.shadow.matrix }, uHasShadow: { value: 0 },
   uCloudAmt: { value: 1 },
-  uPx: { value: 0.001 }, uWaves: { value: 1 },   // world size of one screen pixel at 1 m (keeps grass blades from going sub-pixel)
+  uPx: { value: 0.001 }, uWaves: { value: 1 }, uCull: { value: -2 },   // world size of one screen pixel at 1 m (keeps grass blades from going sub-pixel)
   uCanopy: { value: null }, uCanopyP: { value: new THREE.Vector4(HM_MIN, HM_SIZE, 22, 30) }, uCanopyC: { value: new THREE.Vector2() },   // long tree shade beyond the shadow map
 };
 
@@ -925,7 +925,37 @@ function buildTuftPaint() {   // a tileable sheet of small tufts stamped from th
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; return t;
 }
 terrain.material.onBeforeCompile = terrainCompile; terrain.material.customProgramCacheKey = () => 'terrain-coarse';
-scene.add(terrain);
+// The far terrain is cut into chunks so the GPU only draws what is in front of you: chunks off-screen are frustum-culled,
+// chunks hidden behind the land are skipped (see the occlusion pass), distant chunks use every other vertex, and
+// chunks lying wholly under the deep sea are never built. Skirts hang under each chunk's edge to hide the seams.
+const TERRAIN_CHUNKS = [];
+{
+  const NC = 16, per = (CN - 1) / NC, n = per + 1, P = tGeo.attributes.position, Nm = tGeo.attributes.normal, C = tGeo.attributes.color, G = tGeo.attributes.aGrassy, UV = tGeo.attributes.uv;
+  for (let cj = 0; cj < NC; cj++) for (let ci = 0; ci < NC; ci++) {
+    const pos = [], nor = [], col = [], gr = [], uv = []; let ymin = 1e9, ymax = -1e9;
+    const addV = (k, dy) => { pos.push(P.getX(k), P.getY(k) + dy, P.getZ(k)); nor.push(Nm.getX(k), Nm.getY(k), Nm.getZ(k)); col.push(C.getX(k), C.getY(k), C.getZ(k)); gr.push(G.getX(k)); uv.push(UV.getX(k), UV.getY(k)); };
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = (cj * per + j) * CN + ci * per + i; addV(k, 0); const y = P.getY(k); ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); }
+    if (ymax < -7) continue;   // all deep sea: the water covers it
+    const iF = [], iC = [];
+    for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) { const a = j * n + i; iF.push(a, a + n, a + 1, a + 1, a + n, a + n + 1); }
+    for (let j = 0; j < per; j += 2) for (let i = 0; i < per; i += 2) { const a = j * n + i; iC.push(a, a + 2 * n, a + 2, a + 2, a + 2 * n, a + 2 * n + 2); }
+    const ring = []; for (let i = 0; i < per; i++) ring.push(i); for (let j = 0; j < per; j++) ring.push(j * n + per); for (let i = per; i > 0; i--) ring.push(per * n + i); for (let j = per; j > 0; j--) ring.push(j * n);
+    const s0 = pos.length / 3; ring.forEach(b => addV((cj * per + Math.floor(b / n)) * CN + ci * per + b % n, -5));
+    for (let q = 0; q < ring.length; q++) { const a = ring[q], b = ring[(q + 1) % ring.length], sa = s0 + q, sb = s0 + (q + 1) % ring.length;
+      for (const L of [iF, iC]) L.push(a, b, sa, b, sb, sa, a, sa, b, b, sa, sb); }   // both windings: a skirt seen from either side
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute('aGrassy', new THREE.Float32BufferAttribute(gr, 1)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const idxF = new THREE.Uint16BufferAttribute(iF, 1), idxC = new THREE.Uint16BufferAttribute(iC, 1); geo.setIndex(idxF); geo.computeBoundingSphere();
+    const m = new THREE.Mesh(geo, terrain.material); m.receiveShadow = true; scene.add(m);
+    TERRAIN_CHUNKS.push({ m, geo, idxF, idxC, x: geo.boundingSphere.center.x, z: geo.boundingSphere.center.z, lod: 0 });
+  }
+  tGeo.dispose();
+}
+function updateTerrainLOD() {   // the far terrain drops to every other vertex past ~300 m
+  const cx = camera.position.x, cz = camera.position.z;
+  for (const T of TERRAIN_CHUNKS) { const far = Math.hypot(T.x - cx, T.z - cz) > 320 ? 1 : 0; if (far !== T.lod) { T.lod = far; T.geo.setIndex(far ? T.idxC : T.idxF); } }
+}
 const tileMat = makeTerrainMat(false);
 tileMat.onBeforeCompile = terrainCompile; tileMat.customProgramCacheKey = () => 'terrain-tile';
 const TILE = 48, TRES = LOW ? 32 : 48, tiles = new Map();
@@ -1467,9 +1497,9 @@ const midGrass = makeCarpet(LOW ? 90000 : ULTRA ? 900000 : 170000, 92, blade3, 0
 const grassCardTex = (() => {
   const S = LOW ? 512 : 1024, c = document.createElement('canvas'); c.width = c.height = S;
   const x = c.getContext('2d'), R = rng32(77), k = S / 512;
-  for (let i = 0; i < 330; i++) {   // a broad tuft: blades all the way across, so neighbouring cards knit into one sward
+  for (let i = 0; i < 190; i++) {   // a broad tuft: blades all the way across, so neighbouring cards knit into one sward
     const u = (R() + R() - 1) * 1.05, bx = S / 2 + u * S * 0.47, side = Math.min(1, Math.abs(u));
-    const hgt = S * (0.4 + R() * 0.56) * (1 - 0.22 * side * side), lean = ((R() - 0.5) * 0.5 + u * 0.25) * hgt, w = (4 + R() * 4.5) * k, v = 120 + R() * 135 | 0;
+    const hgt = S * (0.4 + R() * 0.56) * (1 - 0.22 * side * side), lean = ((R() - 0.5) * 0.5 + u * 0.25) * hgt, w = (8 + R() * 8) * k, v = 120 + R() * 135 | 0;   // broad blades
     const tx = Math.max(w, Math.min(S - w, bx + lean)), ty = S - hgt, mx = bx + (tx - bx) * 0.35, my = S - hgt * 0.55;
     const gr = x.createLinearGradient(0, S, 0, ty); gr.addColorStop(0, `rgb(${v * 0.35 | 0},${v * 0.35 | 0},${v * 0.35 | 0})`); gr.addColorStop(1, `rgb(${v},${v},${v})`);
     x.fillStyle = gr; x.beginPath(); x.moveTo(bx - w / 2, S); x.quadraticCurveTo(mx - w * 0.3, my, tx, ty); x.quadraticCurveTo(mx + w * 0.3, my, bx + w / 2, S); x.closePath(); x.fill();
@@ -1546,7 +1576,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
   side: THREE.DoubleSide, defines: Object.assign({ KIND: kind }, far ? { FAR: '' } : {}),
   uniforms: { ...SH, uPatch: { value: patch }, uFade: { value: new THREE.Vector2(fadeA, fadeB) }, uGrow: { value: new THREE.Vector2(growA, growB) }, uCardTex: { value: tex }, uTexSize: { value: tex.image.width } },
   vertexShader: CANOPY_GLSL + /* glsl */`
-    uniform float uTime, uCloudAmt, uPatch; uniform vec2 uFade, uGrow; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
+    uniform float uTime, uCloudAmt, uPatch, uCull; uniform vec2 uFade, uGrow; uniform vec4 uPush0, uPush1; uniform mat4 uShadowMatrix; uniform sampler2D uTrample, uHeightMap; uniform float uTrSize; uniform vec3 uHm; uniform vec2 uCenter;
     ${NOISE_GLSL}
     attribute vec3 aOffset; attribute vec4 aParams;
     varying vec2 vUv; varying float vT; varying vec3 vWorld; varying vec3 vTip; varying vec4 vShadowCoord; varying vec3 vUp; varying float vCloud; varying float vRand; varying vec3 vCardN;
@@ -1568,7 +1598,8 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       float grow = (1.0 - smoothstep(fadeD - 5.0, fadeD + 5.0, dC)) * smoothstep(growD - 5.0, growD + 5.0, dC);
       vec3 camF0 = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
       // cheap exits first: out of this layer's band, or behind the camera (before any texture is read)
-      if (grow <= 0.0 || dot(vec2(wxz - cameraPosition.xz), normalize(camF0.xz + vec2(1e-4))) < -3.0 - abs(camF0.y) * 30.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+      vec2 toC = wxz - cameraPosition.xz; float dToC = length(toC);
+      if (grow <= 0.0 || dot(toC, normalize(camF0.xz + vec2(1e-4))) < -3.0 - abs(camF0.y) * 30.0 || (dToC > 5.0 && dot(toC / dToC, normalize(camF0.xz + vec2(1e-4))) < uCull)) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }   // out of this layer's band, behind the camera, or off to the side of the view
       #if KIND == 1
       float field = pampasField(wxz);
       #elif KIND == 2
@@ -1587,7 +1618,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       #else
       float ff = flowerField(wxz);   // the sward is short and sparse inside the flower fields, so the blooms stand clear of it
       float tall = smoothstep(0.6, 0.74, vnoise2(wxz * 0.012 + vec2(31.0, 7.0)) * 0.7 + vnoise2(wxz * 0.05) * 0.3) * (1.0 - ff);   // patches of long grass
-      float h = (0.55 + 0.7 * hm.a) * (0.55 + 0.45 * hm.b) * (1.0 - hm.g * 0.6) * (0.84 + 0.26 * aParams.y) * (0.82 + 0.36 * vnoise2(wxz * 0.15 + 2.0)) * (1.0 + 1.25 * tall) * (1.0 - 0.72 * ff) * keep;
+      float h = (0.24 + 0.22 * hm.a) * (0.6 + 0.4 * hm.b) * (1.0 - hm.g * 0.6) * (0.84 + 0.26 * aParams.y) * (0.82 + 0.36 * vnoise2(wxz * 0.15 + 2.0)) * (1.0 + 2.1 * tall) * (1.0 - 0.6 * ff) * keep;   // a short sward; long grass only in its own patches
       #endif
       vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
       if (h < 0.004 || dot(root - cameraPosition, camF) < -2.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
@@ -1682,17 +1713,17 @@ function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -
   g.instanceCount = N;
   const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB, geo === cardGeoFar, kind, tex)); m.frustumCulled = false; scene.add(m); return m;
 }
-const nearCards = makeCardCarpet(LOW ? 56000 : ULTRA ? 160000 : 96000, 48, 0.9, 1.3, 9, 23);    // dense layer round the player
-const midCards = makeCardCarpet(LOW ? 180000 : ULTRA ? 520000 : 320000, 210, 1.1, 1.65, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
-const farCards = makeCardCarpet(LOW ? 480000 : ULTRA ? 1400000 : 960000, 540, 1.8, 2.7, 185, 262, 28, 60, cardGeoFar);   // big tufts to ~250 m
+const nearCards = makeCardCarpet(LOW ? 38000 : ULTRA ? 100000 : 64000, 48, 0.7, 1.0, 9, 23);    // dense layer round the player
+const midCards = makeCardCarpet(LOW ? 80000 : ULTRA ? 240000 : 160000, 210, 0.95, 1.4, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
+const farCards = makeCardCarpet(LOW ? 90000 : ULTRA ? 300000 : 210000, 400, 1.6, 2.3, 140, 190, 28, 60, cardGeoFar);   // the painted ground carries the field beyond this   // big tufts to ~250 m
 // fields of pampas grass and of flowers (only drawn where their field mask says they grow)
 const FIELD_CARPETS = [
-  makeCardCarpet(LOW ? 6000 : 11000, 70, 1.5, 2.1, 24, 33, -2, -1, cardGeo, 1, pampasTex),
-  makeCardCarpet(LOW ? 20000 : 38000, 300, 1.7, 2.4, 125, 145, 20, 30, cardGeoMid, 1, pampasTex),
-  makeCardCarpet(LOW ? 20000 : 40000, 760, 2.6, 3.4, 330, 370, 125, 145, cardGeoFar, 1, pampasTex),
-  makeCardCarpet(LOW ? 20000 : 44000, 60, 0.65, 0.95, 20, 28, -2, -1, cardGeo, 2, flowerCardTex),
-  makeCardCarpet(LOW ? 60000 : 130000, 260, 0.8, 1.1, 110, 125, 16, 24, cardGeoMid, 2, flowerCardTex),
-  makeCardCarpet(LOW ? 50000 : 110000, 640, 1.6, 2.2, 280, 310, 105, 120, cardGeoFar, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 5000 : 8000, 70, 1.5, 2.1, 24, 33, -2, -1, cardGeo, 1, pampasTex),
+  makeCardCarpet(LOW ? 12000 : 22000, 300, 1.7, 2.4, 125, 145, 20, 30, cardGeoMid, 1, pampasTex),
+  makeCardCarpet(LOW ? 9000 : 16000, 600, 2.6, 3.4, 250, 290, 125, 145, cardGeoFar, 1, pampasTex),
+  makeCardCarpet(LOW ? 16000 : 30000, 60, 0.65, 0.95, 20, 28, -2, -1, cardGeo, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 36000 : 70000, 260, 0.8, 1.1, 110, 125, 16, 24, cardGeoMid, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 20000 : 40000, 500, 1.6, 2.2, 210, 240, 105, 120, cardGeoFar, 2, flowerCardTex),
 ];
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
@@ -1700,7 +1731,7 @@ scene.add(grass);
 
 // Don't render grass into the sea reflection (cheap, and invisible anyway)
 { const orig = water.onBeforeRender.bind(water);
-  water.onBeforeRender = (...a) => { if (!GFX.reflect && frameNo % 8) return; const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...FIELD_CARPETS, ...REFL_HIDE, ...enemies.map(e => e.root), ...villagers.map(v => v.root)], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
+  water.onBeforeRender = (...a) => { if (frameNo % (GFX.reflect ? 2 : 8)) return;   /* the mirror is redrawn every other frame: ripples hide the lag */ const hide = [grass, nearGrass, midGrass, nearCards, midCards, farCards, ...FIELD_CARPETS, ...REFL_HIDE, ...enemies.map(e => e.root), ...villagers.map(v => v.root)], was = hide.map(m => m.visible); hide.forEach(m => m.visible = false); orig(...a); hide.forEach((m, i) => m.visible = was[i]); }; }
 
 // ─────────────────────────── Landmarks: torii, stones, floating isles ───────────────────────────
 const COLLIDERS_INIT = [];
@@ -1771,9 +1802,9 @@ const routePts = ri => pathPts.filter(p => p[3] === ri);
     im.castShadow = im.receiveShadow = true; scene.add(im);
   }
 }
+const PEBBLE_LOD = [];
 { // loose pebbles and gravel scattered along the dirt roads
-  const N = LOW ? 7000 : 20000, g = rockGeo(0.06, 0, 1.3);
-  const im = new THREE.InstancedMesh(g, TM(texRock, 0.85), N);
+  const N = LOW ? 7000 : 20000, g = rockGeo(0.06, 0, 1.3), mat = TM(texRock, 0.85), cells = new Map();   // bucketed into 120 m cells: only the ones near you are drawn
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   let n = 0;
   while (n < N) {
@@ -1781,10 +1812,15 @@ const routePts = ri => pathPts.filter(p => p[3] === ri);
     const h = terrainH(x, z); if (h < 0.4 || pathMask(x, z) < 0.4) continue;
     const s = 0.3 + Math.pow(Math.random(), 3) * 1.8;
     sc.set(s, s * (0.5 + Math.random() * 0.4), s); q.setFromEuler(e.set(Math.random(), Math.random() * 6, Math.random()));
-    m4.compose(p.set(x, h - 0.01 * s, z), q, sc); im.setMatrixAt(n, m4);
-    im.setColorAt(n, new THREE.Color().setHSL(0.08, 0.1 + Math.random() * 0.1, 0.25 + Math.random() * 0.35)); n++;
+    m4.compose(p.set(x, h - 0.01 * s, z), q, sc); const key = Math.floor(x / 120) + ',' + Math.floor(z / 120); if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push([m4.clone(), new THREE.Color().setHSL(0.08, 0.1 + Math.random() * 0.1, 0.25 + Math.random() * 0.35), x, z]); n++;
   }
-  im.receiveShadow = true; scene.add(im); REFL_HIDE.push(im);
+  for (const L of cells.values()) {
+    const im = new THREE.InstancedMesh(g, mat, L.length); let cx = 0, cz = 0;
+    L.forEach(([m, c, x, z], i) => { im.setMatrixAt(i, m); im.setColorAt(i, c); cx += x; cz += z; });
+    im.computeBoundingSphere(); im.receiveShadow = true; scene.add(im); REFL_HIDE.push(im);
+    PEBBLE_LOD.push({ objs: [im], x: cx / L.length, z: cz / L.length, far: 150 });
+  }
 }
 const floaters = [];
 { // offshore islets on the horizon, sitting in the sea and fading into the haze (the old floating islands are gone)
@@ -2392,7 +2428,7 @@ const flowers = (() => {
   g.setIndex(idx);
   const ig = new THREE.InstancedBufferGeometry();
   ig.index = g.index; for (const k of ['position', 'color', 'aH']) ig.setAttribute(k, g.attributes[k]);
-  const off = [], prm = [], MAX = LOW ? 3000 : 9000;
+  const off = [], prm = [], MAX = LOW ? 2000 : 4500;
   for (let i = 0; i < 1200000 && off.length / 3 < MAX; i++) {
     const x = (Math.random() - 0.5) * 440, z = (Math.random() - 0.5) * 440, h = sampleHM(x, z, 0);
     if (h < 0.9 || sampleHM(x, z, 1) > 0.05) continue;
@@ -5074,7 +5110,7 @@ const petalTex = canvasTex(64, (x, S) => { x.fillStyle = '#fff'; x.beginPath(); 
     TEMPLATES.push({ kind, geo, clusters });
   }
   // build the blocks
-  const CELL = 260, cells = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+  const CELL = 180, cells = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
   for (const t of mapleSpots) { const k = t[3] > 2 ? 'giant' + t[4] : Math.floor(t[0] / CELL) + ',' + Math.floor(t[1] / CELL); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
   for (const list of cells.values()) {
     const trunks = [], leaves = [[], []], ground = { leaf: [], petal: [] };
@@ -5430,6 +5466,7 @@ function buildWatchtower(cp) {
 window.__map = { HMF, HM, HM_MIN, HM_SIZE, spawn: spawnPt, routes: ROUTES.map((_, ri) => routePts(ri).filter((p, k) => k % 6 === 0 && sampleHM(p[0], p[1], 0) > 0.3).map(p => [+p[0].toFixed(1), +p[1].toFixed(1), +p[2].toFixed(2)])), camps: campSpots(), fires: campfires.map(c => [c.x, c.z]) };  // for the printable map
 function updateFlora(dt, t) {
   for (const f of FLORA_LOD) { const v = Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < f.far; for (const o of f.objs) o.visible = v; }
+  for (const f of PEBBLE_LOD) f.objs[0].visible = Math.hypot(f.x - camera.position.x, f.z - camera.position.z) < f.far;
   FLORA.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
   updateFallingLeaves(dt, t);
   const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
@@ -6253,7 +6290,7 @@ function updateCine(raw) {
   look.x += (Math.sin(T * 0.83) + Math.sin(T * 2.1) * 0.35) * h; look.y += (Math.sin(T * 1.17 + 1) + Math.sin(T * 2.7) * 0.3) * h * 0.7; look.z += Math.sin(T * 0.71 + 2) * h;
   if (S.room) clampToRoom(S.room, pos); else pos.y = Math.max(pos.y, terrainH(pos.x, pos.z) + 0.75, 0.6);   // never let the lens sink into the grass or the sea
   if (!S.room) for (let it = 0; it < 10; it++) {   // and never let a hill stand between the lens and the subject
-    let blocked = false; for (let q = 1; q < 10; q++) { const f = q / 10; if (terrainH(pos.x + (look.x - pos.x) * f, pos.z + (look.z - pos.z) * f) + 0.3 > pos.y + (look.y - pos.y) * f) { blocked = true; break; } }
+    let blocked = false; for (let q = 1; q < 10; q++) { const f = q / 10; if (sampleHM(pos.x + (look.x - pos.x) * f, pos.z + (look.z - pos.z) * f, 0) + 0.3 > pos.y + (look.y - pos.y) * f) { blocked = true; break; } }
     if (!blocked) break; pos.y += 0.6;
   }
   const fov = Array.isArray(S.fov) ? lerp(S.fov[0], S.fov[1], k) : S.fov || 40;
@@ -6588,7 +6625,7 @@ function updateStandoff(raw) {
   else { const k = S.phase === 'wait' ? smooth(0, S.strikeAt, S.t) : 0; pos = m.clone().addScaledVector(n, Math.max(4.2, d * 0.8) - k * 1.2).add(_V(0, -0.35 + Math.max(0, d - 6) * 0.1, 0)); look = m.clone().add(_V(0, -0.2, 0)); fov = 30 - k * 8; }   // wide enough to hold both of you as he walks out
   pos.y = Math.max(pos.y, groundH(pos.x, pos.z) + 0.3);
   for (let it = 0; it < 12; it++) {   // keep a clear line of sight over the rise of the land
-    let blocked = false; for (let k = 1; k < 10; k++) { const f = k / 10, x = pos.x + (look.x - pos.x) * f, z = pos.z + (look.z - pos.z) * f, y = pos.y + (look.y - pos.y) * f; if (terrainH(x, z) + 0.45 > y) { blocked = true; break; } }
+    let blocked = false; for (let k = 1; k < 10; k++) { const f = k / 10, x = pos.x + (look.x - pos.x) * f, z = pos.z + (look.z - pos.z) * f, y = pos.y + (look.y - pos.y) * f; if (sampleHM(x, z, 0) + 0.45 > y) { blocked = true; break; } }
     if (!blocked) break; pos.y += 0.5;
   }
   window.__freeCam = [pos, look, fov];
@@ -6690,7 +6727,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyB') bowHello();
   const d = /^Digit([1-8])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
 });
-let gameT = 0, realDt = 1 / 60;
+let gameT = 0, realDt = 1 / 60; const _cullV = new THREE.Vector3();
 // ── Pause menu: losing the mouse (Esc) pauses the world ──
 let PAUSED = false;
 const DIFFS = [{ name: 'GENTLE', hurt: 0.55, cool: 1.35 }, { name: 'SAMURAI', hurt: 1, cool: 1 }, { name: 'LETHAL', hurt: 1.6, cool: 0.75 }];
@@ -6751,9 +6788,11 @@ function loop() {
   realDt = Math.min(raw, 0.05); updateCine(raw); updateStandoff(raw); updateStory(raw); updateWeather(Math.min(raw, 0.1)); updateResolve(); updateSmoke();
   if (started) audio.music(Math.min(raw, 0.1), CINE.on || STANDOFF.on ? 'cine' : enemies.some(e => e.alive && e.state === 'chase' && e.pos.distanceTo(player.pos) < 28) ? 'combat' : 'explore'); updateAim(raw); KILLCAM.t = Math.max(0, KILLCAM.t - raw); KILLCAM.k += ((KILLCAM.t > 0 ? 1 : 0) - KILLCAM.k) * Math.min(1, raw * 6); dt *= aim.ts * STANDOFF.ts * (1 - 0.72 * KILLCAM.k); gameT += dt;            // slow motion while aiming kunai
   update(dt, gameT);
-  updateKunai(dt); updateArrows(dt);
+  updateKunai(dt); updateArrows(dt); updateTerrainLOD(); updateOcclusion();
   if (GFX.shadows) sun.shadow.needsUpdate = frameNo % 3 === 0 || frameNo < 3 || (player.mounted && Math.abs(hs.speed) > 8 && (frameNo & 1) === 0);   // shadows refresh every third frame (every other at a gallop)
   SH.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.height;
+  { const hh = Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect), d = camera.getWorldDirection(_cullV), pitch = Math.asin(Math.max(-1, Math.min(1, d.y))), half = hh * (1 + 1.6 * Math.abs(Math.sin(pitch))) + 0.22;
+    SH.uCull.value = half > 2.9 || Math.abs(d.y) > 0.8 ? -2 : Math.cos(half); }   // grass to the side of the view is skipped in the vertex shader
   FOGU.uFogSunV.value.copy(SH.uSunDir.value).transformDirection(camera.matrixWorldInverse);
   FOGU.uFogUpV.value.set(0, 1, 0).transformDirection(camera.matrixWorldInverse); FOGU.uFogCamY.value = camera.position.y;
   if (frameNo % 60 === 1) patchAllFog(scene);   // new characters and props pick up the atmosphere too
@@ -6775,6 +6814,41 @@ function loop() {
   requestAnimationFrame(loop);
 }
 window.__game = { villagers, enemies, hitEnemy, beginSlash: k => beginSlash(soldier, k), terrainH, dbg: { scene, camera, renderer, SH, cards: [nearCards, midCards, farCards], terrain, fineMin, fineMax, water, clouds, finalPass, godRays, bloom, moon, moonDir, horse: horse.root, hero: hero.root, near: nearGrass, mid: midGrass, shallow: scene.children.find(o => o.material === shallowMat) }, player, hs, keys, soldier, sword, cranes, startSlash, cyclePreset, applyPreset, PRESETS, setPreset: i => { presetIdx = i; applyPreset(PRESETS[i]); }, step: (n) => { for (let i = 0; i < n; i++) update(1 / 60, clock.elapsedTime); }, camFwd: () => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return [v.x, v.z]; }, setCam: (y, p) => { camYaw = lookYaw = y; camPitch = lookPitch = p; } };
+// ── Occlusion: don't draw what the land hides. Every static mesh gets a bounding sphere; a few times a second each is tested
+// by casting sight lines from the camera over the height grid. Hidden ones move to a layer the camera doesn't render. ──
+const OCC = []; let occI = 0;
+function registerOccluders() {
+  const skip = new Set([...FLEET.map(s => s.g), SKY_LANTERNS.im, AO_BLOB, water]);
+  for (const o of scene.children) {
+    if (!o.isMesh || o.isSkinnedMesh || !o.frustumCulled || skip.has(o) || !o.geometry) continue;
+    let bs; if (o.isInstancedMesh) { if (!o.boundingSphere) o.computeBoundingSphere(); bs = o.boundingSphere; } else { if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); bs = o.geometry.boundingSphere; }
+    if (!bs || !isFinite(bs.radius) || bs.radius <= 0) continue;
+    o.updateMatrixWorld(true); const c = bs.center.clone().applyMatrix4(o.matrixWorld), r = bs.radius * o.matrixWorld.getMaxScaleOnAxis();
+    if (r > 420) continue;
+    OCC.push({ o, x: c.x, y: c.y, z: c.z, r, hid: false });
+  }
+}
+function sightBlocked(ex, ey, ez, tx, ty, tz) {
+  const dx = tx - ex, dy = ty - ey, dz = tz - ez, D = Math.hypot(dx, dz), n = Math.min(28, Math.max(6, Math.floor(D / 22)));
+  for (let k = 1; k < n; k++) { const f = k / n; if (sampleHM(ex + dx * f, ez + dz * f, 0) > ey + dy * f + 1.5) return true; }
+  return false;
+}
+function updateOcclusion() {
+  if (!OCC.length) return;
+  const E = camera.position, per = Math.ceil(OCC.length / 3);
+  for (let q = 0; q < per; q++) {
+    const T = OCC[occI++ % OCC.length], dx = T.x - E.x, dz = T.z - E.z, D = Math.hypot(dx, dz);
+    let hid = false;
+    if (D - T.r > 1150) hid = true;   // lost in the haze anyway
+    else if (D - T.r > 70) {   // hidden only if the land blocks the sight lines to its top and to both sides
+      const px = -dz / D * T.r, pz = dx / D * T.r, ty = T.y + T.r;
+      hid = sightBlocked(E.x, E.y, E.z, T.x, ty, T.z) && sightBlocked(E.x, E.y, E.z, T.x + px, T.y + T.r * 0.5, T.z + pz) && sightBlocked(E.x, E.y, E.z, T.x - px, T.y + T.r * 0.5, T.z - pz);
+    }
+    if (hid !== T.hid) { T.hid = hid; T.o.layers.set(hid ? 3 : 0); }
+  }
+}
+window.__occ = () => ({ n: OCC.length, hidden: OCC.filter(t => t.hid).length, chunks: TERRAIN_CHUNKS.length });
+registerOccluders();
 loop();
 </script>
 </body>
