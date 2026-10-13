@@ -2230,7 +2230,7 @@ addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'Space') 
     } setTimeout(() => audio.horse('whinny', Math.max(0.15, 1 - d / 250)), 700); }
   if (e.code === 'KeyN') patHorse();
   if (e.code === 'ControlLeft' || e.code === 'ControlRight') { e.preventDefault(); dodge(); }
-  if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); }
+  if (e.code === 'KeyF' && soldier.ready) { sword.drawn = !sword.drawn; if (sword.drawn) audio.draw(); else audio.sheath(); }
   if (e.code === 'KeyT') cyclePreset();
   if (e.code === 'KeyP') document.body.classList.toggle('photo');
   if (e.code === 'KeyM') audio.toggleMute(); });
@@ -2688,8 +2688,34 @@ const audio = (() => {
   A.splash = (k = 1) => { burst(700 + Math.random() * 500, 'lowpass', 1.2, 0.15 * k, 0.25); burst(2400, 'bandpass', 2, 0.06 * k, 0.12); };
   A.door = () => { burst(900, 'bandpass', 2, 0.18, 0.35); tone(220, 180, 0.05, 0.25, 'triangle'); };   // a wooden door sliding in its track
   A.cut = () => { for (let i = 0; i < 4; i++) setTimeout(() => burst(3000 + Math.random() * 2000, 'highpass', 0.7, 0.15, 0.08), i * 25); };
+  // ── combat and world foley ──
+  A.flesh = (v = 1) => { tone(150, 55, 0.4 * v, 0.2); burst(850, 'lowpass', 0.7, 0.45 * v, 0.17); burst(2300, 'bandpass', 1.4, 0.16 * v, 0.1); burst(5200, 'highpass', 0.6, 0.06 * v, 0.06); };   // a cut that lands: thud, wet tear
+  A.clatter = (v = 1) => { if (!ctx) return; for (let i = 0; i < 7; i++) { const d = i * (0.025 + Math.random() * 0.04), f = 2400 + Math.random() * 3200; tone(f, f * 0.96, 0.03 * v, 0.12, 'triangle', d); } burst(3800, 'highpass', 0.7, 0.12 * v, 0.3); tone(120, 50, 0.25 * v, 0.3, 'sine', 0.12); };   // armour hitting the ground
+  A.bow = (v = 1) => { tone(190, 120, 0.13 * v, 0.28, 'triangle'); tone(380, 250, 0.05 * v, 0.2, 'sawtooth'); burst(2400, 'bandpass', 4, 0.06 * v, 0.07); };   // a bowstring
+  A.whoosh = (v = 1, f = 1) => burst(700 * f, 'bandpass', 2.2, 0.28 * v, 0.28, 3200 * f);
+  A.thunk = (v = 1) => { tone(230, 90, 0.22 * v, 0.1, 'triangle'); burst(600, 'lowpass', 1, 0.28 * v, 0.08); };   // a point biting into wood or earth
+  A.sheath = () => { burst(3200, 'bandpass', 3, 0.14, 0.32, 1400); tone(1100, 850, 0.07, 0.06, 'square', 0.3); tone(240, 140, 0.18, 0.1, 'triangle', 0.31); };   // steel slides home, the tsuba clacks
+  A.rustle = (v = 1) => { burst(3600, 'highpass', 0.5, 0.035 * v, 0.13); if (Math.random() < 0.35) tone(4200 + Math.random() * 1500, 4000, 0.008 * v, 0.06, 'triangle'); };   // lacing, plates, cloth
+  A.snort = (v = 1) => { burst(420, 'bandpass', 1.1, 0.16 * v, 0.3, 220); burst(380, 'bandpass', 1.1, 0.12 * v, 0.25, 200); };
+  A.heart = (v = 1) => { tone(58, 40, 0.5 * v, 0.14); tone(55, 38, 0.38 * v, 0.14, 'sine', 0.22); };
+  A.grunt = (pitch = 130, v = 1, len = 0.28) => {   // a shout or grunt: a buzzing voice through two mouth formants
+    if (!ctx || v < 0.02) return; const t = ctx.currentTime, o = ctx.createOscillator(), f1 = ctx.createBiquadFilter(), f2 = ctx.createBiquadFilter(), g = ctx.createGain(), g2 = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(pitch * 1.15, t); o.frequency.exponentialRampToValueAtTime(pitch * 0.82, t + len);
+    f1.type = 'bandpass'; f1.frequency.value = 650 + Math.random() * 150; f1.Q.value = 5; f2.type = 'bandpass'; f2.frequency.value = 1150 + Math.random() * 250; f2.Q.value = 6;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3 * v, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + len); g2.gain.value = 0.6;
+    o.connect(f1).connect(g); o.connect(f2).connect(g2).connect(g); g.connect(master); o.start(t); o.stop(t + len + 0.05);
+    burst(1800, 'bandpass', 1, 0.05 * v, len * 0.6);   // breath
+  };
+  A.horn = (v = 1) => {   // a Mongol war horn somewhere in the camp: the alarm is raised
+    if (!ctx || v < 0.03) return; const t = ctx.currentTime, lp = ctx.createBiquadFilter(), g = ctx.createGain(), dl = ctx.createDelay(1), fb = ctx.createGain();
+    lp.type = 'lowpass'; lp.frequency.setValueAtTime(380, t); lp.frequency.linearRampToValueAtTime(1100, t + 0.6); lp.frequency.linearRampToValueAtTime(700, t + 2.4);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16 * v, t + 0.45); g.gain.setValueAtTime(0.16 * v, t + 1.9); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.9);
+    dl.delayTime.value = 0.33; fb.gain.value = 0.35; g.connect(dl).connect(fb).connect(dl); fb.connect(master);   // an echo off the hills
+    for (const [fq, a] of [[87, 1], [130.5, 0.5], [174, 0.25]]) { const o = ctx.createOscillator(), og = ctx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(fq * 0.94, t); o.frequency.linearRampToValueAtTime(fq, t + 0.35); og.gain.value = a; o.connect(og).connect(lp); o.start(t); o.stop(t + 3); }
+    lp.connect(g).connect(master);
+  };
   let amb = null;
-  A.ambience = (dt, camp, fire, vil) => {   // places have voices: a Mongol camp's throat-singing drone, a fire's crackle, a village at work
+  A.ambience = (dt, camp, fire, vil, river = 0, forest = 0) => {   // places have voices: a Mongol camp's throat-singing drone, a fire's crackle, a village at work
     if (!ctx) return; const t = ctx.currentTime;
     if (!amb) { amb = { nc: 0, nk: 0 };
       const g = ctx.createGain(); g.gain.value = 0; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 11; bp.frequency.value = 900; const bg = ctx.createGain(); bg.gain.value = 0.7;
@@ -2697,10 +2723,13 @@ const audio = (() => {
       lp.connect(g); bp.connect(bg).connect(g); g.connect(master); amb.drone = g; amb.bp = bp;
       const src = off => { const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(0, off); return s; };
       const fl = ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 260; amb.fire = ctx.createGain(); amb.fire.gain.value = 0; src(0.4).connect(fl).connect(amb.fire).connect(master);
-      amb.vb = ctx.createBiquadFilter(); amb.vb.type = 'bandpass'; amb.vb.frequency.value = 520; amb.vb.Q.value = 1.4; amb.vil = ctx.createGain(); amb.vil.gain.value = 0; src(1.3).connect(amb.vb).connect(amb.vil).connect(master); }
+      amb.vb = ctx.createBiquadFilter(); amb.vb.type = 'bandpass'; amb.vb.frequency.value = 520; amb.vb.Q.value = 1.4; amb.vil = ctx.createGain(); amb.vil.gain.value = 0; src(1.3).connect(amb.vb).connect(amb.vil).connect(master);
+      const rl = ctx.createBiquadFilter(); rl.type = 'bandpass'; rl.frequency.value = 900; rl.Q.value = 0.5; amb.riv = ctx.createGain(); amb.riv.gain.value = 0; src(2.1).connect(rl).connect(amb.riv).connect(master);   // a river's rush
+      const fh = ctx.createBiquadFilter(); fh.type = 'highpass'; fh.frequency.value = 2600; amb.for = ctx.createGain(); amb.for.gain.value = 0; src(0.9).connect(fh).connect(amb.for).connect(master); }   // leaves hissing in the canopy
     amb.drone.gain.setTargetAtTime(camp * 0.02 * (0.65 + 0.35 * Math.sin(t * 0.31)), t, 0.6);
     amb.bp.frequency.setTargetAtTime(760 + 420 * (0.5 + 0.5 * Math.sin(t * 0.23)) + 160 * Math.sin(t * 1.1), t, 0.25);   // the overtone whistles up and down
     amb.fire.gain.setTargetAtTime(fire * 0.07, t, 0.3);
+    amb.riv.gain.setTargetAtTime(river * 0.09 * (0.85 + 0.15 * Math.sin(t * 0.9)), t, 0.5); amb.for.gain.setTargetAtTime(forest * 0.035 * (0.4 + 0.6 * Math.max(0, Math.sin(t * 0.5) * 0.7 + Math.sin(t * 1.3) * 0.3)), t, 0.4);
     amb.nc -= dt; if (fire > 0.05 && amb.nc < 0) { amb.nc = 0.05 + Math.random() * 0.22 / fire; burst(2400 + Math.random() * 3000, 'highpass', 0.8, 0.09 * fire * Math.random(), 0.03); }   // crackle and pop
     amb.vil.gain.setTargetAtTime(vil * 0.03 * (0.55 + 0.45 * Math.abs(Math.sin(t * 0.7) * Math.sin(t * 0.29))), t, 0.4); amb.vb.frequency.setTargetAtTime(470 + 150 * Math.sin(t * 1.7), t, 0.2);
     amb.nk -= dt; if (vil > 0.25 && amb.nk < 0) { amb.nk = 1.6 + Math.random() * 4; const f = 170 + Math.random() * 120, n = 1 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) tone(f, f * 0.8, 0.05 * vil, 0.08, 'triangle', i * 0.38); }   // a mallet on wood somewhere
@@ -3940,7 +3969,7 @@ function makeBandit(home, i, pal = 'mongol') {
     const e = Object.assign(w, { root, mats, bar, home: new THREE.Vector3(home.x, 0, home.z), pos: new THREE.Vector3(home.x, terrainH(home.x, home.z), home.z),
       vel: new THREE.Vector3(), yaw: Math.random() * 6.28, hp: 3, maxHp: 3, alive: true, state: 'idle', wander: null, wait: Math.random() * 3,
       atkCool: 1 + Math.random(), stagger: 0, flash: 0, deathT: 0, idx: i });
-    e.onSlash = (k, sl) => { audio.slash(0.75); e.vel.x += Math.sin(e.yaw) * sl.lunge * 0.45; e.vel.z += Math.cos(e.yaw) * sl.lunge * 0.45; };
+    e.onSlash = (k, sl) => { audio.slash(0.75); if (Math.random() < 0.6) audio.grunt(125 + Math.random() * 45, Math.max(0, 1 - e.pos.distanceTo(player.pos) / 30), 0.24); e.vel.x += Math.sin(e.yaw) * sl.lunge * 0.45; e.vel.z += Math.cos(e.yaw) * sl.lunge * 0.45; };
     e.stamp = () => { if (e.alive) stampFeet(e.B, e.vel.x, e.vel.z); };
     enemies.push(e);
     return e;
@@ -4016,10 +4045,10 @@ function hitEnemy(e, dmg, p) {
   e.hp -= dmg; e.flash = 1; e.stagger = 0.5; e.sw.combo = -1; e.state = 'chase';
   const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, dl = Math.hypot(dx, dz) || 1;
   e.vel.x = dx / dl * 4.5; e.vel.z = dz / dl * 4.5;
-  hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.hit();
+  hitStop = 0.065; shake = Math.min(1, shake + 0.25); audio.flesh(); if (Math.random() < 0.55) audio.grunt(e.boss ? 95 : 120 + Math.random() * 40, 0.7, 0.22);
   for (let i = 0; i < 14; i++) emit(p.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.35, 9, 0, 1, 1, 1);
   for (let i = 0; i < 10; i++) emit(p.clone(), new THREE.Vector3(dx / dl * 2 + (Math.random() - 0.5) * 2, Math.random() * 2, dz / dl * 2 + (Math.random() - 0.5) * 2), RED, 0.05, 1.6, 4, 0, 1, 0.8);
-  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35);
+  if (e.hp <= 0) { e.alive = false; e.deathT = 0; e.sw.drawn = false; audio.fall(); audio.grunt(e.boss ? 80 : 105 + Math.random() * 30, 0.9, 0.55); setTimeout(() => audio.clatter(0.8), 450); toast(e.boss ? (e.bossName || 'JARGHAL KHAN') + ' FALLS' : 'MONGOL WARRIOR DEFEATED', 1600); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.35);
     if (!e.boss && !STANDOFF.on && !enemies.some(o => o !== e && o.alive && o.state === 'chase' && o.pos.distanceTo(player.pos) < 30)) KILLCAM.t = 1.0;   // the last blow: a beat of slow motion
     gainSupplies(e.boss ? 60 : e.brute ? 8 : e.patrol ? 6 : 3, true);
     const grp = e.camp || e.patrol, rest = grp && !e.boss ? enemies.filter(o => o.alive && (o.camp || o.patrol) === grp && !o.boss) : [];
@@ -4090,7 +4119,7 @@ function updateEnemy(e, dt, t) {
     const fromHome = Math.hypot(player.pos.x - e.home.x, player.pos.z - e.home.z);
     const engaged = !player.dead && !e.passive && dP < (e.state === 'chase' ? 24 : 15) && fromHome < 48;
     if (engaged) {
-      if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); if (!subQueue.length && Math.random() < 0.6 && !e.boss) say([['Mongol: There! The samurai!', 'Mongol: Kill him!', 'Mongol: Surround him!', 'Mongol: For the Khan!', 'Mongol: Archers — loose!'][Math.floor(Math.random() * 5)]]); }
+      if (e.state !== 'chase') { e.state = 'chase'; audio.draw(0.8); const grp = e.camp || e.patrol; if (grp && !(grp.hornT > clock.elapsedTime)) { grp.hornT = clock.elapsedTime + 90; setTimeout(() => audio.horn(Math.max(0.3, 1 - dP / 60)), 400); } if (!subQueue.length && Math.random() < 0.6 && !e.boss) say([['Mongol: There! The samurai!', 'Mongol: Kill him!', 'Mongol: Surround him!', 'Mongol: For the Khan!', 'Mongol: Archers — loose!'][Math.floor(Math.random() * 5)]]); }
       e.sw.drawn = true;
       const want = Math.atan2(dx, dz); e.yaw += angDiff(e.yaw, want) * Math.min(1, dt * (e.sw.combo >= 0 ? 2 : 7));
       if (e.perilT > 0) { e.perilT -= dt; moveEnemy(e, dt, 0, 0, 0); if (e.perilT <= 0) { e.perilNow = 1.1; beginSlash(e, 2); e.vel.x += dx / (dP || 1) * 5; e.vel.z += dz / (dP || 1) * 5; } }
@@ -4195,7 +4224,7 @@ let arrowIdx = 0;
 function shootArrow(e) {
   const A = ARROWS[arrowIdx++ % ARROWS.length], from = new THREE.Vector3(e.pos.x, e.pos.y + 1.5, e.pos.z), to = new THREE.Vector3(player.pos.x + player.vel.x * 0.5, player.pos.y + 1.2, player.pos.z + player.vel.z * 0.5);
   const d = from.distanceTo(to), sp = 34; A.pos.copy(from); A.prev.copy(from); A.vel.copy(to).sub(from).normalize().multiplyScalar(sp); A.vel.y += 0.5 * 9.8 * d / sp;
-  A.vel.x += (Math.random() - 0.5) * 1.2; A.vel.z += (Math.random() - 0.5) * 1.2; A.state = 1; A.life = 0; A.m.visible = true; audio.cut?.();
+  A.vel.x += (Math.random() - 0.5) * 1.2; A.vel.z += (Math.random() - 0.5) * 1.2; A.state = 1; A.life = 0; A.m.visible = true; A.whooshed = false; audio.bow(Math.max(0.15, 1 - d / 40));
 }
 const _aq = new THREE.Quaternion(), _ay = new THREE.Vector3(0, 1, 0), _ad = new THREE.Vector3();
 function updateArrows(dt) {
@@ -4208,7 +4237,8 @@ function updateArrows(dt) {
         if (BLOCK.on && sword.drawn && !player.mounted) { A.vel.multiplyScalar(-0.25); A.vel.y = 3; A.state = 3; audio.hit(); for (let i = 0; i < 10; i++) emit(A.pos.clone(), new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), SPARK, 0.035, 0.3, 9, 0, 1, 1, 1); RESOLVE.n = Math.min(RESOLVE.max, RESOLVE.n + 0.15); }
         else { hitPlayer(null, 0.9, A.pos.clone()); A.state = 0; A.m.visible = false; continue; }
       }
-      if (A.pos.y < groundH(A.pos.x, A.pos.z) || A.life > 5) { A.state = 2; A.life = 0; }
+      if (!A.whooshed && A.pos.distanceTo(c) < 4) { A.whooshed = true; audio.whoosh(0.8, 1.6); }   // it hisses past your ear
+      if (A.pos.y < groundH(A.pos.x, A.pos.z) || A.life > 5) { A.state = 2; A.life = 0; audio.thunk(Math.max(0, 1 - A.pos.distanceTo(c) / 25)); }
     } else if (A.state === 3) { A.vel.y -= 9.8 * dt; A.pos.addScaledVector(A.vel, dt); if (A.pos.y < groundH(A.pos.x, A.pos.z)) { A.state = 2; A.life = 0; } }
     else if (A.life > 20) { A.state = 0; A.m.visible = false; }
     if (A.state !== 2) { _ad.copy(A.vel).normalize(); A.m.quaternion.setFromUnitVectors(_ay, _ad); }
@@ -5109,6 +5139,8 @@ const SPECIES = [
   }
 }
 window.__flora = Object.assign(window.__flora || {}, { maples: mapleSpots });
+const FOREST_GRID = new Map(); for (const t of mapleSpots) { const k = Math.floor(t[0] / 40) + ',' + Math.floor(t[1] / 40); FOREST_GRID.set(k, (FOREST_GRID.get(k) || 0) + 1); }
+function forestDensity(x, z) { const i = Math.floor(x / 40), j = Math.floor(z / 40); let n = 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) n += FOREST_GRID.get((i + a) + ',' + (j + b)) || 0; return n / 3; }
 const mapleClusters = [];   // world positions of canopy clusters (for falling leaves): [x, y, z, species]
 // Leaf sprays for the tree crowns, painted twig by twig: grey value only (each card takes its colour from its tree), with
 // shading across every leaf, a midrib and veins, so a canopy reads as foliage and not as flat stars.
@@ -5645,7 +5677,7 @@ function updateWorld(dt, t) {
   if (!player.mounted && player.onGround && moved < 1) {
     stepDist += moved; const stride = player.speed > 3 ? 1.15 : 0.72;
     if (stepDist > stride) { stepDist = 0; const dirt = pathMask(player.pos.x, player.pos.z) > 0.3; const surf = player.wade > 0.15 ? 'water' : groundH(player.pos.x, player.pos.z, player.pos.y) > terrainH(player.pos.x, player.pos.z) + 0.05 ? (window.__castle && Math.hypot(window.__castle.x - player.pos.x, window.__castle.z - player.pos.z) < 50 && !houseAt(player.pos.x, player.pos.z, 0.05) ? 'stone' : 'wood') : snowAt(player.pos.x, player.pos.z) > 0.5 ? 'snow' : dirt ? 'dirt' : 'grass';
-      audio.stepOn(surf, player.speed > 3); if (dirt || player.speed > 3) dustAt(player.pos.x, player.pos.z, player.speed > 3 ? 0.6 : 0.2); }
+      audio.stepOn(surf, player.speed > 3); audio.rustle(player.speed > 3 ? 1 : 0.6); if (dirt || player.speed > 3) dustAt(player.pos.x, player.pos.z, player.speed > 3 ? 0.6 : 0.2); }
   }
   // particles
   for (const s of particles) {
@@ -5710,11 +5742,14 @@ function updateWorld(dt, t) {
   // audio mix
   const r = Math.hypot(player.pos.x, player.pos.z), shore = 1 - smooth(4, 26, islandRadius(player.pos.x, player.pos.z) - r);
   audio.update(dt, gust, player.mounted ? hs.speed : player.speed, shore, PRESETS[presetIdx].ff);
+  sfxT.heart -= dt; if (!player.dead && player.hp < player.maxHp * 0.3 && sfxT.heart < 0) { sfxT.heart = 0.7 + player.hp / player.maxHp; audio.heart(0.5 + 0.5 * (1 - player.hp / (player.maxHp * 0.3))); }   // your pulse when you're nearly done
+  sfxT.snort -= dt; if (sfxT.snort < 0) { sfxT.snort = 9 + Math.random() * 14; const d = Math.hypot(hs.pos.x - player.pos.x, hs.pos.z - player.pos.z); if (d < 25) audio.snort(1 - d / 25); }   // Kage, idly
   if ((frameNo & 7) === 0) { let camp = 0, fire = 0; const px = player.pos.x, pz = player.pos.z;
     for (const cp of window.__camps2 || []) { if (STORY.cleared.has(campKey(cp)) || cp.castle) continue; camp = Math.max(camp, 1 - smooth(18, 95, Math.hypot(cp.x - px, cp.z - pz))); }
     for (const c of campfires) fire = Math.max(fire, 1 - smooth(2, 15, Math.hypot(c.x - px, c.z - pz)));
     const vil = (1 - smooth(40, 120, Math.hypot(VILLAGE[0] - px, VILLAGE[1] - pz))) * (PRESETS[presetIdx].fromMoon || PRESETS[presetIdx].rain ? 0.25 : 1);
-    audio.ambience(dt * 8, camp, fire, vil); }
+    riverWet(px, pz); const river = 1 - smooth(_rw, _rw + 45, _rd), forest = Math.min(1, forestDensity(px, pz) / 10);
+    audio.ambience(dt * 8, camp, fire, vil, river, forest); }
 
   // god rays toward the sun (or the blood moon)
   const lp = _v.copy(camera.position).addScaledVector(sunDir, 1000).project(camera);
@@ -6247,7 +6282,7 @@ function throwKunai() {
   K.pos.copy(hand); K.prev.copy(hand); K.vel.copy(target).sub(hand).normalize().multiplyScalar(speed);
   K.vel.y += 0.5 * 7 * dist / speed;   // aim a little high so the drop lands on the crosshair
   K.state = 1; K.life = 0; K.m.visible = true;
-  audio.cut();
+  audio.whoosh(0.7, 1.3);
 }
 function updateKunai(dt) {
   aim.cool -= dt; aim.throwT = Math.max(0, aim.throwT - dt);
@@ -6384,19 +6419,19 @@ const cineFX = (() => {
 const setPresetNow = i => { if (presetIdx !== i) { presetIdx = i; applyPreset(PRESETS[i]); } };   // cutscenes relight the island under a cut
 const easeCine = u => { u = Math.min(1, Math.max(0, u)); return u * u * u * (u * (u * 6 - 15) + 10); };
 const fmtSub = s => { const m = /^([^:]{1,26}): ([\s\S]*)$/.exec(s); return m ? `<div style="font-size:11px;letter-spacing:6px;color:#d9a55b;margin-bottom:3px">${m[1].toUpperCase()}</div>${m[2]}` : s; };   // the speaker's name sits over their line
-function playCine(shots, end, after) {
+function playCine(shots, end, after, blend = true) {
+  if (blend && !shots[shots.length - 1].fadeOut) shots = shots.concat([{ dur: 2.2, cut: true, blend: true }]);   // the last shot glides into the game camera: no cut back to play
   for (const S of shots) S._c = null;
   Object.assign(CINE, { on: true, shots, i: 0, t: 0, T: 0, end, after }); document.body.classList.add('cine'); cineFX.g.style.opacity = 1;
   storyUI.barT.style.height = storyUI.barB.style.height = 'max(8vh, calc((100vh - 100vw / 2.39) / 2))';   // scope: 2.39 : 1
-  storyUI.skip.style.opacity = 1; storyUI.obj.style.opacity = 0;
-  document.exitPointerLock?.();
+  storyUI.skip.style.opacity = 1; storyUI.obj.style.opacity = 0;   // (the mouse stays captured, so play carries straight on afterwards)
 }
 function endCine() {
   if (!CINE.on) return;
   for (const S of CINE.shots) S.done?.();
   if (CINE.after !== undefined) setPresetNow(CINE.after);
   CINE.on = false; window.__freeCam = null; document.body.classList.remove('cine'); cineFX.g.style.opacity = 0; cineFX.fade.style.opacity = 0; cineFX.title.style.opacity = 0;
-  storyUI.barT.style.height = storyUI.barB.style.height = '0'; storyUI.sub.style.opacity = 0; storyUI.skip.style.opacity = 0;
+  storyUI.barT.style.height = storyUI.barB.style.height = '0'; storyUI.sub.style.opacity = 0; storyUI.skip.style.opacity = 0; hush();
   soldier.talking = false; soldier.lieK = 0; soldier.seizaK = 0;
   const f = CINE.end; CINE.end = null; if (f) f();
 }
@@ -6404,7 +6439,8 @@ function updateCine(raw) {
   if (!CINE.on) return;
   for (const k in keys) keys[k] = false;
   const dt = Math.min(raw, 0.1), S = CINE.shots[CINE.i];
-  if (!S._c) { if (S.preset !== undefined) setPresetNow(S.preset); S.start?.(); S._f = 0; }   // set the stage, then frame it
+  if (S.blend) return updateBlend(dt, S);
+  if (!S._c) { if (S.preset !== undefined) setPresetNow(S.preset); S.start?.(); S._f = 0; if (S.text) speak(S.text); }   // set the stage, then frame it
   if (S._f < 3) { S._c = S.cam(); S._f++; }   // (re-framed for the first frames, once the actors have taken their marks)
   CINE.t += dt; CINE.T += dt;
   const k = S.lin ? Math.min(1, CINE.t / S.dur) : easeCine(CINE.t / S.dur), [a0, a1, b0, b1] = S.track ? S.cam() : S._c;
@@ -6416,7 +6452,7 @@ function updateCine(raw) {
     if (!blocked) break; pos.y += 0.6;
   }
   const fov = Array.isArray(S.fov) ? lerp(S.fov[0], S.fov[1], k) : S.fov || 40;
-  window.__freeCam = [pos, look, fov];
+  window.__freeCam = [pos, look, fov]; CINE.last = [pos, look, fov];
   if (S.key) { const d = pos.clone().sub(look); d.y = 0; d.normalize(); CINE.key = look.clone().addScaledVector(d, 1.1).add(_V(-d.z * 0.75, 0.55, d.x * 0.75)); CINE.keyI = PRESETS[presetIdx].fromMoon ? 3.4 : PRESETS[presetIdx].rain ? 2.6 : 1.5; } else CINE.key = null;
   S.on?.(CINE.t, k, dt);
   const txt = S.text || ''; if (storyUI.sub.dataset.t !== txt) { storyUI.sub.dataset.t = txt; storyUI.sub.innerHTML = fmtSub(txt); }
@@ -6426,6 +6462,13 @@ function updateCine(raw) {
   if (S.title !== undefined) { if (cineFX.title.dataset.t !== S.title) { cineFX.title.dataset.t = S.title; cineFX.title.innerHTML = S.title; } cineFX.title.style.opacity = CINE.t > 0.8 && CINE.t < S.dur - 1.2 ? 1 : 0; } else cineFX.title.style.opacity = 0;
   storyUI.sub.style.opacity = CINE.t > 0.25 && CINE.t < S.dur - 0.3 && txt ? 1 : 0;
   if (CINE.t >= S.dur) { S.done?.(); S.done = null; CINE.i++; CINE.t = 0; if (CINE.i >= CINE.shots.length) endCine(); }
+}
+function updateBlend(dt, S) {   // hand the camera back: from the last cutscene framing to exactly where the game camera sits behind you
+  if (!S._c) { S._c = true; const yaw = (player.mounted ? hs.yaw : player.yaw) + Math.PI; camYaw = lookYaw = yaw; camPitch = lookPitch = 0.16;
+    storyUI.barT.style.height = storyUI.barB.style.height = '0'; storyUI.sub.style.opacity = 0; storyUI.skip.style.opacity = 0; cineFX.title.style.opacity = 0; cineFX.g.style.opacity = 0; cineFX.fade.style.opacity = 0; CINE.key = null; }
+  CINE.t += dt; const k = easeCine(CINE.t / S.dur), L = CINE.last || [camPos.clone(), camLook.clone(), camFov];
+  window.__freeCam = [L[0].clone().lerp(camPos, k), L[1].clone().lerp(camLook, k), lerp(L[2], camFov, k)];
+  if (CINE.t >= S.dur) endCine();
 }
 function clampToRoom(H, p) {   // keep an indoor camera inside the walls
   const [lx, lz] = houseLocal(H, p.x, p.z), cx = Math.max(-H.w / 2 + 0.4, Math.min(H.w / 2 - 0.4, lx)), cz = Math.max(-H.d / 2 + 0.4, Math.min(H.d / 2 - 0.4, lz));
@@ -6443,7 +6486,7 @@ function talkShots(actors, lines, o = {}) {
     return [p, p.clone().addScaledVector(n, -0.45), m.clone().add(_V(0, -0.3, 0)), m.clone().add(_V(0, -0.22, 0))]; } });
   lines.forEach((ln, i) => {
     const sp = ln.split(':')[0], who = actors[sp] ? sp : names[0], other = names.find(n => n !== who), tight = i % 3 === 2;
-    shots.push({ dur: Math.min(7.5, 2.6 + ln.length * 0.052), cut: i > 0 || !o.noWide, text: ln, fov: tight ? [24, 22] : [30, 27], hand: 0.006, room: o.room, key: true, start: speak(who), on: actors[who].on, cam: () => {
+    shots.push({ dur: Math.min(9, Math.max(2.6 + ln.length * 0.052, ln.length / 12.5 + 1.1)), cut: i > 0 || !o.noWide, text: ln, fov: tight ? [24, 22] : [30, 27], hand: 0.006, room: o.room, key: true, start: speak(who), on: actors[who].on, cam: () => {
       const [, , , n] = axis(), S = H(who), L = H(other), d = S.clone().sub(L); d.y = 0; const dist = d.length(); d.normalize();
       const p0 = L.clone().addScaledVector(d, tight ? 0.25 : -0.85).addScaledVector(n, tight ? 0.9 : 0.55).add(_V(0, tight ? -0.05 : 0.06, 0)), p1 = p0.clone().addScaledVector(d, Math.min(0.3, dist * 0.1));
       const t = S.clone().add(_V(0, -0.07, 0)); return [p0, p1, t, t.clone().add(_V(0, 0.015, 0))]; } });
@@ -6460,28 +6503,31 @@ function shoreSpot() {   // the nearest stretch of beach below the start: where 
   return best;
 }
 function introShots() {
-  const V = VILLAGE, C = window.__castle, cp = (window.__camps2 || []).find(c => !c.castle), P = player.pos;
-  const giant = window.__flora.maples.find(m => m[3] > 2) || [0, 0];
+  const C = window.__castle, cp = (window.__camps2 || []).find(c => !c.castle), P = player.pos, sh = FLEET[2] || FLEET[0];
+  const TITLE = '<div style="font-size:30px;letter-spacing:30px;margin-bottom:10px;opacity:.85">風の島</div>KAZE NO SHIMA<div style="font-size:13px;letter-spacing:9px;margin-top:18px;opacity:.7">THE ISLAND OF WIND · 1281</div>';
+  const shipCam = (far, up) => { if (!sh) return [_V(0, 60, 900), _V(0, 50, 850), _V(0, 0, 0), _V(0, 0, 0)]; const d = Math.hypot(sh.x, sh.z), ux = sh.x / d, uz = sh.z / d;
+    return [_V(sh.x - ux * far - uz * far * 0.5, up, sh.z - uz * far + ux * far * 0.5), _V(sh.x - ux * far * 0.7 - uz * far * 0.3, up * 0.8, sh.z - uz * far * 0.7 + ux * far * 0.3), _V(sh.x, 9, sh.z), _V(sh.x, 8, sh.z)]; };
+  let beats = 0;
   return [
-    { dur: 7, preset: 0, hand: 0.001, fov: [42, 38], title: '<div style="font-size:30px;letter-spacing:30px;margin-bottom:10px;opacity:.85">風の島</div>KAZE NO SHIMA<div style="font-size:13px;letter-spacing:9px;margin-top:18px;opacity:.7">THE ISLAND OF WIND · 1281</div>', cam: () => [_V(-420, 60, 900), _V(-300, 90, 760), _V(0, 120, -300), _V(0, 160, -500)] },
-    { dur: 7, hand: 0.002, fov: 44, text: 'Kaze no Shima — the Island of Wind. Off the coast of Kyūshū, in the year 1281.', cam: () => [_V(-200, 150, 720), _V(120, 120, 640), _V(0, 40, 0), _V(60, 60, -200)] },
-    { dur: 6.5, fov: [36, 30], text: 'Red maples, white herons, and a wind that has always carried the island’s prayers out to sea.', cam: () => { const y = groundH(giant[0], giant[1]); return [_V(giant[0] + 70, y + 6, giant[1] + 50), _V(giant[0] + 40, y + 10, giant[1] + 30), _V(giant[0], y + 14, giant[1]), _V(giant[0], y + 16, giant[1])]; } },
-    { dur: 7, fov: [38, 34], text: 'For three generations your family kept the peace in Kawabe, by the little river.', cam: () => [_V(V[0] - 110, _gy(V[0], V[1], 45), V[1] - 60), _V(V[0] - 60, _gy(V[0], V[1], 30), V[1] - 90), _V(V[0], _gy(V[0], V[1], 0), V[1]), _V(V[0] + 10, _gy(V[0], V[1], 2), V[1] - 10)] },
-    { dur: 6.5, preset: 2, fov: [34, 28], hand: 0.003, text: 'Then the black sails came.', cam: () => { const s = FLEET[2] || FLEET[0]; if (!s) return [_V(0, 60, 900), _V(0, 50, 850), _V(0, 0, 0), _V(0, 0, 0)];
-        const d = Math.hypot(s.x, s.z), ux = s.x / d, uz = s.z / d; return [_V(s.x - ux * 60 - uz * 30, 3, s.z - uz * 60 + ux * 30), _V(s.x - ux * 42 - uz * 18, 2.2, s.z - uz * 42 + ux * 18), _V(s.x, 8, s.z), _V(s.x, 7, s.z)]; } },
-    { dur: 7.5, fov: [30, 26], hand: 0.006, text: "Jarghal Khan's raiders burned the coast and pitched their camps across the island.",
-      start: () => { if (cp) while ((cp.spawned || 0) < (cp.max || 3)) spawnCampOne(cp); },
-      cam: () => { if (!cp) return [_V(0, 120, 300), _V(0, 100, 250), _V(0, 0, 0), _V(0, 0, 0)]; const g = cp.gap ?? cp.yaw, cx = Math.cos(g), cz = Math.sin(g), at = r => [cp.x + cx * r, cp.z + cz * r];
-        const [x0, z0] = at(7.6), [x1, z1] = at(5.2); return [_V(x0, _gy(x0, z0, 2.3), z0), _V(x1, _gy(x1, z1, 1.9), z1), _V(cp.x, _gy(cp.x, cp.z, 1.1), cp.z), _V(cp.x - cx * 2, _gy(cp.x, cp.z, 1.2), cp.z - cz * 2)]; } },
-    { dur: 8, preset: 6, fov: [26, 22], hand: 0.003, text: 'He took Shirasagi, the White Heron Castle on the highest peak — and with it, your wife Yuki and your daughter Hana.', cam: () => [_V(C.x - C.s * 160 + 60, C.y - 10, C.z - C.c * 160), _V(C.x - C.s * 120 + 40, C.y + 5, C.z - C.c * 120), _V(C.x, C.y + 18, C.z), _V(C.x, C.y + 26, C.z)] },
-    { dur: 7, preset: 1, fov: [40, 34], hand: 0.002, text: 'They cut you down at Komoda beach, and left you for the tide.',
+    // the black sails come out of a blood-red night
+    { dur: 6, preset: 2, fov: [36, 30], hand: 0.002, title: TITLE, start: () => setTimeout(() => audio.horn(0.55), 1500), cam: () => shipCam(80, 4) },
+    { dur: 4, cut: true, fov: [24, 20], hand: 0.004, start: () => audio.horn(0.9), cam: () => shipCam(26, 1.6) },
+    // a raider camp: men round the fire, one turns to the camera
+    { dur: 5.5, fov: [30, 26], hand: 0.006, start: () => { if (cp) while ((cp.spawned || 0) < (cp.max || 3)) spawnCampOne(cp); },
+      cam: () => { if (!cp) return shipCam(60, 3); const g = cp.gap ?? cp.yaw, cx = Math.cos(g), cz = Math.sin(g), at = r => [cp.x + cx * r, cp.z + cz * r]; const [x0, z0] = at(7.6), [x1, z1] = at(5.4);
+        return [_V(x0, _gy(x0, z0, 2.1), z0), _V(x1, _gy(x1, z1, 1.8), z1), _V(cp.x, _gy(cp.x, cp.z, 1.1), cp.z), _V(cp.x - cx * 2, _gy(cp.x, cp.z, 1.2), cp.z - cz * 2)]; } },
+    { dur: 3.2, cut: true, fov: [20, 17], hand: 0.009, start: () => { audio.grunt(105, 1, 0.5); audio.draw(0.8); },
+      cam: () => { const e = cp && enemies.find(q => q.camp === cp && q.alive); if (!e) return shipCam(30, 2); const h = headOf(e), f = _V(Math.sin(e.yaw), 0, Math.cos(e.yaw)); return [h.clone().addScaledVector(f, 2.4).add(_V(0.3, -0.5, 0)), h.clone().addScaledVector(f, 1.9).add(_V(0.25, -0.45, 0)), h, h.clone()]; } },
+    // the White Heron Castle, taken, under a storm
+    { dur: 5.5, preset: 6, fov: [24, 20], hand: 0.003, start: () => setTimeout(() => audio.thunder(0.5), 900), cam: () => [_V(C.x - C.s * 160 + 60, C.y - 10, C.z - C.c * 160), _V(C.x - C.s * 125 + 40, C.y + 3, C.z - C.c * 125), _V(C.x, C.y + 18, C.z), _V(C.x, C.y + 26, C.z)] },
+    // dawn: a samurai lies in the surf
+    { dur: 6, preset: 1, fov: [40, 32], hand: 0.002,
       start: () => { const b = shoreSpot(); if (b) { player.pos.set(b[0], terrainH(b[0], b[1]), b[1]); player.yaw = Math.atan2(-Math.cos(b[2]), -Math.sin(b[2])); hs.pos.set(b[0] - Math.cos(b[2]) * 30, 0, b[1] - Math.sin(b[2]) * 30); } player.vel.set(0, 0, 0); if (player.mounted) toggleMount(); sword.drawn = false; soldier.lieK = 1; },
-      cam: () => [_V(P.x + 0.6, P.y + 11, P.z + 0.4), _V(P.x + 0.4, P.y + 5.5, P.z + 0.3), _V(P.x, P.y + 0.2, P.z), _V(P.x, P.y + 0.3, P.z)] },
-    { dur: 8, cut: true, fov: [30, 36], hand: 0.007, text: 'They were wrong.', on: t => { soldier.lieK = 1 - smooth(1.2, 6.2, t); },
+      cam: () => [_V(P.x + 0.6, P.y + 11, P.z + 0.4), _V(P.x + 0.4, P.y + 4.5, P.z + 0.3), _V(P.x, P.y + 0.2, P.z), _V(P.x, P.y + 0.3, P.z)] },
+    // his eyes open; he gets up and looks at his island
+    { dur: 6.5, cut: true, fov: [30, 38], hand: 0.007, start: () => { beats = 0; },
+      on: t => { soldier.lieK = 1 - smooth(1.4, 5.8, t); if ((t > 0.4 && beats === 0) || (t > 1.25 && beats === 1) || (t > 2.2 && beats === 2)) { beats++; audio.heart(0.9); } },
       cam: () => { const f = _V(Math.sin(player.yaw), 0, Math.cos(player.yaw)), r = _V(f.z, 0, -f.x); return [P.clone().addScaledVector(f, 2.8).addScaledVector(r, 1.3).add(_V(0, 0.95, 0)), P.clone().addScaledVector(f, 2.3).addScaledVector(r, 0.9).add(_V(0, 1.45, 0)), P.clone().add(_V(0, 0.35, 0)), P.clone().add(_V(0, 1.55, 0))]; } },
-    { dur: 7.5, fadeOut: true, fov: [44, 50], hand: 0.003, text: 'You are Arata Kenshin, the last sword of Kawabe. Find Elder Genjirō in the village. Then take back the island.',
-      start: () => { soldier.lieK = 0; },
-      cam: () => { const f = _V(Math.sin(player.yaw), 0, Math.cos(player.yaw)); return [P.clone().addScaledVector(f, -2.6).add(_V(0.3, 1.9, 0)), P.clone().addScaledVector(f, -9).add(_V(0, 6.5, 0)), P.clone().add(_V(0, 1.5, 0)).addScaledVector(f, 6), P.clone().add(_V(0, 1.2, 0)).addScaledVector(f, 30)]; } },
   ];
 }
 const STORY = { step: 0, said: false, cleared: new Set(), castleSeen: false, done: false };
@@ -6493,8 +6539,30 @@ if (STORY.ronin) player.maxHp += 15;   // the duel's reward stays won
   if (go && (STORY.step > 0 || n)) go.innerHTML = (TOUCH ? 'TAP' : 'CLICK') + ' TO CONTINUE<div style="font-size:11px;letter-spacing:5px;opacity:.6;margin-top:8px">' + (STORY.done ? 'THE ISLAND IS FREE' : n + ' CAMP' + (n === 1 ? '' : 'S') + ' TAKEN' + (STORY.khan ? ' · THE KHAN IS DEAD' : '')) + '</div>'; }
 const saveEl = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;right:22px;bottom:18px;color:#e8c46a;font:11px Georgia,serif;letter-spacing:4px;opacity:0;transition:opacity .6s;z-index:21;pointer-events:none;text-shadow:0 1px 4px #000'; d.textContent = '◈ SAVED'; document.body.appendChild(d); return d; })();
 const saveStory = () => { try { localStorage.setItem('kns-story', JSON.stringify({ ...STORY, cleared: [...STORY.cleared] })); saveEl.style.opacity = 0.85; clearTimeout(saveEl._t); saveEl._t = setTimeout(() => saveEl.style.opacity = 0, 1800); } catch (e) {} };
-let subQueue = [], subT = 0;
-function say(lines) { subQueue = lines.slice(); subT = 0; }
+let subQueue = [], subT = 0, subSpoken = null;
+function say(lines) { subQueue = lines.slice(); subT = 0; subSpoken = null; }
+// ── Voices: every character speaks their lines (the browser's speech voices, each person with their own voice, pitch and pace). No narrator. ──
+const VOICE = { on: (() => { try { return localStorage.getItem('kns-voice') !== '0'; } catch (e) { return true; } })(), list: [] };
+const CAST = { 'Kenshin': ['m', 0.82, 0.9], 'Genjirō': ['m', 0.62, 0.8], 'Yuki': ['f', 1.02, 0.92], 'Hana': ['f', 1.55, 1.05], 'Jarghal Khan': ['m', 0.45, 0.82], 'Kuroda': ['m', 0.7, 0.86],
+  'Mongol': ['m', 0.6, 1.02], 'Smith': ['m', 0.75, 0.95], 'Villager': ['x', 1.0, 0.95] };
+function loadVoices() { try { VOICE.list = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang)); } catch (e) {} }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(sex, salt) {
+  const L = VOICE.list; if (!L.length) return null;
+  const male = /male|david|mark|guy|ryan|george|daniel|james|thomas|fred|alex|arthur|oliver|christopher|eric|roger|brian/i, female = /female|zira|aria|jenny|sonia|susan|hazel|samantha|libby|emma|amy|karen|moira|tessa|victoria|natasha|clara/i;
+  const pref = L.filter(v => sex === 'm' ? male.test(v.name) && !/female/i.test(v.name) : sex === 'f' ? female.test(v.name) : true);
+  const pool = (pref.length ? pref : L).sort((a, b) => (/natural|online|neural|google/i.test(b.name) ? 1 : 0) - (/natural|online|neural|google/i.test(a.name) ? 1 : 0));   // the better voices first
+  return pool[Math.min(pool.length - 1, salt % Math.max(1, Math.min(3, pool.length)))];
+}
+function speak(line) {
+  if (!VOICE.on || !('speechSynthesis' in window) || !line) return;
+  const m = /^([^:]{1,26}): ([\s\S]*)$/.exec(line); if (!m) return;
+  const who = m[1], c = CAST[who] || CAST.Villager, u = new SpeechSynthesisUtterance(m[2].replace(/[—…]/g, ', '));
+  const salt = [...who].reduce((a, ch) => a + ch.charCodeAt(0), 0); u.voice = pickVoice(c[0], who === 'Villager' ? Math.floor(Math.random() * 3) : salt);
+  u.pitch = c[1] * (who === 'Villager' ? 0.85 + Math.random() * 0.4 : 1); u.rate = c[2]; u.volume = 1;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
+}
+const hush = () => { try { speechSynthesis.cancel(); } catch (e) {} };
 // Jarghal Khan: waits in the keep's upper room with his prisoners once his guard has fallen
 const bossUI = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:50%;top:22px;transform:translateX(-50%);width:min(520px,70vw);text-align:center;color:#f4e9d8;font:13px Georgia,serif;letter-spacing:5px;z-index:21;opacity:0;transition:opacity .5s;pointer-events:none;text-shadow:0 2px 6px #000';
   d.innerHTML = '<span id="bossname">JARGHAL KHAN</span><div style="height:6px;margin-top:6px;background:rgba(0,0,0,.5);border:1px solid rgba(244,233,216,.4)"><div id="bossfill" style="height:100%;width:100%;background:linear-gradient(90deg,#7a1010,#c0301c)"></div></div>'; document.body.appendChild(d); return d; })();
@@ -6556,10 +6624,10 @@ function endingScene() {
   if (hana) shots.push({ dur: 4.2, cut: true, fov: [30, 27], hand: 0.007, room: H, key: true, text: 'Hana: Father! I wasn’t scared. Not even once.', start: () => { for (const f of FAMILY) f.talking = false; hana.talking = true; },
     cam: () => { const h = headOf(hana), d = _V(player.pos.x - h.x, 0, player.pos.z - h.z).normalize(); return [h.clone().addScaledVector(d, 1.4).add(_V(0.25, 0.25, 0)), h.clone().addScaledVector(d, 1.15).add(_V(0.2, 0.22, 0)), h, h.clone()]; } });
   shots.push(
-    { dur: 7, preset: 1, fov: [36, 30], hand: 0.002, text: 'With the Khan dead, his raiders broke and fled for their ships before dawn.', start: () => { for (const f of FAMILY) f.talking = false; },
+    { dur: 7, preset: 1, fov: [36, 30], hand: 0.002, start: () => { for (const f of FAMILY) f.talking = false; },
       cam: () => [_V(C.x - C.s * 60 - C.c * 30, C.y + 10, C.z - C.c * 60 + C.s * 30), _V(C.x - C.s * 45 + C.c * 35, C.y + 16, C.z - C.c * 45 - C.s * 35), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 18, C.z)] },
-    { dur: 8, fov: [30, 26], hand: 0.002, text: 'You carried Hana down the thousand steps of the White Heron, and Yuki walked beside you as the sun broke over the sea.', cam: () => { const st = C.stairs; return [_V(st[0] + 40, st[2] + 20, st[1] + 30), _V(st[0] + 30, st[2] + 12, st[1] + 20), _V(st[0], st[2], st[1]), _V(C.x, C.y + 6, C.z)]; } },
-    { dur: 8, fov: [38, 34], hand: 0.002, text: 'In Kawabe they lit the beacon. Its smoke could be seen from every shore of the island.', cam: () => { const b = window.__beacon || VILLAGE; const y = groundH(b[0], b[1]); return [_V(b[0] + 50, y + 18, b[1] + 40), _V(b[0] + 32, y + 22, b[1] + 26), _V(b[0], y + 8, b[1]), _V(b[0], y + 26, b[1])]; } },
+    { dur: 8, fov: [30, 26], hand: 0.002, cam: () => { const st = C.stairs; return [_V(st[0] + 40, st[2] + 20, st[1] + 30), _V(st[0] + 30, st[2] + 12, st[1] + 20), _V(st[0], st[2], st[1]), _V(C.x, C.y + 6, C.z)]; } },
+    { dur: 8, fov: [38, 34], hand: 0.002, cam: () => { const b = window.__beacon || VILLAGE; const y = groundH(b[0], b[1]); return [_V(b[0] + 50, y + 18, b[1] + 40), _V(b[0] + 32, y + 22, b[1] + 26), _V(b[0], y + 8, b[1]), _V(b[0], y + 26, b[1])]; } },
     { dur: 10, fadeOut: true, fov: [44, 50], hand: 0.001, title: '<div style="font-size:30px;letter-spacing:30px;margin-bottom:10px;opacity:.85">風の島</div>KAZE NO SHIMA<div style="font-size:13px;letter-spacing:9px;margin-top:18px;opacity:.7">THE ISLAND IS FREE · THANK YOU FOR PLAYING</div>',
       cam: () => [_V(C.x - C.s * 200, C.y + 90, C.z - C.c * 200), _V(C.x - C.s * 340, C.y + 150, C.z - C.c * 340), _V(C.x, C.y, C.z), _V(0, 20, 0)] });
   playCine(shots, () => { for (const f of FAMILY) f.talking = false; STORY.home = true; saveStory(); familyHome(); toast('THE ISLAND IS YOURS TO WANDER · YUKI AND HANA ARE HOME IN KAWABE', 3600); }, 1);
@@ -6603,7 +6671,7 @@ function objectiveText() {
 function updateStory(raw) {
   if (!started || CINE.on) return;
   // subtitles (dialogue)
-  if (subQueue.length) { subT += raw; storyUI.sub.textContent = subQueue[0]; storyUI.sub.style.opacity = subT > 0.3 && subT < 4.6 ? 1 : 0; if (subT > 5) { subQueue.shift(); subT = 0; } }
+  if (subQueue.length) { subT += raw; const ln = subQueue[0], dur = Math.max(4.6, ln.length * 0.068); if (subSpoken !== ln) { subSpoken = ln; speak(ln); } storyUI.sub.innerHTML = fmtSub(ln); storyUI.sub.style.opacity = subT > 0.3 && subT < dur ? 1 : 0; if (subT > dur + 0.4) { subQueue.shift(); subT = 0; } }
   else if (storyUI.sub.style.opacity !== '0') storyUI.sub.style.opacity = 0;
   if ((frameNo & 15) !== 0) return;
   storyUI.obj.innerHTML = objectiveText(); storyUI.obj.style.opacity = mapEl.style.display === 'block' || STANDOFF.on || BSTRIKE.on ? 0 : 0.92;
@@ -6623,7 +6691,7 @@ function updateStory(raw) {
     STORY.castleSeen = true; saveStory();
     const P = player.pos.clone(), toC = _V(C.x - P.x, 0, C.z - P.z).normalize(), side = _V(toC.z, 0, -toC.x);
     playCine([
-      { dur: 6.5, fov: [22, 17], hand: 0.004, text: 'Shirasagi. The White Heron, stained black with the Khan’s banners.', cam: () => [P.clone().addScaledVector(side, 3).add(_V(0, 0.8, 0)), P.clone().addScaledVector(side, 2.4).add(_V(0, 1.1, 0)), _V(C.x, C.y + 8, C.z), _V(C.x, C.top - 2, C.z)] },
+      { dur: 6.5, fov: [22, 17], hand: 0.004, start: () => setTimeout(() => audio.horn(0.5), 600), cam: () => [P.clone().addScaledVector(side, 3).add(_V(0, 0.8, 0)), P.clone().addScaledVector(side, 2.4).add(_V(0, 1.1, 0)), _V(C.x, C.y + 8, C.z), _V(C.x, C.top - 2, C.z)] },
       { dur: 5, cut: true, fov: [34, 30], hand: 0.006, key: true, text: 'Kenshin: Hold on, Hana. I am coming.', start: () => { player.yaw = Math.atan2(toC.x, toC.z); soldier.talking = true; }, done: () => { soldier.talking = false; },
         cam: () => { const h = headOf(soldier); return [h.clone().addScaledVector(toC, 1.9).addScaledVector(side, 0.7).add(_V(0, -0.25, 0)), h.clone().addScaledVector(toC, 1.5).addScaledVector(side, 0.55).add(_V(0, -0.2, 0)), h, h.clone()]; } },
       { dur: 6, fov: [48, 42], hand: 0.002, cam: () => [P.clone().addScaledVector(toC, -5).add(_V(0, 2.2, 0)), P.clone().addScaledVector(toC, 6).add(_V(0, 4, 0)), _V(C.x, C.y + 14, C.z), _V(C.x, C.y + 14, C.z)] },
@@ -6849,7 +6917,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyB') bowHello();
   const d = /^Digit([1-8])$/.exec(e.code); if (d && !CINE.on) cyclePreset(+d[1] - 1);
 });
-let gameT = 0, realDt = 1 / 60; const _cullV = new THREE.Vector3();
+let gameT = 0, realDt = 1 / 60; const sfxT = { heart: 0, snort: 6 }; const _cullV = new THREE.Vector3();
 // ── Pause menu: losing the mouse (Esc) pauses the world ──
 let PAUSED = false;
 const DIFFS = [{ name: 'GENTLE', hurt: 0.55, cool: 1.35 }, { name: 'SAMURAI', hurt: 1, cool: 1 }, { name: 'LETHAL', hurt: 1.6, cool: 0.75 }];
@@ -6860,13 +6928,15 @@ const pauseEl = (() => {
   const d = document.createElement('div'); d.style.cssText = 'position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at center, rgba(10,8,6,.55), rgba(4,3,2,.88));z-index:58;color:#f4e9d8;font:15px Georgia,serif;letter-spacing:6px';
   const b = 'background:none;border:1px solid rgba(244,233,216,.35);color:#f4e9d8;font:14px Georgia,serif;letter-spacing:6px;padding:11px 0;width:260px;cursor:pointer';
   d.innerHTML = `<div style="font-size:26px;letter-spacing:26px;opacity:.85">風の島</div><div style="font-size:12px;letter-spacing:10px;opacity:.6;margin-bottom:26px">PAUSED</div>
-    <button data-p="resume" style="${b}">RESUME</button><button data-p="journal" style="${b}">JOURNAL</button><button data-p="controls" style="${b}">CONTROLS</button><button data-p="gfx" style="${b}">GRAPHICS</button><button data-p="diff" id="diffBtn" style="${b}">DIFFICULTY · ${DIFF.name}</button><button data-p="new" style="${b};opacity:.6">NEW GAME</button>
+    <button data-p="resume" style="${b}">RESUME</button><button data-p="journal" style="${b}">JOURNAL</button><button data-p="intro" style="${b}">WATCH THE OPENING</button><button data-p="voice" style="${b}">VOICES · ${VOICE.on ? 'ON' : 'OFF'}</button><button data-p="controls" style="${b}">CONTROLS</button><button data-p="gfx" style="${b}">GRAPHICS</button><button data-p="diff" id="diffBtn" style="${b}">DIFFICULTY · ${DIFF.name}</button><button data-p="new" style="${b};opacity:.6">NEW GAME</button>
     <div id="pauseStat" style="margin-top:22px;font-size:11px;letter-spacing:4px;opacity:.55;text-align:center;line-height:2"></div>`;
   document.body.appendChild(d);
   d.addEventListener('click', e => {
     const p = e.target.dataset?.p; if (!p) return;
     if (p === 'resume') { setPaused(false); renderer.domElement.requestPointerLock?.(); }
     if (p === 'controls') { storyUI.help.style.display = 'flex'; }
+    if (p === 'intro') { setPaused(false); renderer.domElement.requestPointerLock?.(); const back = player.pos.clone(), hb = hs.pos.clone(), pr = presetIdx, mt = player.mounted; playCine(introShots(), () => { if (player.mounted !== mt) toggleMount(); player.pos.copy(back); hs.pos.copy(hb); }, pr); }   // a replay puts you back where you were
+    if (p === 'voice') { VOICE.on = !VOICE.on; try { localStorage.setItem('kns-voice', VOICE.on ? '1' : '0'); } catch (er) {} e.target.textContent = 'VOICES · ' + (VOICE.on ? 'ON' : 'OFF'); if (!VOICE.on) hush(); }
     if (p === 'journal') { journalEl.innerHTML = journalHTML(); journalEl.style.display = 'flex'; }
     if (p === 'gfx') { toggleGfxMenu(); }
     if (p === 'diff') { setDifficulty((DIFF.i + 1) % DIFFS.length); e.target.textContent = 'DIFFICULTY · ' + DIFF.name; }
