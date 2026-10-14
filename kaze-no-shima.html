@@ -6144,6 +6144,10 @@ function update(dt, t) {
     want.x += rx; want.z += rz; camTarget.x += rx; camTarget.z += rz;
   }
   want.y = Math.max(want.y, groundH(want.x, want.z) + 0.45, 0.6);
+  for (let k = 1; k <= 12; k++) {   // never let a hillside or cliff come between the camera and you: pull in along the boom instead
+    const f = k / 12, x = camTarget.x + (want.x - camTarget.x) * f, z = camTarget.z + (want.z - camTarget.z) * f, y = camTarget.y + (want.y - camTarget.y) * f;
+    if (sampleHM(x, z, 0) + 0.35 > y) { const g = Math.max(0.12, (k - 1.5) / 12); want.set(camTarget.x + (want.x - camTarget.x) * g, camTarget.y + (want.y - camTarget.y) * g + 0.3, camTarget.z + (want.z - camTarget.z) * g); break; }
+  }
   const inHouse = !player.mounted && houseAt(player.pos.x, player.pos.z, 0.05);
   if (!inHouse && !window.__freeCam) {   // outside: if a house stands between you and the camera, the camera comes in front of it
     for (let k = 1; k <= 12; k++) { const t = k / 12, px = camTarget.x + (want.x - camTarget.x) * t, pz = camTarget.z + (want.z - camTarget.z) * t, py = camTarget.y + (want.y - camTarget.y) * t, H = houseAt(px, pz, -0.25);
