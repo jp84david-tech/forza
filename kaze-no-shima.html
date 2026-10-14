@@ -497,7 +497,7 @@ const LANDFORMS = [];
     const hill = type === 'hill', x = (R() - 0.5) * 1150, z = (R() - 0.5) * 1150, Rd = hill ? 90 + R() * 70 : 50 + R() * 40;
     const t = Math.hypot(x, z) / islandRadius(x, z); if (t > 0.72 || Math.hypot(x, z) + Rd * 0.6 > islandRadius(x, z) * 0.8) continue;
     if (mountainH(x, z) > 15 || Math.hypot(x - 340, z - 326) < Rd + 150) continue;   // not on the range, not on Kawabe
-    if (pts.some(p => Math.hypot(p[0] - x, p[1] - z) < (hill ? Rd * 0.55 + 10 : Rd + 12)) || RIV.some(L => segD(x, z, L) < (hill ? Rd * 0.6 + 18 : Rd + 25))) continue;   // a road may climb a hill's flank, but never runs into a cliff; rivers keep their valleys
+    if (pts.some(p => Math.hypot(p[0] - x, p[1] - z) < (hill ? Rd * 0.55 + 10 : Rd + 12)) || RIV.some(L => segD(x, z, L) < Rd * 1.15 + 35)) continue;   // a road may climb a hill's flank, but never runs into a cliff; rivers keep their valleys
     if (LANDFORMS.some(L => Math.hypot(L.x - x, L.z - z) < (L.r + Rd) * 0.8)) continue;
     const a = R() * 6.283;
     LANDFORMS.push({ type, x, z, r: Rd, h: type === 'hill' ? 38 + R() * 38 : 24 + R() * 20, dx: Math.cos(a), dz: Math.sin(a), seed: R() * 50 });
