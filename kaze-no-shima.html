@@ -3109,7 +3109,7 @@ function buildKatana(withSheath) {
 // character's own mesh and attached to the bone it rides on.
 function makeLameTex(plate, cord, knot, accent = [0.85, 0.82, 0.74]) {
   return makeTex(LOW ? 512 : 1024, (u, v) => {
-    const fu = fract(u * 4), lac = pfbm(u, v, 4, 3), grain = pfbm(u * 3, v * 3, 12, 3);
+    const fu = fract(u * 9), lac = pfbm(u, v, 4, 3), grain = pfbm(u * 3, v * 3, 12, 3);
     let [r, g, b] = plate, h = 0.5;
     const brush = 0.06 * (pnoise(u * 180, v * 6, 180, 6) - 0.5);                                // lacquer brushed on in strokes
     const k = 0.7 + 0.36 * smooth(0.0, 0.35, v) * (1 - smooth(0.75, 1.0, v)) + 0.12 * lac + brush;
@@ -3122,12 +3122,13 @@ function makeLameTex(plate, cord, knot, accent = [0.85, 0.82, 0.74]) {
       if (chip) { r = 0.32; g = 0.31; b = 0.3; h = 0.6; } else { r = Math.min(1, r * 1.8 + 0.04); g = Math.min(1, g * 1.7 + 0.03); b = Math.min(1, b * 1.6 + 0.03); h = 0.78; }
     }
     if (v < 0.07) { r *= 0.12; g *= 0.12; b *= 0.12; h = 0; }                                   // shadow under the lame above
-    if (Math.abs(fu - 0.5) < 0.17 && v > 0.08) {                                               // braided silk lacing (kumihimo), with a pale thread spiralling through it
+    if (Math.abs(fu - 0.5) < 0.36 && v > 0.08) {   // dense kebiki lacing: silk columns cover most of the plate
+                                                  // braided silk lacing (kumihimo), with a pale thread spiralling through it
       const br = 0.6 + 0.4 * Math.sin((v * 16 + (fu - 0.5) * 6) * Math.PI), twill = fract(v * 34 + fu * 5) < 0.18;
       [r, g, b] = (twill ? accent : cord).map(c => c * br * (0.85 + 0.3 * lac)); h = 0.95 + 0.05 * Math.sin(v * 200);
-      if (Math.abs(fu - 0.5) > 0.14) { r *= 0.4; g *= 0.4; b *= 0.4; }
+      if (Math.abs(fu - 0.5) > 0.32) { r *= 0.35; g *= 0.35; b *= 0.35; }
     }
-    if (Math.abs(fu - 0.5) < 0.13 && Math.abs(v - 0.2) < 0.05) { [r, g, b] = knot; h = 1; }       // cord knots
+    if (Math.abs(fu - 0.5) < 0.3 && Math.abs(v - 0.2) < 0.035 && fract(u * 4.5) < 0.5) { [r, g, b] = knot; h = 1; }       // cord knots
     const rv = Math.hypot(fract(u * 8 + 0.5) - 0.5, (v - 0.93) * 6);                            // gilt rivets along the polished edge
     if (rv < 0.11) { const sh = 1 - rv / 0.11; r = 0.55 + 0.4 * sh; g = 0.4 + 0.3 * sh; b = 0.12 + 0.1 * sh; h = 1 + sh * 0.3; }
     return [r, g, b, h];
@@ -3174,7 +3175,7 @@ const ARMOUR_PALETTES = {
   ronin:  { plate: [0.07, 0.055, 0.065], cord: [0.36, 0.07, 0.32], knot: [0.82, 0.78, 0.72], under: [0.035, 0.03, 0.045], sash: 0x2a0c2e, trim: 0x9a9aa8, hat: 'kasa' },
   mongol: { plate: [0.4, 0.24, 0.11], cord: [0.06, 0.32, 0.34], knot: [0.9, 0.68, 0.22], under: [0.2, 0.05, 0.035], sash: 0x1d5a5e, trim: 0xc89a3a, hat: 'mongol', lamellar: true, face: 'mongol' },
 };
-const lacquer = (tex, rough = 0.38) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: rough, metalness: 0.05, clearcoat: 0.6, clearcoatRoughness: 0.2, side: THREE.DoubleSide, envMapIntensity: 0.8 });
+const lacquer = (tex, rough = 0.38) => new THREE.MeshPhysicalMaterial({ map: tex.map, normalMap: tex.normalMap, roughness: rough, metalness: 0.0, clearcoat: 0.35, clearcoatRoughness: 0.32, side: THREE.DoubleSide, envMapIntensity: 0.3 });   // deep urushi lacquer: a soft sheen, not chrome
 
 // A panel of `rows` curved lames hanging down from its origin (top edge), facing +z, curving around a centre at -z.
 function lamePanel(width, height, rows, radius, mat, flare = 0.01, fullRing = false) {
@@ -3226,8 +3227,8 @@ function addRim(root) {
       m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r);
         sh.uniforms.uRimSun = FLORA.uSunView; sh.uniforms.uRimCol = FLORA.uSunCol;
         sh.fragmentShader = 'uniform vec3 uRimSun; uniform vec3 uRimCol;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
-          { vec3 Vr = normalize(vViewPosition); float fr = pow(1.0 - max(dot(normal, Vr), 0.0), 2.5);
-            float bk = 0.3 + 0.7 * max(dot(-Vr, uRimSun), 0.0);
+          { vec3 Vr = normalize(vViewPosition); float fr = pow(1.0 - max(dot(normal, Vr), 0.0), 4.0);
+            float bk = 0.12 + 0.88 * max(dot(-Vr, uRimSun), 0.0);
             outgoingLight += uRimCol * fr * bk * 1.1; }
           #include <opaque_fragment>`); };
       m.customProgramCacheKey = () => 'rim' + (prev ? prev.toString().length : 0); m.needsUpdate = true; } });
