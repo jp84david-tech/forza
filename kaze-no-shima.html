@@ -791,6 +791,43 @@ function rasterPrints(cx, cz) {
   }
   prTex.needsUpdate = true; prDirty = false;
 }
+// Tessellated print patch: a fine 5 cm grid round the player whose vertices are pushed down into every print
+// and heaped up into a rim around it, so footprints and hoofprints are real geometry, not painted shading
+const PATCH_HALF = 4, PATCH_N = LOW ? 0 : 160;
+SH.uPatchC = { value: new THREE.Vector2(1e9, 1e9) };
+const printPatch = (() => {
+  if (!PATCH_N) return null;
+  const g = new THREE.PlaneGeometry(PATCH_HALF * 2, PATCH_HALF * 2, PATCH_N, PATCH_N); g.rotateX(-Math.PI / 2);
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, { uHeightMap: SH.uHeightMap, uHm: SH.uHm, uPrint: SH.uPrint, uPrintSize: SH.uPrintSize, uPatchC: SH.uPatchC });
+    const common = `uniform sampler2D uHeightMap, uPrint; uniform vec3 uHm; uniform float uPrintSize; uniform vec2 uPatchC; varying vec3 vPW; varying float vPr, vRim;
+      float hmH(vec2 xz) { return texture2D(uHeightMap, ((xz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z).r; }
+      float prS(vec2 xz) { return texture2D(uPrint, xz / uPrintSize).r; }
+      float rimS(vec2 xz) { float o = 0.07, m = max(max(prS(xz + vec2(o, 0.0)), prS(xz - vec2(o, 0.0))), max(prS(xz + vec2(0.0, o)), prS(xz - vec2(0.0, o)))); return clamp(m - prS(xz), 0.0, 1.0); }
+      float dispH(vec2 xz) { float h = hmH(xz), sn = smoothstep(158.0, 190.0, h); return h - prS(xz) * mix(0.07, 0.13, sn) + rimS(xz) * mix(0.025, 0.04, sn); }\n`;
+    sh.vertexShader = common + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', `vec2 wxz = position.xz + uPatchC; float e = 0.05;
+        vec3 objectNormal = normalize(vec3(dispH(wxz - vec2(e, 0.0)) - dispH(wxz + vec2(e, 0.0)), 2.0 * e, dispH(wxz - vec2(0.0, e)) - dispH(wxz + vec2(0.0, e))));`)
+      .replace('#include <begin_vertex>', `vec3 transformed = vec3(wxz.x, dispH(wxz) + 0.006, wxz.y); vPW = transformed; vPr = prS(wxz); vRim = rimS(wxz);`);
+    sh.fragmentShader = common + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        if (max(vPr, vRim) < 0.04) discard;
+        float sn = smoothstep(158.0, 190.0, vPW.y), n = fract(sin(dot(floor(vPW.xz * 40.0), vec2(12.9898, 78.233))) * 43758.5453);
+        vec3 mud = vec3(0.075, 0.052, 0.036) * (0.85 + 0.3 * n) * (1.0 - 0.4 * vPr), snow = mix(vec3(0.82, 0.86, 0.94), vec3(0.6, 0.68, 0.85), vPr);
+        diffuseColor.rgb = mix(mud, snow, sn);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(mix(0.5, 0.18, smoothstep(0.6, 0.9, vPr)), 0.7, sn);   // water pooled in the bottom of each print`);
+  };
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.receiveShadow = true; scene.add(mesh); return mesh;
+})();
+window.__stamp = stampPrint;
+function updatePrintPatch() {
+  if (!printPatch) return;
+  const near = prints.some(p => Math.abs(p[0] - player.pos.x) < PATCH_HALF + 1 && Math.abs(p[1] - player.pos.z) < PATCH_HALF + 1);
+  printPatch.visible = near;
+  SH.uPatchC.value.set(near ? Math.round(player.pos.x / 0.05) * 0.05 : 1e9, near ? Math.round(player.pos.z / 0.05) * 0.05 : 1e9);
+}
 // How far feet sink here (snowfields deep, mud a little), and how much it slows you
 function snowAt(x, z) { return smooth(158, 190, terrainH(x, z)); }
 function groundSoft(x, z) {
@@ -907,9 +944,9 @@ function terrainCompile(sh) {
   if (!tuftPaint) tuftPaint = buildTuftPaint();
   Object.assign(sh.uniforms, { uTime: SH.uTime, uCloudAmt: SH.uCloudAmt, uSunDir: SH.uSunDir, uSunCol: SH.uSunCol, uAmb: SH.uAmb, uWaves: SH.uWaves, uPaint: { value: grassPaint }, uTuft: { value: tuftPaint || (tuftPaint = buildTuftPaint()) }, uTuftGain: { value: 0.62 },
     uHeightMap: SH.uHeightMap, uHm: SH.uHm, uFineMin: { value: fineMin }, uFineMax: { value: fineMax },
-    uRock: { value: texRock.map }, uPrint: SH.uPrint, uPrintSize: SH.uPrintSize, uPrintC: SH.uPrintC, uCanopy: SH.uCanopy, uCanopyP: SH.uCanopyP, uCanopyC: SH.uCanopyC, uWet: SH.uWet });
+    uRock: { value: texRock.map }, uPrint: SH.uPrint, uPrintSize: SH.uPrintSize, uPrintC: SH.uPrintC, uPatchC: SH.uPatchC, uCanopy: SH.uCanopy, uCanopyP: SH.uCanopyP, uCanopyC: SH.uCanopyC, uWet: SH.uWet });
   sh.vertexShader = 'attribute float aGrassy; varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vGrassy = aGrassy; vWNrm = normalize(mat3(modelMatrix) * objectNormal);');
-  sh.fragmentShader = 'varying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform float uWet; uniform vec3 uSunDir, uSunCol, uAmb; uniform float uWaves, uTuftGain, uPrintSize; uniform sampler2D uPaint, uHeightMap, uTuft, uRock, uPrint; uniform vec2 uPrintC; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + CANOPY_GLSL + sh.fragmentShader
+  sh.fragmentShader = '#define PATCH_HALF ' + PATCH_HALF.toFixed(2) + '\nuniform vec2 uPatchC;\nvarying float vGrassy; varying vec3 vWPos; varying vec3 vWNrm; uniform float uTime; uniform float uCloudAmt; uniform float uWet; uniform vec3 uSunDir, uSunCol, uAmb; uniform float uWaves, uTuftGain, uPrintSize; uniform sampler2D uPaint, uHeightMap, uTuft, uRock, uPrint; uniform vec2 uPrintC; uniform vec3 uHm; uniform vec2 uFineMin, uFineMax;\n' + NOISE_GLSL + CANOPY_GLSL + sh.fragmentShader
     .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
     float grassy = vGrassy;
     // alpine bands: tufts give way to bare rock, then snowfields; steep faces stay rocky
@@ -948,6 +985,7 @@ function terrainCompile(sh) {
     float pr = texture2D(uPrint, vWPos.xz / uPrintSize).r * (1.0 - smoothstep(uPrintSize * 0.38, uPrintSize * 0.44, max(abs(vWPos.x - uPrintC.x), abs(vWPos.z - uPrintC.y))));
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * mix(vec3(0.62, 0.6, 0.58), vec3(0.72, 0.8, 0.95), snowW), pr);   // pressed, wetter, bluer in snow
     dH -= pr * (0.03 + 0.06 * snowW);
+    if (pr > 0.1 && max(abs(vWPos.x - uPatchC.x), abs(vWPos.z - uPatchC.y)) < PATCH_HALF - 0.3) discard;   // the tessellated patch draws the dents here
     #ifdef COARSE
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.22, 0.14, 0.08) * (0.85 + 0.3 * vnoise2(vWPos.xz * 1.7)), pmS * smoothstep(0.45, 1.0, hmS.r));
     #endif
@@ -960,7 +998,7 @@ function terrainCompile(sh) {
     dH -= pud * 0.02; dH += damp * (vnoise2(vWPos.xz * 6.0) - 0.5) * 0.03;   // lumpy, hoof-churned sludge round the pools`)
     .replace('#include <normal_fragment_maps>', `vec3 nGeo = normal;
     #include <normal_fragment_maps>
-    normal = normalize(mix(normal, nGeo, max(max(max(snowW, rockW), sandW) * 0.85, pud)));   // the dirt-crack normal map belongs to soil, not snow, rock or standing water
+    normal = normalize(mix(normal, nGeo, max(max(max(max(snowW, rockW), sandW) * 0.85, pud), damp * 0.9)));   // wet mud is smooth sludge, not dry cracked soil   // the dirt-crack normal map belongs to soil, not snow, rock or standing water
     { vec3 vp = -vViewPosition, dpx = dFdx(vp), dpy = dFdy(vp); float hx = dFdx(dH), hy = dFdy(dH);   // bump from the fine relief
       vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx); float det = dot(dpx, r1);
       normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2)); }`)
@@ -5862,6 +5900,7 @@ let trampleAcc = 0, frameNo = 0;
 function updateWorld(dt, t) {
   frameNo++;
   if (prDirty || Math.hypot(player.pos.x - prAt[0], player.pos.z - prAt[1]) > 3) rasterPrints(player.pos.x, player.pos.z);
+  updatePrintPatch();
   // grass physics: feet and hooves fold the blades
   if (!player.mounted) { if (soldier.ready) stampFeet(soldier.B, player.vel.x, player.vel.z); else trample(player.pos.x, player.pos.z, player.vel.x, player.vel.z, 0.3); }
   { const fx = Math.sin(hs.yaw) * Math.sign(hs.speed || 1), fz = Math.cos(hs.yaw) * Math.sign(hs.speed || 1);
