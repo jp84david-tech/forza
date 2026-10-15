@@ -3226,9 +3226,9 @@ function addRim(root) {
       m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r);
         sh.uniforms.uRimSun = FLORA.uSunView; sh.uniforms.uRimCol = FLORA.uSunCol;
         sh.fragmentShader = 'uniform vec3 uRimSun; uniform vec3 uRimCol;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
-          { vec3 Vr = normalize(vViewPosition); float fr = pow(1.0 - max(dot(normal, Vr), 0.0), 3.0);
+          { vec3 Vr = normalize(vViewPosition); float fr = pow(1.0 - max(dot(normal, Vr), 0.0), 2.5);
             float bk = 0.3 + 0.7 * max(dot(-Vr, uRimSun), 0.0);
-            outgoingLight += uRimCol * fr * bk * 0.45; }
+            outgoingLight += uRimCol * fr * bk * 1.1; }
           #include <opaque_fragment>`); };
       m.customProgramCacheKey = () => 'rim' + (prev ? prev.toString().length : 0); m.needsUpdate = true; } });
 }
