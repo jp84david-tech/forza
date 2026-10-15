@@ -699,8 +699,8 @@ const REFL_HIDE = []; // small detail left out of the sea reflection
 const GFX_PRESETS = {
   potato: { grass: 0.25, shadows: false, reflect: false, rays: false, bloom: false, scale: 0.7,  post: false, flowers: false },
   low:    { grass: 0.45, shadows: false, reflect: false, rays: false, bloom: false, scale: 0.85, post: false, flowers: true },
-  medium: { grass: 0.7,  shadows: true,  reflect: false, rays: false, bloom: true,  scale: 1,    post: true,  flowers: true },
-  high:   { grass: 1,    shadows: true,  reflect: true,  rays: true,  bloom: true,  scale: 1,    post: true,  flowers: true },
+  medium: { grass: 0.7,  shadows: true,  reflect: false, rays: false, bloom: true,  scale: 1,    post: true,  flowers: true, ao: true },
+  high:   { grass: 1,    shadows: true,  reflect: true,  rays: true,  bloom: true,  scale: 1,    post: true,  flowers: true, ao: true },
 };
 const GFX = (() => {
   let saved = null; try { saved = JSON.parse(localStorage.getItem('kns-gfx') || 'null'); } catch (e) {}
@@ -2862,6 +2862,7 @@ const PRESETS = [
     stars: 1, moon: [2.6, 2.7, 3.0], ff: 1, petals: 0, water: 0x020a12, waterSun: 0x9ab8ff, rays: 0.3, motes: 0 },
 ];
 let presetIdx = 0, godRayAmt = 0.3;
+var GRADE = { sh: new THREE.Vector3(1, 1, 1), hi: new THREE.Vector3(1, 1, 1), sat: { value: 1 } };   // the film grade for the current time of day
 const toastEl = document.getElementById('toast'), fadeEl = document.getElementById('fade');
 function applyPreset(p) {
   const sd = new THREE.Vector3().setFromSphericalCoords(1, deg(90 - p.elev), deg(p.az));
@@ -2885,6 +2886,9 @@ function applyPreset(p) {
   buildCanopy();
   foamMat.uniforms.uCol.value.setRGB(...(p.fromMoon ? [0.25, 0.15, 0.18] : [1.3, 1.1, 0.95]));
   godRayAmt = p.rays;
+  { const G = { 'GOLDEN HOUR': [[0.92, 0.97, 1.08], [1.08, 1.0, 0.88], 1.12], 'MISTY DAWN': [[0.95, 1.0, 1.06], [1.04, 1.02, 0.97], 0.95], 'BLOOD MOON': [[0.9, 0.92, 1.05], [1.15, 0.92, 0.85], 1.05], 'CLEAR MORNING': [[0.95, 0.98, 1.05], [1.03, 1.01, 0.97], 1.08],
+      'MIDDAY': [[0.97, 0.99, 1.03], [1.02, 1.01, 0.98], 1.05], 'SUNSET': [[0.88, 0.92, 1.1], [1.12, 0.98, 0.85], 1.15], 'STORM': [[0.95, 1.0, 1.04], [0.98, 1.0, 1.02], 0.8], 'MOONLIT NIGHT': [[0.88, 0.95, 1.12], [0.95, 1.0, 1.08], 0.85] }[p.name] || [[1, 1, 1], [1, 1, 1], 1];
+    GRADE.sh.set(...G[0]); GRADE.hi.set(...G[1]); GRADE.sat.value = G[2]; }
   sky.visible = !p.fromMoon; scene.background = p.fromMoon ? new THREE.Color(0x05040a) : null;
   skyRock.emissiveIntensity = p.fromMoon ? 0.08 : 0.6;
   Object.keys(su).forEach(k => { const v = su[k].value, d = skyClone.material.uniforms[k]; if (d) d.value = v.clone ? v.clone() : v; });
@@ -5579,7 +5583,7 @@ const BAMBOO = [];
     BAMBOO.push({ x, z, y, yaw, stalks, done: false, idx: ai });
   });
 }
-const FIRE_LIGHTS = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff8a3a, 0, 11, 1.6); scene.add(l); return l; });
+const FIRE_LIGHTS = [0, 1, 2, 3].map(() => { const l = new THREE.PointLight(0xff8a3a, 0, 11, 1.6); scene.add(l); return l; });
 
 // ─────────────────────────── Fifteen bandit camps across the island: little fortified hamlets ───────────────────────────
 // Every tent, pole, bedroll, crate, barrel, log seat, sake jar, spear and banner of every camp is drawn with
@@ -5725,7 +5729,8 @@ function updateFlora(dt, t) {
   const night = PRESETS[presetIdx].fromMoon ? 1 : 0;
   for (const m of lanternGlow) m.color.setRGB(0.05 + night * 2.6, 0.03 + night * 1.5, 0.01 + night * 0.5);
   if (window.__villageMats) { const dark = night || PRESETS[presetIdx].rain ? 1 : 0; window.__villageMats.paper.emissive.setRGB(0.55 * dark, 0.34 * dark, 0.14 * dark); }   // lamplight behind the shoji after dark
-  const lit = campfires.concat(HEARTHS).map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
+  const lanternLit = night ? lanternAt.map(l => ({ x: l[0], y: l[1] + 1.2, z: l[2], lantern: true })) : [];   // at night every stone lantern throws a warm pool of light
+  const lit = campfires.concat(HEARTHS, lanternLit).map(c => [Math.hypot(c.x - player.pos.x, c.z - player.pos.z), c]).sort((a, b) => a[0] - b[0]);
   FIRE_LIGHTS.forEach((l, i) => { if (i === 2 && CINE.on && CINE.key) { l.position.copy(CINE.key); l.color.setHex(0xffe4c8); l.intensity = CINE.keyI; return; } if (i === 2) l.color.setHex(0xff8a3a);   // the third fire light doubles as a film key light on faces in close-ups
     const f = lit[i]; if (!f || f[0] > 90) { l.intensity = 0; return; } l.position.set(f[1].x, f[1].y + 0.6, f[1].z); l.intensity = (4 + Math.sin(t * 13 + i) * 0.8 + Math.sin(t * 29 + i) * 0.5) * (0.6 + night * 1.2) * (1 - smooth(60, 90, f[0])); });
   for (const c of campfires) {
@@ -5860,9 +5865,38 @@ function updateWorld(dt, t) {
 
 // ─────────────────────────── Post-processing ───────────────────────────
 const PASS_VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: params.has('msaa') ? +params.get('msaa') : 0 }));
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: params.has('msaa') ? +params.get('msaa') : 0, depthTexture: new THREE.DepthTexture(innerWidth, innerHeight) }));
+composer.renderTarget2.depthTexture = new THREE.DepthTexture(innerWidth, innerHeight);   // each buffer its own depth: the AO pass reads one while drawing into the other
 composer.setPixelRatio(renderer.getPixelRatio());
 composer.addPass(new RenderPass(scene, camera));
+// Ambient occlusion: corners, eaves, the roots of grass and the ground at your feet darken softly, read from the depth of the scene
+const aoPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, uProj: { value: new THREE.Matrix4() }, uProjInv: { value: new THREE.Matrix4() }, uRes: { value: new THREE.Vector2(1, 1) }, uAmt: { value: 0.6 } },
+  vertexShader: PASS_VS,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse, tDepth; uniform mat4 uProj, uProjInv; uniform vec2 uRes; uniform float uAmt; varying vec2 vUv;
+    vec3 vpos(vec2 uv){ float d = texture2D(tDepth, uv).x; vec4 v = uProjInv * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return v.xyz / v.w; }
+    void main(){
+      vec4 base = texture2D(tDiffuse, vUv); float d = texture2D(tDepth, vUv).x;
+      if (d >= 0.99999 || uAmt <= 0.0) { gl_FragColor = base; return; }
+      vec3 P = vpos(vUv); vec2 px = 1.0 / uRes;
+      vec3 N = normalize(cross(vpos(vUv + vec2(px.x, 0.0)) - P, vpos(vUv + vec2(0.0, px.y)) - P)); if (dot(N, -P) < 0.0) N = -N;
+      float rad = 0.85, rs = rad * uProj[1][1] / max(-P.z, 0.1) * 0.5;
+      if (rs < 1.5 * px.y) { gl_FragColor = base; return; }   // too far away to matter
+      vec2 f4 = mod(floor(gl_FragCoord.xy), 4.0); float rot = (f4.x * 4.0 + f4.y) * 0.3927;   // a 4x4 pattern of rotations (no grain)
+      float occ = 0.0;
+      for (int i = 0; i < 12; i++) {
+        float fi = (float(i) + 0.5) / 12.0, a = rot + float(i) * 2.399;
+        vec2 suv = vUv + vec2(cos(a) * uRes.y / uRes.x, sin(a)) * rs * sqrt(fi);
+        vec3 v = vpos(suv) - P; float l = length(v);
+        occ += max(0.0, dot(N, v) / (l + 1e-3) - 0.12) * (1.0 - smoothstep(rad * 0.5, rad * 1.5, l));
+      }
+      float ao = clamp(1.0 - occ / 12.0 * 1.8, 0.0, 1.0);
+      ao = mix(1.0, ao, (1.0 - smoothstep(50.0, 120.0, -P.z)) * uAmt);
+      gl_FragColor = vec4(base.rgb * ao, base.a);
+    }`,
+});
+composer.addPass(aoPass);
 const godRays = new ShaderPass({ // screen-space light shafts streaming from the sun / moon
   uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector2(0.5, 0.5) }, uAmt: { value: 0 } },
   vertexShader: PASS_VS,
@@ -5894,15 +5928,16 @@ const fxaa = new ShaderPass(FXAAShader);
 const setFxaa = () => { const pr = renderer.getPixelRatio(); fxaa.material.uniforms.resolution.value.set(1 / (innerWidth * pr), 1 / (innerHeight * pr)); };
 setFxaa(); composer.addPass(fxaa);
 const finalPass = new ShaderPass({ // film look: lens fringing, gentle S-curve, grain
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uSh: { value: GRADE.sh }, uHi: { value: GRADE.hi }, uSat: GRADE.sat },
   vertexShader: PASS_VS,
   fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec3 uSh, uHi; uniform float uSat; varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
       vec2 c = vUv - 0.5; vec2 off = c * dot(c, c) * 0.005;
       vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
       col = mix(col, col * col * (3.0 - 2.0 * col), 0.22) * vec3(1.02, 1.0, 0.97);
+      float lum = dot(col, vec3(0.299, 0.587, 0.114)); col = mix(vec3(lum), col, uSat) * mix(uSh, uHi, smoothstep(0.05, 0.75, lum));   // the grade: cool shadows, warm light, per time of day
       col += (h(vUv * 1000.0 + fract(uTime * 7.0) * 100.0) - 0.5) * 0.012;
       gl_FragColor = vec4(col, 1.0);
     }`,
@@ -6231,7 +6266,7 @@ function applyGfx() {
   const tm = GFX.post === false ? THREE.CustomToneMapping : THREE.ACESFilmicToneMapping;
   if (renderer.toneMapping !== tm) { renderer.toneMapping = tm; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); }
   sun.castShadow = GFX.shadows;
-  godRays.enabled = GFX.rays; bloom.enabled = GFX.bloom; flowers.visible = GFX.flowers !== false;
+  godRays.enabled = GFX.rays; bloom.enabled = GFX.bloom; aoPass.enabled = GFX.ao !== false && GFX.post !== false; flowers.visible = GFX.flowers !== false;
   renderer.setPixelRatio(targetPR() * GFX.scale); composer.setPixelRatio(renderer.getPixelRatio()); setFxaa();
   applyGrassCount();
   document.getElementById('fps').style.display = GFX.fps || gfxEl.style.display === 'block' ? 'block' : 'none';
@@ -6247,7 +6282,7 @@ function renderGfxMenu() {
     <div class="row"><span>Grass style</span><span>${b(GFX.grassStyle !== 'blades', 'gs:cards', 'Cards (RDR2)')} ${b(GFX.grassStyle === 'blades', 'gs:blades', 'Blades (Tsushima)')}</span></div>
     <div class="row"><span>Grass amount</span><span>${[[0.45, 'Low'], [0.7, 'Med'], [1, 'High']].map(([v, l]) => b(GFX.grass === v, 'grass:' + v, l)).join(' ')}</span></div>
     <div class="row"><span>Resolution <b id="resLbl">${Math.round(GFX.scale * 100)}%</b></span><input id="resSl" type="range" min="10" max="100" step="5" value="${Math.round(GFX.scale * 100)}" style="width:180px"></div>
-    ${tog('post', 'Post effects (film look, glow)')}${tog('flowers', 'Flowers')}${tog('shadows', 'Shadows')}${tog('reflect', 'Live water reflections')}${tog('rays', 'Sun rays')}${tog('bloom', 'Glow')}${tog('fps', 'Show FPS')}
+    ${tog('post', 'Post effects (film look, glow)')}${tog('flowers', 'Flowers')}${tog('shadows', 'Shadows')}${tog('ao', 'Ambient occlusion')}${tog('reflect', 'Live water reflections')}${tog('rays', 'Sun rays')}${tog('bloom', 'Glow')}${tog('fps', 'Show FPS')}
     <div class="note">G to close · settings are saved</div>`;
 }
 gfxEl.addEventListener('input', e => { if (e.target.id === 'resSl') document.getElementById('resLbl').textContent = e.target.value + '%'; });
@@ -7112,6 +7147,7 @@ function loop() {
   FOGU.uFogUpV.value.set(0, 1, 0).transformDirection(camera.matrixWorldInverse); FOGU.uFogCamY.value = camera.position.y;
   if (frameNo % 60 === 1) patchAllFog(scene);   // new characters and props pick up the atmosphere too
   SH.uCanopyC.value.set(player.pos.x, player.pos.z); SH.uCanopyP.value.z = GFX.shadows ? 21 : -2; SH.uCanopyP.value.w = GFX.shadows ? 29 : -1;
+  if (aoPass.enabled) { aoPass.uniforms.tDepth.value = composer.readBuffer.depthTexture; aoPass.uniforms.uProj.value.copy(camera.projectionMatrix); aoPass.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse); aoPass.uniforms.uRes.value.set(composer.readBuffer.width, composer.readBuffer.height); }
   if (GFX.post === false) renderer.render(scene, camera); else composer.render();
   fpsAcc += raw; fpsN++;
   if (mapEl.style.display === 'block' && (frameNo & 7) === 0) drawMap();
