@@ -3250,6 +3250,44 @@ function mergeLeaves(root) {
   for (const n of nodes) mergeInto(n, n.children.filter(o => o.isMesh && !o.isSkinnedMesh && o.visible && !o.children.length));
 }
 const LAME_CACHE = {};
+// Clothes over the borrowed soldier body (it has pouches, straps and plates): a kosode robe with a crossed collar,
+// sleeves and pleated hakama, each piece fitted to the body's measured girth and riding on its own bone
+function dressClothes(model, rig, B, wp, col, armoured) {
+  const V = [], tmp = new THREE.Vector3(); model.updateMatrixWorld(true);
+  model.traverse(o => { if (o.isMesh) { const p = o.geometry.attributes.position; for (let i = 0; i < p.count; i += 3) { tmp.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); rig.worldToLocal(tmp); V.push(tmp.x, tmp.y, tmp.z); } } });
+  const pct = (a, q) => { if (!a.length) return 0.1; a.sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * q))]; };
+  const girth = (c, a, half, maxR) => { const ds = []; for (let i = 0; i < V.length; i += 3) { const dx = V[i] - c.x, dy = V[i + 1] - c.y, dz = V[i + 2] - c.z, t = dx * a.x + dy * a.y + dz * a.z; if (Math.abs(t) > half) continue; const d = Math.hypot(dx - a.x * t, dy - a.y * t, dz - a.z * t); if (d < maxR) ds.push(d); } return pct(ds, 0.95); };
+  const torso = (y0, y1, cx) => { const xs = [], zs = []; for (let i = 0; i < V.length; i += 3) if (V[i + 1] > y0 && V[i + 1] < y1 && Math.abs(V[i] - cx) < 0.27) { xs.push(Math.abs(V[i] - cx)); zs.push(V[i + 2]); } const z0 = pct(zs.slice(), 0.02), z1 = pct(zs, 0.98); return { rx: pct(xs, 0.97), cz: (z0 + z1) / 2, rz: (z1 - z0) / 2 }; };
+  const c = new THREE.Color(...col), cloth = new THREE.MeshStandardMaterial({ color: c, map: WEAVE_TEX, roughness: 0.93, side: THREE.DoubleSide });
+  const hk = new THREE.MeshStandardMaterial({ color: c.clone().multiplyScalar(0.45).lerp(new THREE.Color(0.05, 0.05, 0.06), 0.4), map: WEAVE_TEX, roughness: 0.95, side: THREE.DoubleSide });
+  const juban = new THREE.MeshStandardMaterial({ color: 0xd8d0c0, roughness: 0.9 });
+  const attach = (bone, obj) => { rig.add(obj); bone.attach(obj); obj.userData.arm = true; obj.castShadow = obj.receiveShadow = true; return obj; };
+  const Yv = new THREE.Vector3(0, 1, 0);
+  const tube = (bone, p0, p1, r0, r1, mat, segs = 14) => {   // an open cone from p0 (radius r0) to p1 (radius r1)
+    const d = p1.clone().sub(p0), m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, d.length(), segs, 1, true), mat);
+    m.position.copy(p0).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(Yv, d.normalize()); return attach(bone, m); };
+  const hips = wp(B.Hips), sp2 = wp(B.Spine2), neck = wp(B.Neck), k = armoured ? 0.012 : 0.03;
+  // robe
+  const ch = torso(wp(B.Spine1).y, neck.y - 0.02, sp2.x), wa = torso(hips.y - 0.15, wp(B.Spine1).y, hips.x), R0 = 0.2;
+  const top = neck.y - 0.02, bot = hips.y - (armoured ? 0.05 : 0.2);
+  const robe = new THREE.Mesh(new THREE.CylinderGeometry(R0 * 0.92, R0 * 1.06, top - bot, 22, 4, true), cloth);
+  robe.position.set(sp2.x, (top + bot) / 2, (ch.cz + wa.cz) / 2); robe.scale.set((Math.max(ch.rx, wa.rx) + k) / R0, 1, (Math.max(ch.rz, wa.rz) + k) / R0); attach(B.Spine, robe);
+  for (const sx of [-1, 1]) {   // crossed collar: the white under-robe showing in a V
+    const lap = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.26, 0.012), juban);
+    lap.position.set(sp2.x + sx * 0.045, neck.y - 0.12, ch.cz + ch.rz + k + 0.004); lap.rotation.z = sx * 0.42; attach(B.Spine2, lap); }
+  // sleeves: wide at the cuff like a kosode
+  for (const [arm, fore, hand] of [[B.LeftArm, B.LeftForeArm, B.LeftHand], [B.RightArm, B.RightForeArm, B.RightHand]]) {
+    const a0 = wp(arm), a1 = wp(fore), a2 = wp(hand), ra = girth(a0.clone().lerp(a1, 0.5), a1.clone().sub(a0).normalize(), 0.06, 0.13), rf = girth(a1.clone().lerp(a2, 0.4), a2.clone().sub(a1).normalize(), 0.05, 0.11);
+    tube(arm, a0.clone().lerp(a1, -0.08), a1.clone().lerp(a0, -0.06), ra + 0.025, ra + 0.04, cloth);
+    if (!armoured) tube(fore, a1.clone().lerp(a2, 0.02), a1.clone().lerp(a2, 0.55), rf + 0.05, rf + 0.075, cloth);
+  }
+  // hakama: wide pleated trouser legs, split at the knee so they bend with it
+  for (const [ul, l, ft] of [[B.LeftUpLeg, B.LeftLeg, B.LeftFoot], [B.RightUpLeg, B.RightLeg, B.RightFoot]]) {
+    const t0 = wp(ul), t1 = wp(l), t2 = wp(ft), rt = girth(t0.clone().lerp(t1, 0.4), t1.clone().sub(t0).normalize(), 0.08, 0.17), rs = girth(t1.clone().lerp(t2, 0.5), t2.clone().sub(t1).normalize(), 0.08, 0.13);
+    tube(ul, t0.clone().lerp(t1, -0.12), t1.clone().lerp(t0, -0.08), rt + 0.035, rt + 0.06, hk, 16);
+    tube(l, t1.clone().lerp(t2, 0.0), t1.clone().lerp(t2, armoured ? 0.35 : 0.9), rs + 0.085, rs + (armoured ? 0.06 : 0.11), hk, 16);
+  }
+}
 function buildArmour(model, rig, B, paletteName) {
   const P = ARMOUR_PALETTES[paletteName];
   const lame = LAME_CACHE[paletteName] || (LAME_CACHE[paletteName] = lacquer(P.lamellar ? makeLamellarTex(P.plate, P.cord, P.knot) : makeLameTex(P.plate, P.cord, P.knot), P.lamellar ? 0.55 : 0.38));   // painted once per palette, not once per man
@@ -3289,8 +3327,6 @@ function buildArmour(model, rig, B, paletteName) {
   const ring = lamePanel(0, doTop - doBot, 6, doR, lame, 0.004, true);
   doG.add(ring); doG.position.set(sp2.x, doTop, chest.cz);
   doG.scale.set((Math.max(chest.rx, waist.rx) + 0.035) / doR, 1, (Math.max(chest.rz, waist.rz) + 0.03) / doR);
-  const muna = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.07, 0.02), kabutoM); muna.position.set(0, 0.0, doR + 0.005); doG.add(muna); // breast plate
-  for (const s of [-1, 1]) { const strap = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.3), kabutoM); strap.position.set(s * 0.12, 0.02, 0); doG.add(strap); }
   attach(B.Spine1, doG);
   // obi sash at the waist
   const obi = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 8, 36), sashM); obi.rotation.x = Math.PI / 2;
@@ -3314,9 +3350,9 @@ function buildArmour(model, rig, B, paletteName) {
     // hung from the collarbone so they drape over the arm instead of swinging with it
     const s0 = wp(arm), s1 = wp(fore), a = s1.clone().sub(s0).normalize(), sx = Math.sign(s0.x - sp2.x) || 1;
     const r = girth(s0.clone().lerp(s1, 0.3), a, 0.07, 0.16);
-    const sode = lamePanel(0.27, 0.31, 6, 0.42, lame, 0.007);
-    orientDownOut(sode, new THREE.Vector3(sx * 0.12, -1, 0), new THREE.Vector3(sx, 0.12, 0));
-    sode.position.copy(s0).add(new THREE.Vector3(sx * (r + 0.035), 0.05, -0.01));
+    const sode = lamePanel(0.24, 0.26, 6, 0.16, lame, 0.005);   // curved round the arm and close to it, so it never sticks out like a card
+    orientDownOut(sode, new THREE.Vector3(sx * 0.05, -1, 0), new THREE.Vector3(sx, 0.03, 0));
+    sode.position.copy(s0).add(new THREE.Vector3(sx * (r + 0.012), 0.03, -0.01));
     attach(shoulder, sode);
   }
 
@@ -3598,7 +3634,7 @@ function reskinUnder(mat, c, headC) { // the base body becomes the dark cloth la
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       float lum0 = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-      diffuseColor.rgb = vec3(${c[0]}, ${c[1]}, ${c[2]}) * (0.55 + lum0 * 2.2);
+      diffuseColor.rgb = vec3(${c[0]}, ${c[1]}, ${c[2]}) * (1.0 + (lum0 - 0.25) * 0.5);   // flat dyed cloth, only a hint of the old seams
       #ifdef USE_MAP
       { vec3 wv = texture2D(uWeave, vMapUv * 22.0).rgb; diffuseColor.rgb *= 0.72 + 0.62 * wv.r; }   // the weave of the cloth, close up
       #endif`);
@@ -3613,7 +3649,7 @@ function makeWarrior(model, animations, palette, face) {
     if (/^mixamorig/.test(o.name)) B[o.name.replace(/^mixamorig:?/, '')] = o;
     if (o.isMesh) {
       const m0 = o.material;
-      o.material = new THREE.MeshStandardMaterial({ map: m0.map, normalMap: m0.normalMap, roughness: 0.85, metalness: 0 });
+      o.material = new THREE.MeshStandardMaterial({ map: m0.map, roughness: 0.95, metalness: 0 });   // no borrowed normal map: it carved sci-fi plates into the cloth
       reskinUnder(o.material, ARMOUR_PALETTES[palette].under, o.isSkinnedMesh ? prepareHeadCollapse(o) : null);
       o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
     }
@@ -3639,6 +3675,7 @@ function makeWarrior(model, animations, palette, face) {
   const handle = buildKatana(false); handle.children.forEach(c => { if (c.geometry?.type === 'BoxGeometry' || c.geometry?.type === 'ConeGeometry') c.visible = false; });
   handle.position.copy(sheath.position); handle.quaternion.copy(sheath.quaternion); rig.add(handle); B.Hips.attach(handle);
 
+  dressClothes(model, rig, B, wp, ARMOUR_PALETTES[palette].under.map(v => Math.min(1, v * 1.8)), true);
   const armour = buildArmour(model, rig, B, palette);
   mergeArmour(rig, armour); addRim(rig);
   const mixer = new THREE.AnimationMixer(model), act = {};
@@ -3652,7 +3689,8 @@ function dressVillager(model, rig, B, animations, palette, face, wp, hipsY) {
   const attach = (bone, obj) => { rig.add(obj); bone.attach(obj); obj.userData.arm = true; return obj; };
   const head = wp(B.Head), top = wp(B.HeadTop_End), hc = head.clone().lerp(top, 0.42), fc = hc.clone().addScaledVector(up, -0.03);
   attach(B.Head, makeHead(face, fc, up, fwd));
-  const cloth = new THREE.MeshStandardMaterial({ color: new THREE.Color(...P.under).multiplyScalar(2.2), roughness: 0.9, side: THREE.DoubleSide });
+  const cloth = new THREE.MeshStandardMaterial({ color: new THREE.Color(...P.under).multiplyScalar(2.2), map: WEAVE_TEX, roughness: 0.93, side: THREE.DoubleSide });
+  dressClothes(model, rig, B, wp, P.under.map(v => Math.min(1, v * 2.2)), false);
   const sash = new THREE.MeshStandardMaterial({ color: P.sash, roughness: 0.8 });
   const waist = wp(B.Spine).lerp(wp(B.Hips), 0.4);
   const obi = new THREE.Mesh(new THREE.CylinderGeometry(0.175, 0.175, 0.13, 20, 1, true), sash); obi.position.copy(waist); obi.scale.set(1, 1, 0.82); attach(B.Spine, obi);
