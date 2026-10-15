@@ -1654,9 +1654,9 @@ const midGrass = makeCarpet(LOW ? 90000 : ULTRA ? 900000 : 170000, 92, blade3, 0
 const grassCardTex = (() => {
   const S = LOW ? 512 : 1024, c = document.createElement('canvas'); c.width = c.height = S;
   const x = c.getContext('2d'), R = rng32(77), k = S / 512;
-  for (let i = 0; i < 120; i++) {   // a broad tuft: blades all the way across, so neighbouring cards knit into one sward
+  for (let i = 0; i < 190; i++) {   // a broad tuft: blades all the way across, so neighbouring cards knit into one sward
     const u = (R() + R() - 1) * 1.05, bx = S / 2 + u * S * 0.47, side = Math.min(1, Math.abs(u));
-    const hgt = S * (0.4 + R() * 0.56) * (1 - 0.22 * side * side), lean = ((R() - 0.5) * 0.5 + u * 0.25) * hgt, w = (24 + R() * 18) * k, v = 120 + R() * 135 | 0;   // broad blades
+    const hgt = S * (0.4 + R() * 0.56) * (1 - 0.22 * side * side), lean = ((R() - 0.5) * 0.5 + u * 0.25) * hgt, w = (11 + R() * 9) * k, v = 120 + R() * 135 | 0;   // broad blades
     const tx = Math.max(w, Math.min(S - w, bx + lean)), ty = S - hgt, mx = bx + (tx - bx) * 0.35, my = S - hgt * 0.55;
     const gr = x.createLinearGradient(0, S, 0, ty); gr.addColorStop(0, `rgb(${v * 0.35 | 0},${v * 0.35 | 0},${v * 0.35 | 0})`); gr.addColorStop(1, `rgb(${v},${v},${v})`);
     x.fillStyle = gr; x.beginPath(); x.moveTo(bx - w / 2, S); x.quadraticCurveTo(mx - w * 0.3, my, tx, ty); x.quadraticCurveTo(mx + w * 0.3, my, bx + w / 2, S); x.closePath(); x.fill();
@@ -1789,7 +1789,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       float camD = distance(root.xz, cameraPosition.xz);
       if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
       #if KIND != 1
-      h *= KIND == 2 ? 2.5 : 1.0; float W = aParams.z * (KIND == 2 ? 2.5 : 1.0);   // cards at their old size; the blades themselves are painted broad
+      h *= KIND == 2 ? 2.5 : 1.0; float W = aParams.z * (KIND == 2 ? 2.5 : 2.4);   // short grass in broad, bold blades; big blooms
       #else
       h *= 0.75 + 0.9 * fract(r * 17.3); float W = aParams.z * 1.8;   // pampas: broad clumps, uneven in height
       #endif
@@ -1797,6 +1797,9 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       vec3 lp = vec3(position.x * c - position.z * s, 0.0, position.x * s + position.z * c) * W;
       float gy = texture2D(uHeightMap, ((root.xz + lp.xz - uHm.x) / uHm.y * (uHm.z - 1.0) + 0.5) / uHm.z).r - 0.03;   // each edge of the tuft sits on the slope, not in the air
       vec3 wp = vec3(root.x + lp.x, gy, root.z + lp.z) + vec3(0.0, t * h, 0.0);
+      #if KIND == 0
+      { vec2 sp = vec2(-lp.z, lp.x) / max(W, 1e-3); wp.xz += sp * t * h * 0.9; wp.xz += normalize(lp.xz + 1e-4) * t * h * 0.35; wp.y -= t * h * 0.15; }   // each card twists and splays outward like a real tuft: never a flat line from above
+      #endif
       vec2 wdir = normalize(vec2(1.0, 0.35));
       float g = gustAt(root.xz, uTime), flutter = sin(uTime * 3.0 + r * 30.0) * 0.05;
       vec2 disp = wdir * (0.04 + g * 0.2 + flutter * 0.5) * t * t * h * (0.7 + 0.6 * fract(r * 5.3));   // sway, don't flatten   // stiffer and softer tufts
