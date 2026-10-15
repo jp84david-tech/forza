@@ -1721,11 +1721,11 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       #if KIND == 1
       float h = (1.6 + 0.9 * aParams.y) * (0.75 + 0.25 * hm.b) * keep * step(hm.r, 45.0) * (1.0 - smoothstep(0.05, 0.2, hm.g));
       #elif KIND == 2
-      float h = (0.55 + 0.35 * aParams.y) * (0.8 + 0.2 * hm.b) * keep * step(hm.r, 40.0) * (1.0 - smoothstep(0.05, 0.2, hm.g));
+      float h = (0.35 + 0.85 * aParams.y) * (0.8 + 0.2 * hm.b) * keep * step(hm.r, 40.0) * (1.0 - smoothstep(0.05, 0.2, hm.g));
       #else
       float ff = flowerField(wxz);   // the sward is short and sparse inside the flower fields, so the blooms stand clear of it
       float tall = smoothstep(0.6, 0.74, vnoise2(wxz * 0.012 + vec2(31.0, 7.0)) * 0.7 + vnoise2(wxz * 0.05) * 0.3) * (1.0 - ff);   // patches of long grass
-      float h = (0.24 + 0.22 * hm.a) * (0.6 + 0.4 * hm.b) * (1.0 - hm.g * 0.6) * (0.84 + 0.26 * aParams.y) * (0.82 + 0.36 * vnoise2(wxz * 0.15 + 2.0)) * (1.0 + 2.1 * tall) * (1.0 - 0.6 * ff) * keep;   // a short sward; long grass only in its own patches
+      float h = (0.24 + 0.22 * hm.a) * (0.6 + 0.4 * hm.b) * (1.0 - hm.g * 0.6) * (0.4 + 1.25 * aParams.y * aParams.y) * (0.55 + 0.9 * vnoise2(wxz * 0.35 + 2.0))   /* uneven: short tufts beside tall ones, in clumps */ * (1.0 + 2.1 * tall) * (1.0 - 0.6 * ff) * keep;   // a short sward; long grass only in its own patches
       #endif
       vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
       if (h < 0.004 || dot(root - cameraPosition, camF) < -2.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
