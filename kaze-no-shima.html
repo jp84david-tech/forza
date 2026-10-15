@@ -1742,7 +1742,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       #if KIND != 1
       h *= KIND == 2 ? 2.5 : 1.0; float W = aParams.z * (KIND == 2 ? 2.5 : 2.4);   // short grass in broad, bold blades; big blooms
       #else
-      float W = aParams.z;
+      h *= 0.75 + 0.9 * fract(r * 17.3); float W = aParams.z * 1.8;   // pampas: broad clumps, uneven in height
       #endif
       float c = cos(rot), s = sin(rot);
       vec3 lp = vec3(position.x * c - position.z * s, 0.0, position.x * s + position.z * c) * W;
@@ -1772,7 +1772,8 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       vec3 B = P[int(fract(r * 29.3) * 7.999)];
       vTip = mix(A, B, step(0.55, pk)) * (0.85 + 0.3 * fract(r * 7.1));
       #elif KIND == 1
-      vTip = mix(vec3(0.5, 0.43, 0.32), vec3(0.66, 0.58, 0.45), fract(r * 7.1));   // silky cream-buff plumes
+      float pq = fract(r * 23.1 + vnoise2(root.xz * 0.01) * 2.0);   // plumes in cream, pink, wine-red and gold, drifting in patches
+      vTip = (pq < 0.4 ? vec3(0.66, 0.58, 0.45) : pq < 0.62 ? vec3(0.85, 0.45, 0.62) : pq < 0.8 ? vec3(0.62, 0.2, 0.3) : vec3(0.82, 0.62, 0.25)) * (0.85 + 0.3 * fract(r * 7.1));
       #else
       vTip = meadowTip(root.xz, vnoise2(root.xz * 0.19 + 7.0), vnoise2(root.xz * 0.035), r * 0.05) * vec3(1.0 + (fract(r * 7.1) - 0.5) * 0.05, 1.0, 1.0 - (fract(r * 3.7) - 0.5) * 0.06);
       #endif
