@@ -1606,7 +1606,7 @@ const grassCardTex = (() => {
   const x = c.getContext('2d'), R = rng32(77), k = S / 512;
   for (let i = 0; i < 190; i++) {   // a broad tuft: blades all the way across, so neighbouring cards knit into one sward
     const u = (R() + R() - 1) * 1.05, bx = S / 2 + u * S * 0.47, side = Math.min(1, Math.abs(u));
-    const hgt = S * (0.4 + R() * 0.56) * (1 - 0.22 * side * side), lean = ((R() - 0.5) * 0.5 + u * 0.25) * hgt, w = (8 + R() * 8) * k, v = 120 + R() * 135 | 0;   // broad blades
+    const hgt = S * (0.4 + R() * 0.56) * (1 - 0.22 * side * side), lean = ((R() - 0.5) * 0.5 + u * 0.25) * hgt, w = (14 + R() * 12) * k, v = 120 + R() * 135 | 0;   // broad blades
     const tx = Math.max(w, Math.min(S - w, bx + lean)), ty = S - hgt, mx = bx + (tx - bx) * 0.35, my = S - hgt * 0.55;
     const gr = x.createLinearGradient(0, S, 0, ty); gr.addColorStop(0, `rgb(${v * 0.35 | 0},${v * 0.35 | 0},${v * 0.35 | 0})`); gr.addColorStop(1, `rgb(${v},${v},${v})`);
     x.fillStyle = gr; x.beginPath(); x.moveTo(bx - w / 2, S); x.quadraticCurveTo(mx - w * 0.3, my, tx, ty); x.quadraticCurveTo(mx + w * 0.3, my, bx + w / 2, S); x.closePath(); x.fill();
@@ -1739,7 +1739,7 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       float camD = distance(root.xz, cameraPosition.xz);
       if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
       #if KIND != 1
-      h *= 2.5; float W = aParams.z * 2.5;   // big, bold blades and blooms
+      h *= KIND == 2 ? 2.5 : 1.0; float W = aParams.z * (KIND == 2 ? 2.5 : 3.6);   // short grass in broad, bold blades; big blooms
       #else
       float W = aParams.z;
       #endif
