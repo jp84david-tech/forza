@@ -1738,7 +1738,12 @@ function makeCardMaterial(patch, fadeA, fadeB, growA, growB, far, kind = 0, tex 
       #endif
       float camD = distance(root.xz, cameraPosition.xz);
       if (cameraPosition.y < root.y + h + 0.4) h *= smoothstep(0.35, 1.7, camD);
-      float c = cos(rot), s = sin(rot), W = aParams.z;
+      #if KIND != 1
+      h *= 2.5; float W = aParams.z * 2.5;   // big, bold blades and blooms
+      #else
+      float W = aParams.z;
+      #endif
+      float c = cos(rot), s = sin(rot);
       vec3 lp = vec3(position.x * c - position.z * s, 0.0, position.x * s + position.z * c) * W;
       vec3 wp = root + lp + vec3(0.0, t * h, 0.0);
       vec2 wdir = normalize(vec2(1.0, 0.35));
@@ -1820,17 +1825,17 @@ function makeCardCarpet(N, side, wMin, wMax, fadeA, fadeB, growA = -2, growB = -
   g.instanceCount = N;
   const m = new THREE.Mesh(g, makeCardMaterial(side, fadeA, fadeB, growA, growB, geo === cardGeoFar, kind, tex)); m.frustumCulled = false; scene.add(m); return m;
 }
-const nearCards = makeCardCarpet(LOW ? 38000 : ULTRA ? 100000 : 64000, 48, 0.7, 1.0, 9, 23);    // dense layer round the player
-const midCards = makeCardCarpet(LOW ? 80000 : ULTRA ? 240000 : 160000, 210, 0.95, 1.4, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
-const farCards = makeCardCarpet(LOW ? 90000 : ULTRA ? 300000 : 210000, 400, 1.6, 2.3, 140, 190, 28, 60, cardGeoFar);   // the painted ground carries the field beyond this   // big tufts to ~250 m
+const nearCards = makeCardCarpet(LOW ? 15000 : ULTRA ? 40000 : 26000, 48, 0.7, 1.0, 9, 23);    // dense layer round the player
+const midCards = makeCardCarpet(LOW ? 32000 : ULTRA ? 96000 : 64000, 210, 0.95, 1.4, 45, 100, -2, -1, cardGeoMid);    // wide layer out to ~80 m
+const farCards = makeCardCarpet(LOW ? 36000 : ULTRA ? 120000 : 84000, 400, 1.6, 2.3, 140, 190, 28, 60, cardGeoFar);   // the painted ground carries the field beyond this   // big tufts to ~250 m
 // fields of pampas grass and of flowers (only drawn where their field mask says they grow)
 const FIELD_CARPETS = [
   makeCardCarpet(LOW ? 5000 : 8000, 70, 1.5, 2.1, 24, 33, -2, -1, cardGeo, 1, pampasTex),
   makeCardCarpet(LOW ? 12000 : 22000, 300, 1.7, 2.4, 125, 145, 20, 30, cardGeoMid, 1, pampasTex),
   makeCardCarpet(LOW ? 9000 : 16000, 600, 2.6, 3.4, 250, 290, 125, 145, cardGeoFar, 1, pampasTex),
-  makeCardCarpet(LOW ? 16000 : 30000, 60, 0.65, 0.95, 20, 28, -2, -1, cardGeo, 2, flowerCardTex),
-  makeCardCarpet(LOW ? 36000 : 70000, 260, 0.8, 1.1, 110, 125, 16, 24, cardGeoMid, 2, flowerCardTex),
-  makeCardCarpet(LOW ? 20000 : 40000, 500, 1.6, 2.2, 210, 240, 105, 120, cardGeoFar, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 6500 : 12000, 60, 0.65, 0.95, 20, 28, -2, -1, cardGeo, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 14000 : 28000, 260, 0.8, 1.1, 110, 125, 16, 24, cardGeoMid, 2, flowerCardTex),
+  makeCardCarpet(LOW ? 8000 : 16000, 500, 1.6, 2.2, 210, 240, 105, 120, cardGeoFar, 2, flowerCardTex),
 ];
 const grass = new THREE.Mesh(grassGeo, grassMat);
 grass.frustumCulled = false;
@@ -2543,7 +2548,7 @@ const flowers = (() => {
     const dens = smooth(0.6, 0.72, n) + (Math.random() < 0.004 ? 1 : 0);
     if (Math.random() > dens * 0.5) continue;
     off.push(x, h - 0.02, z); flowerPos.push(x, z);
-    prm.push(Math.random() * 6.28, 0.75 + Math.random() * 0.6, Math.random(), Math.random() < 0.12 ? 1 : 0);
+    prm.push(Math.random() * 6.28, (0.75 + Math.random() * 0.6) * 2.5, Math.random(), Math.random() < 0.12 ? 1 : 0);
   }
   ig.setAttribute('aOffset', new THREE.InstancedBufferAttribute(new Float32Array(off), 3));
   ig.setAttribute('aParams', new THREE.InstancedBufferAttribute(new Float32Array(prm), 4));
@@ -6760,7 +6765,25 @@ function objectiveText() {
   if (STORY.guards) return '<b>OBJECTIVE</b><br>Go to Yuki and Hana in the upper room';
   return (STORY.ronin ? '' : '<span style="opacity:.7">A lone swordsman waits at the summit shrine</span><br>') + `<b>OBJECTIVE</b><br>Free the island — Mongol camps taken: ${STORY.cleared.size} / ${n}<br>Climb to Shirasagi Castle and defeat the Khan's guard`;
 }
+// ── Objective marker: where to go, how far, counting down the last metres ──
+const OBJ_MARK = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;top:0;transform:translate(-50%,-100%);color:#f4e9d8;font:12px Georgia,serif;letter-spacing:3px;text-align:center;text-shadow:0 2px 6px #000;z-index:19;pointer-events:none;white-space:nowrap;transition:opacity .4s';
+  d.innerHTML = '<div id="omName"></div><div id="omDist" style="font-size:15px;color:#e8c46a"></div><div style="font-size:18px;color:#e8c46a;line-height:1">◆</div>'; document.body.appendChild(d); return d; })();
+const _om = new THREE.Vector3();
+function objectiveName() { if (STORY.done) return ''; if (STORY.step === 0) return 'MEET THE ELDER'; if (STORY.guards && STORY.khan) return 'YUKI & HANA'; if (STORY.guards) return 'JARGHAL KHAN'; const C = window.__castle, T = objectiveTarget(); return C && T && Math.hypot(T.x - C.x, T.z - C.z) < 5 ? 'SHIRASAGI CASTLE' : 'MONGOL CAMP'; }
+function updateObjMarker() {
+  const T = objectiveTarget(), name = objectiveName();
+  if (!T || !name || !started || CINE.on || STANDOFF.on || PAUSED || mapEl.style.display === 'block') { OBJ_MARK.style.opacity = 0; return; }
+  const d = Math.hypot(T.x - player.pos.x, T.z - player.pos.z), ty = (T.y || groundH(T.x, T.z)) + 2.4;
+  _om.set(T.x, ty, T.z).project(camera);
+  let x = _om.x, y = _om.y; if (_om.z > 1) { x = -x; y = -1; }   // behind you: pin it to the bottom edge
+  x = Math.max(-0.92, Math.min(0.92, x)); y = Math.max(-0.85, Math.min(0.85, y));
+  OBJ_MARK.style.left = ((x * 0.5 + 0.5) * innerWidth) + 'px'; OBJ_MARK.style.top = ((-y * 0.5 + 0.5) * innerHeight) + 'px';
+  document.getElementById('omName').textContent = name;
+  document.getElementById('omDist').textContent = d < 6 ? Math.max(1, Math.ceil(d - 1)) + ' m' : d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km';   // the last few metres count down 5, 4, 3...
+  OBJ_MARK.style.opacity = d < 2 ? 0 : 0.95;
+}
 function updateStory(raw) {
+  updateObjMarker();
   if (!started || CINE.on) return;
   // subtitles (dialogue)
   if (subQueue.length) { subT += raw; const ln = subQueue[0], dur = Math.max(4.6, ln.length * 0.068); if (subSpoken !== ln) { subSpoken = ln; speak(ln); } storyUI.sub.innerHTML = fmtSub(ln); storyUI.sub.style.opacity = subT > 0.3 && subT < dur ? 1 : 0; if (subT > dur + 0.4) { subQueue.shift(); subT = 0; } }
