@@ -2290,7 +2290,7 @@ function animateHorse(dt, t, onHoof) {
 }
 
 const hero = buildSamurai(); scene.add(hero.root);
-const horse = buildHorse(); scene.add(horse.root); mergeLeaves(horse.root);
+const horse = buildHorse(); scene.add(horse.root); mergeLeaves(horse.root); addRim(horse.root);
 
 // ─────────────────────────── State / input ───────────────────────────
 const spawnPt = pathPts.filter(p => p[3] === 0).reduce((b, p) => Math.abs(Math.atan2(p[1], p[0]) - 2.4) < Math.abs(Math.atan2(b[1], b[0]) - 2.4) ? p : b);
@@ -3218,6 +3218,20 @@ function mergeInto(anchor, meshes) {
     for (const o of list) o.parent.remove(o);
   }
 }
+// Rim light: sun-coloured fresnel edge on characters, strongest when backlit
+function addRim(root) {
+  root.traverse(o => { const ms = o.isMesh ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    for (const m of ms) { if (!m || m.userData.rim || !m.isMeshStandardMaterial) continue; m.userData.rim = true;
+      const prev = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r);
+        sh.uniforms.uRimSun = FLORA.uSunView; sh.uniforms.uRimCol = FLORA.uSunCol;
+        sh.fragmentShader = 'uniform vec3 uRimSun; uniform vec3 uRimCol;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
+          { vec3 Vr = normalize(vViewPosition); float fr = pow(1.0 - max(dot(normal, Vr), 0.0), 3.0);
+            float bk = 0.3 + 0.7 * max(dot(-Vr, uRimSun), 0.0);
+            outgoingLight += uRimCol * fr * bk * 0.45; }
+          #include <opaque_fragment>`); };
+      m.customProgramCacheKey = () => 'rim' + (prev ? prev.toString().length : 0); m.needsUpdate = true; } });
+}
 function mergeArmour(rig, armour) {
   rig.updateMatrixWorld(true);
   const pivots = new Set(armour.kusazuri), byAnchor = new Map(), roots = [];
@@ -3578,7 +3592,7 @@ function makeWarrior(model, animations, palette, face) {
   handle.position.copy(sheath.position); handle.quaternion.copy(sheath.quaternion); rig.add(handle); B.Hips.attach(handle);
 
   const armour = buildArmour(model, rig, B, palette);
-  mergeArmour(rig, armour);
+  mergeArmour(rig, armour); addRim(rig);
   const mixer = new THREE.AnimationMixer(model), act = {};
   for (const c of animations) act[c.name] = mixer.clipAction(c);
   for (const n of ['Idle', 'Walk', 'Run']) { act[n].play(); act[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
@@ -3607,6 +3621,7 @@ function dressVillager(model, rig, B, animations, palette, face, wp, hipsY) {
   const mixer = new THREE.AnimationMixer(model), act = {};
   for (const c of animations) act[c.name] = mixer.clipAction(c);
   for (const n of ['Idle', 'Walk', 'Run']) { if (!act[n]) continue; act[n].play(); act[n].setEffectiveWeight(n === 'Idle' ? 1 : 0); }
+  addRim(rig);
   return { model, rig, B, mixer, act, hipsY };
 }
 const villagers = [];
