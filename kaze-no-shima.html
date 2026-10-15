@@ -3516,14 +3516,50 @@ function faceTexture(name) {
   return (_faceTex[name] = t);
 }
 // Build a head for a character: returns a group to hang on the Head bone (in rig space at the skull centre)
+// Sculpt the head sphere into a skull and face: sockets, brow, cheekbones, nose bridge, lips, chin and jaw,
+// placed where faceTexture paints the features (1 radian of the sphere = 81.5 texture pixels both ways)
+const _headGeo = {};
+function sculptHead(st) {
+  const key = st.cute || 0; if (_headGeo[key]) return _headGeo[key];
+  const g = new THREE.SphereGeometry(1, LOW ? 40 : 72, LOW ? 30 : 54), P = g.attributes.position, v = new THREE.Vector3();
+  const G = (x, y) => Math.exp(-(x * x + y * y)), ss = (a, b, t) => { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i); const a = Math.atan2(v.x, v.z), e = Math.asin(Math.max(-1, Math.min(1, v.y)));
+    let px = a * 81.5, py = -e * 81.5; if (st.cute) { px /= st.cute; py = (py - 8) / st.cute + 8; }
+    const ax = Math.abs(px), front = ss(1.7, 0.9, Math.abs(a));
+    let d = 0;
+    d -= 0.075 * G((ax - 22) / 13, (py + 1) / 8);          // eye sockets
+    d += 0.045 * G((ax - 22) / 9, (py + 0.5) / 4.5);         // eyeball and lids
+    d += 0.05 * G((ax - 21) / 17, (py + 13) / 4.5);          // brow ridge
+    d += 0.03 * G(px / 22, (py + 30) / 14);                  // forehead
+    d += 0.10 * G(px / 5, (py - 8) / 10);                    // nose bridge
+    d += 0.17 * G(px / 7, (py - 20) / 6);                    // nose tip
+    d += 0.05 * G((ax - 6) / 4, (py - 24) / 4);              // nostril wings
+    d += 0.05 * G((ax - 33) / 10, (py - 12) / 7);            // cheekbones
+    d -= 0.035 * G((ax - 31) / 9, (py - 33) / 9);            // cheek hollows
+    d -= 0.03 * G((ax - 56) / 9, (py + 8) / 14);             // temples
+    d += 0.02 * G(px / 3, (py - 33) / 3.5);                  // philtrum
+    d += 0.045 * G(px / 13, (py - 37) / 3);                  // upper lip
+    d -= 0.025 * G(px / 13, (py - 40.5) / 1.6);              // mouth line
+    d += 0.05 * G(px / 11, (py - 44) / 3.2);                 // lower lip
+    d -= 0.03 * G(px / 10, (py - 50) / 3);                   // under the lip
+    d += 0.07 * G(px / 13, (py - 60) / 8);                   // chin
+    d *= front * 1.5;
+    const jaw = ss(25, 75, py) * ss(1.9, 0.6, Math.abs(a));  // narrow the lower face into a jaw
+    v.multiplyScalar(1 + d); v.x *= 1 - 0.16 * jaw; v.z *= 1 - 0.05 * jaw;
+    P.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return (_headGeo[key] = g);
+}
 function makeHead(style, hc, up, fwd) {
   const st = FACE_STYLES[style], g = new THREE.Group();
-  const skin = new THREE.MeshStandardMaterial({ map: faceTexture(style), roughness: 0.62, metalness: 0 });
+  const skin = new THREE.MeshPhysicalMaterial({ map: faceTexture(style), roughness: 0.55, metalness: 0, sheen: 0.5, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.9, 0.35, 0.25) });   // sheen: soft red skin scatter at the edges
   const plain = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.skin[0] / 255, st.skin[1] / 255, st.skin[2] / 255).convertSRGBToLinear().multiplyScalar(0.78), roughness: 0.65 });
   const hairM = new THREE.MeshStandardMaterial({ color: new THREE.Color(st.hair[0] / 255, st.hair[1] / 255, st.hair[2] / 255).convertSRGBToLinear(), roughness: 0.55 });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), skin); head.scale.set(0.079, 0.108, 0.093); g.add(head);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.034, 10), plain); nose.rotation.x = Math.PI * 0.6; nose.position.set(0, -0.014, 0.091); nose.scale.set(1, 1, 0.7); g.add(nose);
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.009, 12, 8), plain); tip.position.set(0, -0.029, 0.099); g.add(tip);
+  const head = new THREE.Mesh(sculptHead(st), skin); head.scale.set(0.079, 0.108, 0.093); g.add(head);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.034, 10), plain); nose.rotation.x = Math.PI * 0.6; nose.position.set(0, -0.014, 0.091); nose.scale.set(1, 1, 0.7);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.009, 12, 8), plain); tip.position.set(0, -0.029, 0.099);
   for (const s of [-1, 1]) { const ear = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), plain); ear.scale.set(0.012, 0.03, 0.02); ear.position.set(s * 0.079, -0.002, 0.004); g.add(ear); }
   const chin = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), skin); chin.scale.set(0.045, 0.03, 0.04); chin.position.set(0, -0.082, 0.045); chin.visible = false; g.add(chin);
   if (st.top === 'chonmage') { const k = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.07, 8), hairM); k.rotation.x = Math.PI / 2; k.position.set(0, 0.106, 0.0); g.add(k); }
